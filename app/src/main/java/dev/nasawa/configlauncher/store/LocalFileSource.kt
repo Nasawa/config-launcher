@@ -15,6 +15,7 @@ class LocalFileSource(val dir: File) : ConfigSource {
     private val temp = File(File(dir, ".configlauncher"), "$FILE_NAME.tmp")
 
     override val displayName = "App storage"
+    override val reconnectable = false
 
     override fun stamp(): Stamp? = if (file.isFile) Stamp(file.path, file.lastModified(), file.length()) else null
 
@@ -29,6 +30,15 @@ class LocalFileSource(val dir: File) : ConfigSource {
         FileOutputStream(temp).use { it.write(bytes); it.fd.sync() }
         if (ConfigCodec.sha256(temp.readBytes()) != ConfigCodec.sha256(bytes)) throw IOException("temp file verification failed")
         if (!temp.renameTo(file)) throw IOException("could not replace ${file.name}")
+    }
+
+    override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
+        val d = File(File(dir, ".configlauncher"), subdir)
+        if (!d.isDirectory && !d.mkdirs()) throw IOException("can't create ${d.path}")
+        val f = File(d, name)
+        val t = File(d, "$name.tmp")
+        FileOutputStream(t).use { it.write(bytes); it.fd.sync() }
+        if (!t.renameTo(f)) throw IOException("could not write ${f.name}")
     }
 
     companion object { const val FILE_NAME = "launcher.json" }

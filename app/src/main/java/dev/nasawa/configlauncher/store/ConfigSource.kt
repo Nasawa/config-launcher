@@ -8,6 +8,8 @@ data class Stamp(val docId: String, val lastModified: Long, val size: Long)
 /** Where launcher.json lives. Implementations: [LocalFileSource] (app storage), SafSource (picked folder). */
 interface ConfigSource {
     val displayName: String
+    /** False for app storage: there is no folder grant to reconnect, so B4 hides "Reconnect". */
+    val reconnectable: Boolean get() = true
     /** null when launcher.json does not exist. */
     fun stamp(): Stamp?
     /** null when launcher.json does not exist. Must enforce [maxBytes]. */
@@ -15,6 +17,13 @@ interface ConfigSource {
     /** Replace launcher.json with [bytes] safely (implementation-specific, see ARCHITECTURE.md §5). Throws on failure. */
     @Throws(IOException::class)
     fun write(bytes: ByteArray)
+
+    /**
+     * Write a sidecar file at `.configlauncher/<subdir>/<name>` ([subdir] may be empty), creating
+     * directories as needed. Never touches launcher.json, so it never changes [stamp] (no reload loop).
+     */
+    @Throws(IOException::class)
+    fun writeSidecar(subdir: String, name: String, bytes: ByteArray)
 }
 
 internal fun java.io.InputStream.readCapped(maxBytes: Int): ByteArray {

@@ -56,6 +56,8 @@ data class LoadState(
     val conflict: Boolean = false,
     /** One-shot snackbar text, cleared by [ConfigEngine.consumeNotice]. */
     val notice: String? = null,
+    /** Whether the source has a folder grant that "Reconnect" can re-pick (false for app storage). */
+    val reconnectable: Boolean = true,
 ) {
     /** Problem lines for the detail view (kept for callers/tests that only need text). */
     val errors: List<String> get() = when (issue) { null, Issue.Missing -> emptyList(); else -> issue.details }
@@ -72,6 +74,7 @@ class ConfigEngine(
     private val stabilityMs: Long = 300,
     private val scope: CoroutineScope? = null,
     private val debounceMs: Long = 750,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val pending = mutableListOf<Edit>()
     private var flushJob: Job? = null
@@ -87,7 +90,10 @@ class ConfigEngine(
     /** Hashes we wrote ourselves (last 4); seeing one of them again is an echo, not an edit (§5). */
     private val selfWrites = ArrayDeque<String>()
 
-    private val _state = MutableStateFlow(initial())
+    /** Key of the last status.json written; identical results are not rewritten (no churn, no loop). */
+    private var lastStatusKey: String? = null
+
+    private val _state = MutableStateFlow(initial().copy(reconnectable = source.reconnectable))
     val state: StateFlow<LoadState> = _state.asStateFlow()
 
     private fun initial(): LoadState {
@@ -101,7 +107,8 @@ class ConfigEngine(
         mutex.withLock {
             source = newSource
             lastStamp = null
-            _state.update { it.copy(sourceName = newSource.displayName, issue = null) }
+            lastStatusKey = null
+            _state.update { it.copy(sourceName = newSource.displayName, issue = null, reconnectable = newSource.reconnectable) }
         }
         poll(force = true)
     }
@@ -137,10 +144,16 @@ class ConfigEngine(
         }
         lastStamp = stamp
         return when (val r = ConfigCodec.decode(bytes)) {
-            is ParseResult.Invalid -> { invalidHash = hash; invalidBytes = bytes; fail(classifyParse(r.errors)) }
+            is ParseResult.Invalid -> {
+                invalidHash = hash; invalidBytes = bytes
+                val issue = classifyParse(r.errors)
+                writeStatus(StatusJson.resultOf(issue), r.errors, hash)
+                fail(issue)
+            }
             is ParseResult.Ok -> {
                 invalidHash = null; invalidBytes = null
-                _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash)
+                writeStatus("ok", emptyList(), hash)
+                _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash, reconnectable = src.reconnectable)
                 saveLastGood(bytes)
                 true
             }
@@ -183,11 +196,21 @@ class ConfigEngine(
             _state.update { it.copy(conflict = true) }
             return false
         }
-        if (stillBroken) current?.let { b -> runCatching { lastGood.snapshot(b) } }
+        var brokenName: String? = null
+        if (stillBroken) current?.let { b ->
+            runCatching { lastGood.snapshot(b) }
+            // OQ-15: agent-visible copy in the folder too. Non-blocking: a failure keeps the private copy only.
+            val name = StatusJson.brokenFileName(clock())
+            if (runCatching { source.writeSidecar("broken", name, b) }.isSuccess) brokenName = name
+        }
         val cfg = _state.value.config.let { it.copy(revision = (it.revision ?: 0) + 1) }
         try { writeLocked(cfg) } catch (e: Exception) { return fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")) }
         pending.clear(); invalidHash = null
-        _state.update { it.copy(pendingEdits = 0, issue = null, notice = if (stillBroken) "Your broken launcher.json was saved to history." else it.notice) }
+        _state.update { it.copy(pendingEdits = 0, issue = null, notice = when {
+            brokenName != null -> "Your broken launcher.json was saved to .configlauncher/broken/."
+            stillBroken -> "Your broken launcher.json was saved to history."
+            else -> it.notice
+        }) }
         true
     }
 
@@ -237,7 +260,8 @@ class ConfigEngine(
         selfWrites.addLast(hash); while (selfWrites.size > 4) selfWrites.removeFirst()
         source.write(bytes)
         lastStamp = source.stamp()
-        _state.value = LoadState(config, Origin.FILE, source.displayName, hash)
+        writeStatus("ok", emptyList(), hash)
+        _state.value = LoadState(config, Origin.FILE, source.displayName, hash, reconnectable = source.reconnectable)
         saveLastGood(bytes)
         return hash
     }
@@ -247,6 +271,16 @@ class ConfigEngine(
         try { lastGood.save(bytes) } catch (e: Exception) {
             _state.update { it.copy(notice = "Couldn't update the backup copy (phone storage full).") }
         }
+    }
+
+    /** §16/§17: `.configlauncher/status.json` so an agent can see why an edit was rejected. Best effort. */
+    private fun writeStatus(result: String, errors: List<String>, hash: String) {
+        val key = "$result|$hash|${errors.hashCode()}"
+        if (key == lastStatusKey) return
+        try {
+            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock()))
+            lastStatusKey = key
+        } catch (_: Exception) { /* folder may be read-only or gone; the banner already says so */ }
     }
 
     /**
