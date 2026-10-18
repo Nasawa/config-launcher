@@ -1,12 +1,14 @@
 name: Emulator smoke
 # Test matrix: emulators API 29, 35 and 36 (minSdk 29). There are no androidTest sources yet,
 # so this installs the debug APK, cold-starts MainActivity, and fails on a crash or ANR.
-# Runs nightly, on demand, and on every PR.
+# Runs nightly, on demand, on every PR, and on pushes to main.
 on:
   schedule:
     - cron: '17 9 * * *'
   workflow_dispatch:
   pull_request:
+  push:
+    branches: [main]
 permissions:
   contents: read
 jobs:
