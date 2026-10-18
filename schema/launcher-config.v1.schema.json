@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Nasawa/config-launcher/schema/launcher-config.v1.schema.json",
   "title": "Config Launcher layout, schema version 1",
-  "description": "The home screen of dev.nasawa.configlauncher. See ARCHITECTURE.md section 3. Unknown keys starting with 'x-' are preserved and ignored; any other unknown key is an error.",
+  "description": "The home screen of dev.nasawa.configlauncher. See ARCHITECTURE.md section 3. Unknown keys starting with 'x-' are preserved and ignored; any other unknown key is an error. Files over 2 MiB are refused (ARCHITECTURE.md section 17, Q16); x- values count toward that budget.",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -90,11 +90,13 @@
     },
     "packageName": {
       "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$"
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$",
+      "maxLength": 256
     },
     "className": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9_.$]+$"
+      "pattern": "^[A-Za-z0-9_.$]+$",
+      "maxLength": 256
     },
     "profile": {
       "description": "Which user profile the target lives in. 'work' is only written when the user opts in. Private-space apps are never written (ARCHITECTURE.md section 15, OQ-31).",
@@ -145,7 +147,8 @@
             "type": "string",
             "maxLength": 40
           },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "maxItems": 16
         },
         "x": {
           "type": "integer",
@@ -378,7 +381,7 @@
             },
             "packagePrefix": {
               "type": "string",
-              "maxLength": 128
+              "maxLength": 256
             },
             "tag": {
               "type": "string",
