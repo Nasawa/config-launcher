@@ -71,12 +71,8 @@ data class Drawer(
     val rules: List<JsonElement>? = null,
 )
 
-enum class UnsortedMode(val wire: String) {
-    DRAWER("drawer"), PAGE("page"), HIDDEN("hidden");
-    companion object { fun of(s: String?) = entries.firstOrNull { it.wire == s } }
-}
-
-data class Unsorted(val mode: UnsortedMode? = null, val pageTitle: String? = null)
+// AF-2 (§18.5): `unsorted` is type-checked by the Validator and otherwise ignored; it has no model
+// field, so the canonical serializer never writes it. Unplaced apps always live in the drawer.
 
 data class LauncherConfig(
     val schemaRef: String? = null,
@@ -86,11 +82,9 @@ data class LauncherConfig(
     val pages: List<Page>,
     val dock: List<Item>? = null,
     val drawer: Drawer? = null,
-    val unsorted: Unsorted? = null,
     val extras: Extras = emptyMap(),
 ) {
     val effectiveGrid: Grid get() = grid ?: Grid()
-    val unsortedMode: UnsortedMode get() = unsorted?.mode ?: UnsortedMode.DRAWER
 
     /** Every item in the file, including folder children. */
     fun allItems(): Sequence<Item> = sequence {

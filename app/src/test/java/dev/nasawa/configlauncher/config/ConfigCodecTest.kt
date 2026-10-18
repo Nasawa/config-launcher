@@ -24,7 +24,6 @@ class ConfigCodecTest {
         assertEquals("Tools", folder.label)
         assertEquals("com.android.deskclock.DeskClock", (folder.items[1] as AppItem).activity)
         assertEquals(listOf("a-dialer", "a-camera"), c.dock!!.map { it.id })
-        assertEquals(UnsortedMode.DRAWER, c.unsortedMode)
     }
 
     @Test fun roundTripIsStableAndCanonical() {

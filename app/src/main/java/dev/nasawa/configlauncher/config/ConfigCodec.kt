@@ -64,7 +64,6 @@ object ConfigCodec {
         drawer = (o["drawer"] as? JsonObject)?.let { d ->
             Drawer(d.s("sort"), (d["hidden"] as? JsonArray)?.map { it.jsonPrimitive.content }, (d["rules"] as? JsonArray)?.toList())
         },
-        unsorted = (o["unsorted"] as? JsonObject)?.let { Unsorted(UnsortedMode.of(it.s("mode")), it.s("pageTitle")) },
         extras = o.extras(),
     )
 
@@ -102,7 +101,6 @@ object ConfigCodec {
                 d.rules?.let { r -> put("rules", JsonArray(r)) }
             }
         }
-        c.unsorted?.let { u -> putJsonObject("unsorted") { opt("mode", u.mode?.wire); opt("pageTitle", u.pageTitle) } }
         extras(c.extras)
     }
 
