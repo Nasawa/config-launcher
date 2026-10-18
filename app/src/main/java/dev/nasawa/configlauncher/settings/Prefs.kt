@@ -17,13 +17,19 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("drawerKeyboard", true)
         set(v) = sp.edit { putBoolean("drawerKeyboard", v) }
 
+    /**
+     * §18.5 persisted "no folder" state: true once the user chose app-only (Skip for now / Use phone
+     * storage). Distinct from never onboarded, so onboarding doesn't ask again.
+     */
+    var appOnly: Boolean
+        get() = sp.getBoolean("appOnly", false)
+        set(v) = sp.edit { putBoolean("appOnly", v) }
+
+    /** First run finished: a folder is connected or app-only was chosen. */
+    val onboarded: Boolean get() = appOnly || folderUri != null
+
     /** §18.1 Q-C4: rounded 40 % black scrim behind home labels (default off). App setting, not in launcher.json. */
     var labelBackdrop: Boolean
         get() = sp.getBoolean("labelBackdrop", false)
         set(v) = sp.edit { putBoolean("labelBackdrop", v) }
-
-    /** First run finished (folder picked or "Skip for now", §18.2). */
-    var onboarded: Boolean
-        get() = sp.getBoolean("onboarded", false) || folderUri != null
-        set(v) = sp.edit { putBoolean("onboarded", v) }
 }

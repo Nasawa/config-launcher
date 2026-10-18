@@ -127,7 +127,11 @@ class ConfigEngine(
         mutex.withLock {
             val existing = target.read(Limits.MAX_BYTES)
             val mine = existing == null || useMine
-            if (existing != null && useMine) target.writeSidecar("backup", StatusJson.brokenFileName(clock()), existing)
+            if (existing != null && useMine) {
+                // Folder: agent-visible backup. App-only (§18.5): no .configlauncher, so private history.
+                try { target.writeSidecar("backup", StatusJson.brokenFileName(clock()), existing) }
+                catch (_: UnsupportedOperationException) { runCatching { lastGood.snapshot(existing) } }
+            }
             if (!mine) runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
             source = target; lastStamp = null; lastStatusKey = null
             _state.update { it.copy(sourceName = target.displayName, issue = null, reconnectable = target.reconnectable) }

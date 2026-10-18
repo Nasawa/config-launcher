@@ -130,6 +130,6 @@ class ConfigEngineTest {
         val src = LocalFileSource(tmp.newFolder("w"))
         src.write("one".toByteArray()); src.write("two".toByteArray())
         assertEquals("two", src.file.readText())
-        assertFalse(File(src.dir, ".configlauncher/launcher.json.tmp").exists())
+        assertFalse(File(src.dir, "launcher.json.tmp").exists())
     }
 }
