@@ -80,6 +80,8 @@ class ConfigEngine(
     private var flushJob: Job? = null
     /** Hash of the file bytes that last failed to parse/validate (for the OQ-15 broken-copy path). */
     private var invalidHash: String? = null
+    /** Bytes of the file that last failed, kept only so the detail view can locate errors on demand. */
+    @Volatile private var invalidBytes: ByteArray? = null
     /** While true (drag in progress) inbound reloads are held until drop (OQ-24). */
     @Volatile var dragging = false
     private val mutex = Mutex()
@@ -143,13 +145,13 @@ class ConfigEngine(
         lastStamp = stamp
         return when (val r = ConfigCodec.decode(bytes)) {
             is ParseResult.Invalid -> {
-                invalidHash = hash
+                invalidHash = hash; invalidBytes = bytes
                 val issue = classifyParse(r.errors)
                 writeStatus(StatusJson.resultOf(issue), r.errors, hash)
                 fail(issue)
             }
             is ParseResult.Ok -> {
-                invalidHash = null
+                invalidHash = null; invalidBytes = null
                 writeStatus("ok", emptyList(), hash)
                 _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash, reconnectable = src.reconnectable)
                 saveLastGood(bytes)
@@ -279,6 +281,16 @@ class ConfigEngine(
             source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock()))
             lastStatusKey = key
         } catch (_: Exception) { /* folder may be read-only or gone; the banner already says so */ }
+    }
+
+    /**
+     * Line/column for each of [errors] in the last failed file (Q-S3). Call off the main thread and
+     * only when the error detail view opens; returns all nulls if no failed file is held.
+     */
+    fun locateErrors(errors: List<String>): List<dev.nasawa.configlauncher.config.TextPos?> {
+        val b = invalidBytes ?: return errors.map { null }
+        val text = String(b, Charsets.UTF_8).removePrefix("\uFEFF")
+        return dev.nasawa.configlauncher.config.ErrorLocator.locate(text, errors)
     }
 
     fun consumeNotice() = _state.update { it.copy(notice = null) }
