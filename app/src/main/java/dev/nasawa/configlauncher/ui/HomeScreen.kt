@@ -20,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
@@ -40,6 +41,7 @@ fun HomeScreen(vm: HomeViewModel) {
     val ctx = LocalContext.current
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }
+    var keyboardOnOpen by remember { mutableStateOf(vm.store.prefs.drawerKeyboard) }
     var menuOpen by remember { mutableStateOf(false) }
     val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }) { vm.store.edit(it) } }
     var cloudUri by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -102,6 +104,9 @@ fun HomeScreen(vm: HomeViewModel) {
                         DropdownMenu(menuOpen, { menuOpen = false }) {
                             DropdownMenuItem({ Text("Pick config folder…") }, { menuOpen = false; moving = true; pickFolder.launch(null) })
                             DropdownMenuItem({ Text("Use phone storage") }, { menuOpen = false; vm.store.useAppStorage() })
+                            DropdownMenuItem({ Text("Open keyboard with drawer") }, {
+                                keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
+                            }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
                             DropdownMenuItem({ Text("Reload launcher.json") }, { menuOpen = false; vm.store.pollNow() })
                         }
                     }
@@ -145,8 +150,25 @@ fun HomeScreen(vm: HomeViewModel) {
 
         if (drawerOpen) {
             ModalBottomSheet({ drawerOpen = false }) {
-                LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxHeight(0.85f).padding(8.dp)) {
-                    items(ui.layout.drawer, key = { it.key }) { app ->
+                var query by remember { mutableStateOf("") }
+                val shown = remember(query, ui.layout.drawer) { DrawerSearch.filter(ui.layout.drawer, query) }
+                val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+                val ime = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+                // ux.md §2: focus + keyboard on open; with TalkBack, focus only (no auto keyboard).
+                val talkBack = remember { (ctx.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager).isTouchExplorationEnabled }
+                LaunchedEffect(Unit) { if (keyboardOnOpen) { focus.requestFocus(); if (!talkBack) ime?.show() } }
+                val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+                // Scrolling the list hides the keyboard; tapping the field brings it back.
+                LaunchedEffect(gridState.isScrollInProgress) { if (gridState.isScrollInProgress) ime?.hide() }
+                OutlinedTextField(
+                    query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp).focusRequester(focus),
+                    placeholder = { Text("Search apps") }, singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Go),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = { shown.firstOrNull()?.let { drawerOpen = false; launchApp(it) } }),
+                )
+                if (shown.isEmpty()) Text("No apps match \"${query.trim()}\".", Modifier.padding(16.dp), color = Color.Gray)
+                LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxHeight(0.85f).padding(8.dp), state = gridState) {
+                    items(shown, key = { it.key }) { app ->
                         Tile(ResolvedItem(AppItem("drawer", app.packageName, app.activityName), app), vm.apps) {
                             drawerOpen = false; launchApp(app)
                         }

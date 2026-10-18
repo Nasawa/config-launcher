@@ -12,6 +12,11 @@ class Prefs(context: Context) {
         get() = sp.getString("folderUri", null)?.let(Uri::parse)
         set(v) = sp.edit { if (v == null) remove("folderUri") else putString("folderUri", v.toString()) }
 
+    /** §18.2 Q-C2: focus drawer search and show the keyboard on open (default on; off for wall displays). */
+    var drawerKeyboard: Boolean
+        get() = sp.getBoolean("drawerKeyboard", true)
+        set(v) = sp.edit { putBoolean("drawerKeyboard", v) }
+
     /**
      * §18.5 persisted "no folder" state: true once the user chose app-only (Skip for now / Use phone
      * storage). Distinct from never onboarded, so onboarding doesn't ask again.
