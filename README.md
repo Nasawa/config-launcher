@@ -12,10 +12,62 @@ on your phone and the file updates. Edit the file on your computer (or let an ag
 
 ### Where the file lives
 - `launcher.json` sits at the **root of the folder picked on first run** (Settings → *Config folder* changes it). A
-  folder kept in sync with a computer (Syncthing, a git client) is the intended setup. Cloud providers such as Google
-  Drive work on a best-effort basis, and first run warns when you pick one.
+  git clone kept in sync by a git app on the phone is the intended setup (below). Syncthing works too, and cloud folders
+  are best-effort.
 - Only the file named exactly `launcher.json` is read.
 - The launcher also creates `.configlauncher/` in that folder (see [Files the launcher writes](#files-the-launcher-writes-in-your-folder)).
+
+### Recommended: keep the folder in git
+Git is the main way to sync. A git app on the phone (for example one that auto-pulls and auto-commits a folder) keeps a
+clone of your repo, and that clone is the folder you pick in Config Launcher. The launcher never runs git itself: it
+only reads and writes `launcher.json` in that folder.
+
+1. **Clone or pull.**
+   ```sh
+   git clone <your-repo> launcher-config && cd launcher-config   # first time
+   git pull --rebase                                              # every time after
+   ```
+   Pull first, every time. The phone commits its own edits (through the git app), so the remote often has changes.
+2. **Edit `launcher.json`.** Keep IDs stable, give new items new IDs, put notes in `x-` keys (see [Schema](#schema)).
+3. **Validate before committing.**
+   ```sh
+   pip install jsonschema
+   python -c "import json,jsonschema;jsonschema.validate(json.load(open('launcher.json')),json.load(open('schema/launcher-config.v1.schema.json')),cls=jsonschema.Draft202012Validator)"
+   ```
+   (Keep a copy of the schema in the repo, or point at this repo's `schema/`.) The schema doesn't catch everything the
+   phone checks, such as duplicate IDs or two items in one cell (see the list under [Rules](#rules-the-launcher-follows-and-expects)).
+4. **Commit and push.**
+   ```sh
+   git add launcher.json && git commit -m "Move Maps to the dock" && git push
+   ```
+5. **How the phone picks it up.** Once the phone's git app pulls, the file changes in the folder. The launcher checks
+   every 2 s while the home screen is showing and immediately when you press Home, so the change appears within a few
+   seconds of the pull. How often the pull happens depends on the git app's sync interval. If the new file is invalid,
+   the phone keeps the last working layout and shows a banner, and `.configlauncher/status.json` (ignored by git, see
+   below) says why on the phone.
+6. **Push rejected** (`! [rejected] … (fetch first)`): the phone pushed meanwhile. Run `git pull --rebase`, then
+   validate and push again. Never force-push: that would drop the phone's edits.
+7. **Merge conflict in `launcher.json`.** Never commit a file with `<<<<<<<` markers. The phone would treat it as a
+   parse error (B1) and keep the last working layout, so nothing breaks, but nothing updates either. Instead:
+   - Take one whole side, usually the remote (phone) version: `git checkout --ours launcher.json` (during a rebase,
+     "ours" is the remote and "theirs" is your commit), or edit the hunks by hand.
+   - Re-apply your change on top, validate (step 3), then `git add launcher.json && git rebase --continue`.
+   - Because the phone rewrites the whole file in a canonical format, writing the same format yourself (2-space
+     indent, keys in schema order) keeps conflicts small.
+8. **Ignore the launcher's scratch files.** Add this `.gitignore`:
+   ```gitignore
+   .configlauncher/launcher.json.tmp
+   .configlauncher/status.json
+   ```
+   Never commit `.tmp` or `status.json`. They change on every phone write and cause pointless conflicts. `backup/`
+   and `broken/` are yours to commit or ignore. Configure the phone's git app to respect `.gitignore` (most do).
+
+**Other sync tools (secondary).** Syncthing works the same without commits: edit, save, and it syncs. Its conflict
+copies (`launcher.sync-conflict-*.json`) are never read; merge them by hand. Cloud folders (Google Drive and similar)
+work on a best-effort basis and can be slow, and first run warns when you pick one.
+
+**No folder at all.** On first run you can choose *Skip for now*: the layout then lives only on the phone, and nothing
+can edit it from outside until you connect a folder in *Settings → Config folder → Connect folder*.
 
 ### Schema
 - JSON Schema 2020-12: [`schema/launcher-config.v1.schema.json`](schema/launcher-config.v1.schema.json). Full example:
@@ -37,14 +89,13 @@ Minimal valid file:
   "dock": [
     { "id": "a-dialer", "type": "app", "package": "com.google.android.dialer" }
   ],
-  "drawer": { "sort": "label", "hidden": [], "rules": [] },
-  "unsorted": { "mode": "drawer" }
+  "drawer": { "sort": "label", "hidden": [], "rules": [] }
 }
 ```
 
 Shape in brief:
 - Required: `schemaVersion` (`1`) and `pages` (1–20). Optional: `revision`, `grid` (`columns`/`rows` 2–12, default
-  4 × 5), `dock` (up to 7 items), `drawer`, `unsorted`.
+  4 × 5), `dock` (up to 7 items), `drawer`.
 - Item types: `app`, `shortcut` (`package` + `shortcutId` of a pinned shortcut), and `folder` (`label` + `items` of apps
   and shortcuts, no nested folders).
 - Page items need `x`/`y` (0-based, inside the grid; every item is 1 × 1). Dock and folder items must **not** have
@@ -52,9 +103,9 @@ Shape in brief:
 - `drawer.sort`: `label` or `installTime`. `drawer.hidden`: package names. `drawer.rules`: `{id, group, match}` where
   `match` uses `packages`, `packagePrefix`, `tag` or `category`. The first matching rule wins, and rules only group the
   drawer.
-- `unsorted.mode`: `drawer` (default), `page` (also shown on a synthetic last page, never written) or `hidden`
-  (removes only that page; the drawer still lists them). The drawer lists every app, including placed ones, minus
-  `drawer.hidden`. Installed apps that you don't place are never written to the file by the launcher.
+- Apps you don't place live **only in the drawer**. There's no Unsorted home page, so don't write `unsorted` (it's
+  being removed from the schema; if present it's accepted and ignored). The drawer lists every app, including placed
+  ones, minus `drawer.hidden`. Installed apps that you don't place are never written to the file by the launcher.
 
 ### IDs and profiles
 - Every page, item and drawer rule has an `id` matching `^[a-z0-9][a-z0-9_-]{0,63}$`, **unique across the whole
@@ -125,14 +176,7 @@ Shape in brief:
 - `broken/`: copies of invalid files saved before a phone edit replaced them.
 - `backup/`: originals saved before an *Upgrade now* (as `launcher.v{N}.{timestamp}.json`), *Restore last working version* or *Start fresh*.
 
-If the folder is a git repo, ignore the files that change on every phone write:
-
-```gitignore
-.configlauncher/launcher.json.tmp
-.configlauncher/status.json
-```
-
-`backup/` and `broken/` are yours to commit or ignore.
+Ignore `launcher.json.tmp` and `status.json` in git (see [the git workflow](#recommended-keep-the-folder-in-git)).
 
 `launcher.json` is never created automatically. If it's missing, the phone shows `No launcher.json yet.` with
 *Create from current layout* and *Reconnect*.
@@ -151,6 +195,7 @@ versioning.
 - Keep IDs stable and unique, and give new items new IDs.
 - Use `package` (and `activity` only when you need a specific one).
 - Put notes in `x-` keys.
+- Pull before editing, validate, then commit and push (git).
 - Write the whole file in one go.
 - Retry a read that fails to parse.
 - Check `.configlauncher/status.json` after a change.
@@ -161,4 +206,5 @@ versioning.
 - Write private-space apps, user IDs or serial numbers.
 - Write anything into `.configlauncher/`, or rely on it for history.
 - Expect your formatting to survive a phone edit.
+- Commit `.configlauncher/launcher.json.tmp` or `status.json`, commit conflict markers, or force-push.
 - Copy unplaced apps into the file just to "list" them. The drawer already shows everything.
