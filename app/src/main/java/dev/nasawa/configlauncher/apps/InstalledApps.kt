@@ -84,7 +84,7 @@ class InstalledApps(context: Context) {
             override fun onPackagesAvailable(p: Array<out String>?, u: UserHandle?, r: Boolean) { trySend(Unit) }
             override fun onPackagesUnavailable(p: Array<out String>?, u: UserHandle?, r: Boolean) { trySend(Unit) }
         }
-        launcherApps.registerCallback(cb)
+        launcherApps.registerCallback(cb, android.os.Handler(android.os.Looper.getMainLooper()))
         awaitClose { launcherApps.unregisterCallback(cb) }
     }
 }
