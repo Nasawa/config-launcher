@@ -60,5 +60,9 @@ fun MoveDialog(ins: Inspection, onChoose: (Boolean) -> Unit, onDismiss: () -> Un
         })
     },
     confirmButton = { TextButton({ onChoose(true) }) { Text("Replace it with mine") } },
-    dismissButton = { TextButton({ onChoose(false) }) { Text("Use the folder's layout") } },
+    // An invalid folder file is never adopted (Grace review): only Replace or Cancel.
+    dismissButton = {
+        if (ins is Inspection.Invalid) TextButton(onDismiss) { Text("Cancel") }
+        else TextButton({ onChoose(false) }) { Text("Use the folder's layout") }
+    },
 )
