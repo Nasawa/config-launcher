@@ -9,7 +9,7 @@ object SdkGates {
     const val SHORTCUT_HINT = "Shortcuts need Android 8 or later."
     const val PAUSED_HINT = "Work apps are paused. Turn them on in Settings."
     const val HOME_SETTINGS_HINT = "Open Apps → Default apps → Home app"
-    const val INTERNAL_STORAGE_HINT = "Don't see your phone's storage? Tap ⋮ → Show internal storage in the picker."
+    const val INTERNAL_STORAGE_HINT = "Don't see your phone's storage? In the next screen, tap ⋮ and then Show internal storage."
 
     /** UserManager.isQuietModeEnabled (24). Below that, work apps are assumed not paused. */
     fun quietModeReadable(sdk: Int) = sdk >= 24
