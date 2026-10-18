@@ -1,0 +1,416 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Nasawa/config-launcher/schema/launcher-config.v1.schema.json",
+  "title": "Config Launcher layout, schema version 1",
+  "description": "The home screen of dev.nasawa.configlauncher. See ARCHITECTURE.md section 3. Unknown keys starting with 'x-' are preserved and ignored; any other unknown key is an error.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "pages"
+  ],
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x-": true
+  },
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "revision": {
+      "description": "Monotonic counter bumped by every writer (launcher or agent). Informational; conflicts are detected by content hash.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "grid": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 12,
+          "default": 4
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 12,
+          "default": 5
+        }
+      }
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/page"
+      }
+    },
+    "dock": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 7,
+          "items": {
+            "$ref": "#/$defs/dockItem"
+          }
+        }
+      }
+    },
+    "drawer": {
+      "$ref": "#/$defs/drawer"
+    },
+    "unsorted": {
+      "description": "Where installed apps that are not placed anywhere appear.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "drawer",
+            "page",
+            "hidden"
+          ],
+          "default": "drawer"
+        },
+        "pageTitle": {
+          "type": "string",
+          "maxLength": 40,
+          "default": "Unsorted"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "description": "Stable item ID, unique across the whole file. Generated once and never reused.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+    },
+    "packageName": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$"
+    },
+    "className": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.$]+$"
+    },
+    "profile": {
+      "description": "Which user profile the target lives in. 'work' is only written when the user opts in. Private-space apps are never written (ARCHITECTURE.md section 15, OQ-31).",
+      "enum": [
+        "personal",
+        "work"
+      ],
+      "default": "personal"
+    },
+    "position": {
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11
+        }
+      }
+    },
+    "label": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "app": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "package"
+      ],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "const": "app"
+        },
+        "package": {
+          "$ref": "#/$defs/packageName"
+        },
+        "activity": {
+          "$ref": "#/$defs/className",
+          "description": "Optional. Omit to use the package's default launcher activity."
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "uniqueItems": true
+        },
+        "position": {
+          "$ref": "#/$defs/position",
+          "description": "Required on page items; forbidden in folders and the dock."
+        }
+      }
+    },
+    "shortcut": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "package",
+        "shortcutId"
+      ],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "const": "shortcut"
+        },
+        "package": {
+          "$ref": "#/$defs/packageName"
+        },
+        "shortcutId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "position": {
+          "$ref": "#/$defs/position",
+          "description": "Required on page items; forbidden in folders and the dock."
+        }
+      }
+    },
+    "folder": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "items"
+      ],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "const": "folder"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "items": {
+          "description": "Folders hold apps and shortcuts only; no nested folders in v1.",
+          "type": "array",
+          "maxItems": 48,
+          "items": {
+            "allOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/app"
+                  },
+                  {
+                    "$ref": "#/$defs/shortcut"
+                  }
+                ]
+              }
+            ],
+            "not": {
+              "required": [
+                "position"
+              ]
+            }
+          }
+        },
+        "position": {
+          "$ref": "#/$defs/position",
+          "description": "Required on page items; forbidden in folders and the dock."
+        }
+      }
+    },
+    "leaf": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/app"
+        },
+        {
+          "$ref": "#/$defs/shortcut"
+        },
+        {
+          "$ref": "#/$defs/folder"
+        }
+      ]
+    },
+    "gridItem": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/leaf"
+        }
+      ],
+      "required": [
+        "position"
+      ]
+    },
+    "dockItem": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/leaf"
+        }
+      ],
+      "not": {
+        "required": [
+          "position"
+        ]
+      }
+    },
+    "page": {
+      "type": "object",
+      "required": [
+        "id",
+        "items"
+      ],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 144,
+          "items": {
+            "$ref": "#/$defs/gridItem"
+          }
+        }
+      }
+    },
+    "drawerRule": {
+      "type": "object",
+      "required": [
+        "id",
+        "match",
+        "group"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "group": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "match": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "packages": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/packageName"
+              }
+            },
+            "packagePrefix": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "tag": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "category": {
+              "enum": [
+                "game",
+                "audio",
+                "video",
+                "image",
+                "social",
+                "news",
+                "maps",
+                "productivity",
+                "accessibility",
+                "undefined"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "drawer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sort": {
+          "enum": [
+            "label",
+            "installTime"
+          ],
+          "default": "label"
+        },
+        "hidden": {
+          "description": "Apps never shown in the drawer or Unsorted (they still launch if placed explicitly).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/packageName"
+          },
+          "uniqueItems": true
+        },
+        "rules": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/drawerRule"
+          }
+        }
+      }
+    }
+  }
+}
