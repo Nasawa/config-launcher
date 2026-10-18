@@ -36,4 +36,11 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
+    testImplementation(libs.networknt.json.schema)
+}
+
+// Schema-agreement tests read the repo's schema/ folder.
+tasks.withType<Test>().configureEach {
+    systemProperty("repoRoot", rootDir.absolutePath)
+    inputs.dir(rootDir.resolve("schema"))
 }

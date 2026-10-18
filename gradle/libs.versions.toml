@@ -8,6 +8,7 @@ coreKtx = "1.19.1"
 documentfile = "1.1.0"
 serialization = "1.11.0"
 junit = "4.13.2"
+networknt = "3.0.8"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -22,6 +23,7 @@ compose-material3 = { module = "androidx.compose.material3:material3" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 junit = { module = "junit:junit", version.ref = "junit" }
+networknt-json-schema = { module = "com.networknt:json-schema-validator", version.ref = "networknt" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
