@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.nasawa.configlauncher.apps.InstalledApps
+import dev.nasawa.configlauncher.apps.SdkGates
 import dev.nasawa.configlauncher.model.*
 import kotlinx.coroutines.launch
 
@@ -76,13 +77,14 @@ fun HomeScreen(vm: HomeViewModel) {
     // Merge notices carry Undo, so they show in the in-app snackbar instead of a toast (§18.2).
     LaunchedEffect(ui.load.notice) { if (!ui.load.mergeUndo) ui.load.notice?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
     val toast = { msg: String -> Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
-    val launchApp = { app: InstalledApp -> if (!vm.apps.launch(app)) toast("Couldn't open ${Labels.clean(app.label)}") }
+    val launchApp = { app: InstalledApp -> if (app.paused && !SdkGates.canUnpause(android.os.Build.VERSION.SDK_INT)) toast(SdkGates.PAUSED_HINT) else if (!vm.apps.launch(app)) toast("Couldn't open ${Labels.clean(app.label)}") }
 
     val onOpen: (ResolvedItem) -> Unit = { r ->
         when (val item = r.item) {
             is FolderItem -> openFolder = r
             is ShortcutItem -> when {
                 r.workDisabled -> toast("Turn on \"Include work apps in config\" to use this.")
+                !SdkGates.shortcuts(android.os.Build.VERSION.SDK_INT) -> toast(SdkGates.SHORTCUT_HINT)
                 !vm.apps.launch(item) -> toast("Shortcut no longer available")
             }
             is AppItem -> when {
@@ -113,6 +115,12 @@ fun HomeScreen(vm: HomeViewModel) {
                             DropdownMenuItem({ Text("Open keyboard with drawer") }, {
                                 keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
                             }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
+                            DropdownMenuItem({ Text("Set as home app") }, {
+                                menuOpen = false
+                                val (intent, hint) = SdkGates.homeIntent(ctx, android.os.Build.VERSION.SDK_INT)
+                                hint?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show() }
+                                runCatching { ctx.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                            })
                             DropdownMenuItem({ Text("Reload launcher.json") }, { menuOpen = false; vm.store.pollNow() })
                         }
                     }
@@ -287,7 +295,7 @@ private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragContr
 @Composable
 fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onClick: () -> Unit) {
     Column(
-        modifier.clickable(onClick = onClick).padding(4.dp).alpha(if (r.missing || r.app?.paused == true) 0.4f else 1f),
+        modifier.clickable(onClick = onClick).padding(4.dp).alpha(if (r.missing || r.app?.paused == true || (r.item is ShortcutItem && !SdkGates.shortcuts(android.os.Build.VERSION.SDK_INT))) 0.4f else 1f),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (r.item is FolderItem) FolderIcon(r, apps) else AppIconImage(r.app, apps, 48)

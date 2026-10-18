@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "dev.nasawa.configlauncher"
-        minSdk = 26
+        minSdk = 23 // ARCHITECTURE.md §18.3
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
@@ -20,6 +20,14 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+    // §18.3: a missed SDK gate must fail CI.
+    lint {
+        // Only NewApi gates CI for now; the other pre-existing lint findings are a separate cleanup.
+        checkOnly += "NewApi"
+        error += "NewApi"
+        abortOnError = true
+        checkReleaseBuilds = false
     }
     testOptions {
         unitTests.isReturnDefaultValues = true

@@ -21,6 +21,10 @@ fun FirstRunScreen(onChooseFolder: () -> Unit, onSkip: () -> Unit) {
                     "Pick a folder for launcher.json. A folder that a sync app (like Syncthing) or a git app keeps in sync lets you edit it from your computer, with history. Config Launcher also keeps a small .configlauncher folder there for status and backups.",
                     color = Color.LightGray,
                 )
+                if (dev.nasawa.configlauncher.apps.SdkGates.showInternalStorageHint(android.os.Build.VERSION.SDK_INT)) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(dev.nasawa.configlauncher.apps.SdkGates.INTERNAL_STORAGE_HINT, color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                }
                 Spacer(Modifier.height(24.dp))
                 Button(onChooseFolder, Modifier.fillMaxWidth()) { Text("Choose folder") }
                 TextButton(onSkip, Modifier.fillMaxWidth()) { Text("Skip for now") }
