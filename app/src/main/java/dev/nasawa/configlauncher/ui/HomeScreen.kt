@@ -80,7 +80,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     }
                 }
                 if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
-                ui.load.issue?.let { IssueBanner(it, onReconnect = { pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = vm.store::useAppStorage) }
+                ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, onReconnect = { pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = vm.store::useAppStorage) }
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
                 pages.getOrNull(pager.currentPage).let { p ->
@@ -149,7 +149,7 @@ private fun ConflictBanner(count: Int, onUseFile: () -> Unit, onKeepMine: () -> 
 }
 
 @Composable
-private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, onReconnect: () -> Unit, onCreate: () -> Unit, onUseAppStorage: () -> Unit) {
+private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnectable: Boolean, onReconnect: () -> Unit, onCreate: () -> Unit, onUseAppStorage: () -> Unit) {
     val errors = issue.details
     var expanded by remember(issue) { mutableStateOf(false) }
     val title = when (issue) {
@@ -166,13 +166,11 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, onReconnec
     ) {
         Text(title, color = Color.White)
         Row {
-            when (issue) {
-                is dev.nasawa.configlauncher.store.Issue.AccessLost -> TextButton(onReconnect) { Text("Reconnect") }
-                dev.nasawa.configlauncher.store.Issue.Missing -> {
-                    TextButton(onCreate) { Text("Create from current layout") }
-                    TextButton(onReconnect) { Text("Reconnect") }
+            BannerActions.forIssue(issue, reconnectable).forEach { a ->
+                when (a) {
+                    BannerAction.CREATE -> TextButton(onCreate) { Text("Create from current layout") }
+                    BannerAction.RECONNECT -> TextButton(onReconnect) { Text("Reconnect") }
                 }
-                else -> {}
             }
         }
         val shown = if (expanded) errors else errors.take(1)
