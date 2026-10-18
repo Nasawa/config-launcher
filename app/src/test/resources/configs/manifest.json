@@ -128,58 +128,65 @@
   {
     "file": "invalid/utf16.json",
     "expect": "parse error, B1",
-    "layer": "parser",
+    "layer": "kotlin-only",
     "ref": "§15 OQ-7",
-    "note": ""
+    "note": "",
+    "kotlinOnly": "nul-or-encoding"
   },
   {
     "file": "invalid/invalid-utf8.json",
     "expect": "parse error, B1",
-    "layer": "parser",
+    "layer": "kotlin-only",
     "ref": "§15 OQ-11",
-    "note": ""
+    "note": "",
+    "kotlinOnly": "nul-or-encoding"
   },
   {
     "file": "invalid/lone-surrogate.json",
     "expect": "parse error, B1",
-    "layer": "parser",
+    "layer": "kotlin-only",
     "ref": "§15 OQ-11",
-    "note": ""
+    "note": "",
+    "kotlinOnly": "nul-or-encoding"
   },
   {
     "file": "invalid/nul-in-label.json",
-    "expect": "parse error, B1",
+    "expect": "parse error, B1 (escaped NUL)",
+    "layer": "kotlin-only",
+    "ref": "§17 Q3",
+    "note": "",
+    "kotlinOnly": "nul-or-encoding"
+  },
+  {
+    "file": "invalid/nul-raw.json",
+    "expect": "parse error, B1 (raw NUL byte: an unescaped control character, so a syntax error for any JSON parser)",
     "layer": "parser",
-    "ref": "§15 OQ-11",
+    "ref": "§17 Q3",
     "note": ""
   },
   {
     "file": "invalid/duplicate-key.json",
     "expect": "parse error with path, B1",
-    "layer": "parser",
+    "layer": "kotlin-only",
     "ref": "§15 OQ-12",
-    "note": ""
+    "note": "",
+    "kotlinOnly": "duplicate-keys"
   },
   {
     "file": "invalid/deep-nesting.json",
     "expect": "parse error, depth > 8, no StackOverflowError",
-    "layer": "parser",
+    "layer": "kotlin-only",
     "ref": "§15 OQ-9",
-    "note": "100k nested arrays"
+    "note": "100k nested arrays",
+    "kotlinOnly": "parser-depth"
   },
   {
     "file": "invalid/depth-9.json",
     "expect": "parse error, depth 9 > 8",
-    "layer": "parser",
+    "layer": "kotlin-only",
     "ref": "§15 OQ-9",
-    "note": "x- keys still count toward depth"
-  },
-  {
-    "file": "valid/size-257k.json",
-    "expect": "valid (under the 2 MiB cap)",
-    "layer": "store",
-    "ref": "§17 Q16",
-    "note": "was invalid under the old 256 KiB cap; over-cap rejection is covered by ConfigCodecTest.rejectsOversize"
+    "note": "x- keys still count toward depth",
+    "kotlinOnly": "parser-depth"
   },
   {
     "file": "invalid/missing-schemaVersion.json",
@@ -365,10 +372,10 @@
   },
   {
     "file": "invalid/package-1000-chars.json",
-    "expect": "invalid: other strings are capped at 256 (schema has no maxLength on package)",
-    "layer": "kotlin",
-    "ref": "§15 OQ-9",
-    "note": "see open question Q1"
+    "expect": "invalid, B2 (256-char cap, now in the schema)",
+    "layer": "both",
+    "ref": "§17 Q1",
+    "note": ""
   },
   {
     "file": "invalid/activity-injection.json",
@@ -394,23 +401,26 @@
   {
     "file": "invalid/duplicate-id.json",
     "expect": "invalid, B2",
-    "layer": "kotlin",
+    "layer": "kotlin-only",
     "ref": "§3, §15 OQ-5",
-    "note": ""
+    "note": "",
+    "kotlinOnly": "duplicate-ids"
   },
   {
     "file": "invalid/overlapping-cells.json",
     "expect": "invalid, B2",
-    "layer": "kotlin",
+    "layer": "kotlin-only",
     "ref": "§15 OQ-2, AQ-3",
-    "note": ""
+    "note": "",
+    "kotlinOnly": "overlapping-cells"
   },
   {
     "file": "invalid/cell-outside-grid.json",
     "expect": "invalid, B2 (grid is 4 wide)",
-    "layer": "kotlin",
+    "layer": "kotlin-only",
     "ref": "§15 OQ-2",
-    "note": ""
+    "note": "",
+    "kotlinOnly": "cell-outside-grid"
   },
   {
     "file": "invalid/negative-x.json",
@@ -527,8 +537,80 @@
   {
     "file": "invalid/2016-items.json",
     "expect": "invalid, B2 (>2000 items total)",
-    "layer": "kotlin",
+    "layer": "kotlin-only",
     "ref": "§15 OQ-9",
-    "note": "14 pages x 144, compact JSON so it stays under 256 KiB"
+    "note": "14 pages x 144, compact JSON so it stays under 256 KiB",
+    "kotlinOnly": "item-total"
+  },
+  {
+    "file": "valid/size-257k.json",
+    "expect": "valid (under the 2 MiB cap)",
+    "layer": "store",
+    "ref": "§17 Q16",
+    "note": "was invalid under the old 256 KiB cap"
+  },
+  {
+    "file": "valid/size-just-under-2mib.json",
+    "expect": "valid: exactly 2 MiB (2,097,152 bytes) is accepted",
+    "layer": "store",
+    "ref": "§17 Q16",
+    "note": "the cap is inclusive: decode rejects size > MAX_BYTES"
+  },
+  {
+    "file": "invalid/size-just-over-2mib.json",
+    "expect": "refused before full read (COLUMN_SIZE + streaming cap), last-good kept",
+    "layer": "kotlin-only",
+    "ref": "§4 step 1, §17 Q16",
+    "note": "2,097,153 bytes",
+    "kotlinOnly": "byte-cap"
+  },
+  {
+    "file": "valid/2000-items-long-strings.json",
+    "expect": "valid: 2000 items, 100-char packages, 152-char activities, 60-emoji labels, 64-char IDs (~1.46 MiB canonical)",
+    "layer": "both",
+    "ref": "§17 Q16",
+    "note": "canonical form; the launcher can read back its own write"
+  },
+  {
+    "file": "valid/writer-overflow-seed.json",
+    "expect": "valid to read (compact, under 2 MiB); after any edit the canonical output is over 2 MiB, so the writer refuses with B5 \"launcher.json would be over 2 MB.\" and keeps the edit in memory",
+    "layer": "store",
+    "ref": "§17 Q16",
+    "note": "writer-refusal seed (WB-REFUSE)"
+  },
+  {
+    "file": "invalid/tags-17.json",
+    "expect": "invalid, B2 (tags maxItems 16)",
+    "layer": "both",
+    "ref": "§17 Q1",
+    "note": ""
+  },
+  {
+    "file": "invalid/activity-257-chars.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§17 Q1",
+    "note": ""
+  },
+  {
+    "file": "invalid/hidden-257-chars.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§17 Q1",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-prefix-257-chars.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§17 Q1",
+    "note": ""
+  },
+  {
+    "file": "invalid/match-packages-257-chars.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§17 Q1",
+    "note": ""
   }
 ]
