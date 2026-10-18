@@ -56,6 +56,8 @@ data class LoadState(
     val conflict: Boolean = false,
     /** One-shot snackbar text, cleared by [ConfigEngine.consumeNotice]. */
     val notice: String? = null,
+    /** Whether the source has a folder grant that "Reconnect" can re-pick (false for app storage). */
+    val reconnectable: Boolean = true,
 ) {
     /** Problem lines for the detail view (kept for callers/tests that only need text). */
     val errors: List<String> get() = when (issue) { null, Issue.Missing -> emptyList(); else -> issue.details }
@@ -89,7 +91,7 @@ class ConfigEngine(
     /** Key of the last status.json written; identical results are not rewritten (no churn, no loop). */
     private var lastStatusKey: String? = null
 
-    private val _state = MutableStateFlow(initial())
+    private val _state = MutableStateFlow(initial().copy(reconnectable = source.reconnectable))
     val state: StateFlow<LoadState> = _state.asStateFlow()
 
     private fun initial(): LoadState {
@@ -104,7 +106,7 @@ class ConfigEngine(
             source = newSource
             lastStamp = null
             lastStatusKey = null
-            _state.update { it.copy(sourceName = newSource.displayName, issue = null) }
+            _state.update { it.copy(sourceName = newSource.displayName, issue = null, reconnectable = newSource.reconnectable) }
         }
         poll(force = true)
     }
@@ -149,7 +151,7 @@ class ConfigEngine(
             is ParseResult.Ok -> {
                 invalidHash = null
                 writeStatus("ok", emptyList(), hash)
-                _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash)
+                _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash, reconnectable = src.reconnectable)
                 saveLastGood(bytes)
                 true
             }
@@ -257,7 +259,7 @@ class ConfigEngine(
         source.write(bytes)
         lastStamp = source.stamp()
         writeStatus("ok", emptyList(), hash)
-        _state.value = LoadState(config, Origin.FILE, source.displayName, hash)
+        _state.value = LoadState(config, Origin.FILE, source.displayName, hash, reconnectable = source.reconnectable)
         saveLastGood(bytes)
         return hash
     }

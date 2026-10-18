@@ -8,6 +8,8 @@ data class Stamp(val docId: String, val lastModified: Long, val size: Long)
 /** Where launcher.json lives. Implementations: [LocalFileSource] (app storage), SafSource (picked folder). */
 interface ConfigSource {
     val displayName: String
+    /** False for app storage: there is no folder grant to reconnect, so B4 hides "Reconnect". */
+    val reconnectable: Boolean get() = true
     /** null when launcher.json does not exist. */
     fun stamp(): Stamp?
     /** null when launcher.json does not exist. Must enforce [maxBytes]. */
