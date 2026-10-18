@@ -529,6 +529,6 @@
     "expect": "invalid, B2 (>2000 items total)",
     "layer": "kotlin",
     "ref": "§15 OQ-9",
-    "note": "14 pages x 144"
+    "note": "14 pages x 144, compact JSON so it stays under 256 KiB"
   }
 ]

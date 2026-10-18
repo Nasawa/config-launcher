@@ -34,7 +34,7 @@ Principle: nothing in the file ever builds an Intent. The launcher only launches
 | HC-4 | Shortcut whose `shortcutId` the package doesn't publish. | Valid file. Greyed out at runtime and never launched ("Shortcut no longer available"). | R | A§15 OQ-8 |
 | HC-5 | `oversize-257k.json`, served by a fake provider whose `COLUMN_SIZE` lies (reports 1 KiB). | Refused before a full read based on `COLUMN_SIZE`, and the streaming cap stops a lying size at 256 KiB. No OOM. | S | A§4 step 1, A§15 OQ-9 |
 | HC-6 | `deep-nesting.json` (100k levels), `depth-9.json`, `valid/max-depth-8.json`. | Depth 9 or more: parse error, fails fast, no StackOverflowError. Exactly 8: valid. | U | A§15 OQ-9 |
-| HC-7 | Totals: `2016-items.json`, `21-pages.json`, 145 items on one page, 8 dock items, 49 folder items. | All rejected (2000 items, 20 pages, 144 per page, 7 dock, 48 per folder). | U | A§15 OQ-9, schema |
+| HC-7 | Totals (`2016-items.json` is compact JSON so that it stays under the byte cap): `2016-items.json`, `21-pages.json`, 145 items on one page, 8 dock items, 49 folder items. | All rejected (2000 items, 20 pages, 144 per page, 7 dock, 48 per folder). | U | A§15 OQ-9, schema |
 | HC-8 | String caps: label of 61 chars and of 200 KiB, id of 65 chars, package of 1000 chars, shortcutId of 257 chars. | All rejected. | U | A§15 OQ-9 |
 | HC-9 | Unicode: `valid/bidi-label.json`, `valid/emoji-label.json`, `invalid-utf8`, `lone-surrogate`, `nul-in-label`, `utf16`, `valid/bom.json`. | Bidi, zero-width and other Cf/Cc characters are stripped at render and the file is untouched. The real icon is shown, and long-press shows the real name and package. Invalid UTF-8, lone surrogates, NUL and UTF-16: B1. A BOM is accepted, and the next write has none. | U, R | A§15 OQ-7, OQ-11 |
 | HC-10 | `duplicate-key.json`. | B1 with a path. | U | A§15 OQ-12 |
@@ -292,3 +292,4 @@ Needs: the launcher set as Home, the folder picked, and the PC able to edit the 
 13. Q13: Can private-space apps be dragged anywhere at all (folders, dock), or is it blocked in the UI?
 14. Q14: Should `.configlauncher/` be committed or gitignored in a git-synced folder? Should the README say?
 15. Q15: Google Drive: is "best effort" shipped, or is Drive warned against in onboarding?
+16. Q16: **The item cap and the byte cap conflict.** A legal 2000-item config is about 301 KB in canonical (pretty) form, which is over the 256 KiB read cap, so the launcher would refuse to read its own write-back. This is shown by `CanonicalSizeTest` in PR #11. Lower the item cap (about 1700), raise the byte cap, or write compact JSON? Until then, the writer should refuse output over the cap and show B5.
