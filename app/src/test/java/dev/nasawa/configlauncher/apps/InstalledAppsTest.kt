@@ -55,8 +55,8 @@ class InstalledAppsTest {
         // Robolectric's PackageManager doesn't know these packages, so labels fall back to the
         // package name; that still exercises the case-insensitive sort.
         assertEquals(listOf("com.Alpha", "com.beta", "com.zeta"), apps.map { it.packageName })
-        assertEquals(setOf(0L), apps.map { it.userSerial }.toSet())
-        assertEquals("com.Alpha/com.Alpha.Main", apps.first().key)
+        assertEquals(setOf(dev.nasawa.configlauncher.model.Profile.PERSONAL), apps.map { it.profile }.toSet())
+        assertEquals("personal:com.Alpha/com.Alpha.Main", apps.first().key)
     }
 
     @Test fun loadIsIdempotent() {
