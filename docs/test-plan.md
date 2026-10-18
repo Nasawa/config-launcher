@@ -1,8 +1,8 @@
 # Test plan: config-launcher
 
-Sources: [`ARCHITECTURE.md`](../ARCHITECTURE.md) (cited as **A§n**; resolved questions as **A§15 OQ-n**, **A§16 AQ-n**, **A§17 Qn** and **A§18.n**), [`schema/launcher-config.v1.schema.json`](../schema/launcher-config.v1.schema.json), [`docs/ux.md`](ux.md) (banners B1-B8, **UX§n**), and [`docs/research-spike.md`](research-spike.md) (**spike §n**). Later sections override earlier ones: A§18 > A§17 > A§15/§16. **v3** (this revision) replaces Q1-Q16 of v2 with the A§17 rulings and adds the A§18 changes: minSdk 23, automatic merge, Skip for now, the keyboard-up drawer, the label backdrop, the device matrix and performance budgets. Each case cites its ruling. The questions still open are listed at the end.
+Sources: [`ARCHITECTURE.md`](../ARCHITECTURE.md) (cited as **A§n**; resolved questions as **A§15 OQ-n**, **A§16 AQ-n**, **A§17 Qn** and **A§18.n**), [`schema/launcher-config.v1.schema.json`](../schema/launcher-config.v1.schema.json), [`docs/ux.md`](ux.md) (banners B1-B8, **UX§n**), and [`docs/research-spike.md`](research-spike.md) (**spike §n**). Later sections override earlier ones: A§18 > A§17 > A§15/§16. **v3** (this revision) replaces Q1-Q16 of v2 with the A§17 rulings and adds the A§18 changes: **minSdk 29** (coordinator ruling of 2026-10-18 15:27 MDT, superseding A§18.3's 23, which the repo hasn't been updated to yet; see Q-v3-9), automatic merge, Skip for now, the keyboard-up drawer, the label backdrop, the device matrix and performance budgets. Each case cites its ruling. The questions still open are listed at the end.
 
-Levels: **U** = JVM unit test (`model`/`config`, no Android), **S** = store test against the fake `DocumentAccess` (A§11), **R** = Robolectric, **I** = instrumented (emulator matrix API 23, 26, 29, 35, 36 per A§18.3, test `DocumentsProvider`), **M** = manual on a real phone.
+Levels: **U** = JVM unit test (`model`/`config`, no Android), **S** = store test against the fake `DocumentAccess` (A§11), **R** = Robolectric, **I** = instrumented (emulator matrix API 29, 35, 36, test `DocumentsProvider`), **M** = manual on a real phone.
 
 Fixtures are real files in [`test-fixtures/configs/`](../test-fixtures/configs/). Each one's expected outcome is in `manifest.json` (see §2 below). `test-fixtures/gen_fixtures.py` regenerates them deterministically, and `test-fixtures/check_schema.py` checks them against the schema (0 mismatches; one fixture can't be checked because Python's parser hits its recursion limit). A copy lives in `app/src/test/resources/configs/` for the JVM tests (A§11); keep the two in sync by regenerating them.
 
@@ -225,7 +225,7 @@ Unit-level table test for the replay engine: rows for {Move, Add, Remove, Rename
 | LR-4 | Launcher in the background. | Zero polls (assert with the fake clock and no wakeups). | S |
 | LR-5 | Cold start, 300-item config. | First frame **< 500 ms** on a mid device, from last-good. | I (macrobenchmark) |
 | LR-6 | Write-back debounce. | Write starts 750 ms after the last edit and never mid-drag. | S |
-| LR-7 | **Poll cost and battery** (A§17 Q10). Targets: ≤ 5 ms CPU per poll (one children query, plus a ≤ 2 MiB hash read every 5th poll), < 1 %/h battery with home on screen, zero polls when home isn't visible. | **Per-poll cost:** a Macrobenchmark or instrumented trace with `Trace.beginSection("cl-poll")` around `engine.poll()`, then read the slice CPU time in Perfetto. Report the median and p95 over 300 polls with a 5 KB file and with a 2 MiB file (the hash poll). Run on the A53 and the OnePlus 2. **Battery:** A53, screen on at fixed brightness, launcher in front, airplane mode on, for 60 min. `adb shell dumpsys batterystats --reset`, then afterwards `adb bugreport` and load it in **Battery Historian**. Compare the app's estimated mAh with the battery capacity: < 1 % of capacity per hour. Repeat with home in the background for 15 min and assert 0 `cl-poll` slices and no wakeups. | I, M |
+| LR-7 | **Poll cost and battery** (A§17 Q10). Targets: ≤ 5 ms CPU per poll (one children query, plus a ≤ 2 MiB hash read every 5th poll), < 1 %/h battery with home on screen, zero polls when home isn't visible. | **Per-poll cost:** a Macrobenchmark or instrumented trace with `Trace.beginSection("cl-poll")` around `engine.poll()`, then read the slice CPU time in Perfetto. Report the median and p95 over 300 polls with a 5 KB file and with a 2 MiB file (the hash poll). Run on the A53. **Battery:** A53, screen on at fixed brightness, launcher in front, airplane mode on, for 60 min. `adb shell dumpsys batterystats --reset`, then afterwards `adb bugreport` and load it in **Battery Historian**. Compare the app's estimated mAh with the battery capacity: < 1 % of capacity per hour. Repeat with home in the background for 15 min and assert 0 `cl-poll` slices and no wakeups. | I, M |
 | LR-8 | The file is replaced via rename (new docId), as git or Syncthing do. | Re-found by name and reloaded. | S, I |
 
 Sync transfer time is excluded from all targets (A§15 OQ-23).
@@ -303,21 +303,18 @@ Sync transfer time is excluded from all targets (A§15 OQ-23).
 | LB-2 | Backdrop on, on a busy, bright wallpaper. | Label contrast ≥ 4.5:1 against the scrim (screenshot + contrast check). Folder and dock labels: see Q-v3-3. | M |
 | LB-3 | Backdrop on with a 60-emoji label and with a bidi-stripped label. | The scrim wraps the ellipsized text, with no overflow outside the cell. | I |
 
-## 13. API-level gates (minSdk 23, A§18.3)
+## 13. API-level gates (minSdk 29)
 
-Robolectric runs at `@Config(sdk = [23, 26, 35])`. Android Lint `NewApi` is an error in CI. Emulators cover API 23, 26, 29, 35 and 36.
+minSdk is 29 (Android 10). RoleManager, `LauncherApps.getProfiles`, shortcuts, adaptive icons and `requestQuietModeEnabled` are therefore always available. The pre-29 cases from the minSdk-23 draft are dropped: shortcuts below 26, plain icons, the home-settings fallback, the SAF `Show internal storage` hint. The old wall-display devices are **test-only** (Q-v3-9). Robolectric runs at `@Config(sdk = [29, 35])`. Android Lint `NewApi` is an error in CI.
 
 | ID | Steps | Expected | Level |
 |---|---|---|---|
-| API-1 | **Shortcuts below 26:** a `shortcut` item on API 23 and 24. | Rendered greyed with `Shortcuts need Android 8 or later.` Never launches. No call to `getShortcuts`, `pinShortcuts` or `startShortcut` (Robolectric shadow asserts 0 calls). The pin activity's intent filter is harmless. | R (sdk 23), I (API 23) |
-| API-2 | Shortcut on API 26+. | Launches when we're the default launcher (unchanged). | I (26, 35) |
-| API-3 | **Plain icons below 26:** `getBadgedIcon` returns a non-adaptive drawable on API 23/24. | Drawn as-is, with no shape mask. No `ClassCastException`: never cast to `AdaptiveIconDrawable` below 26. Screenshot test on API 23 vs 26. | R, I |
-| API-4 | **Home-settings fallback on Android 9 and older (API 23-28):** onboarding `Set as Home`. | Opens `Settings.ACTION_HOME_SETTINGS`. If that intent doesn't resolve (simulate with Robolectric, and it may happen on old Samsung ROMs), it opens `Settings.ACTION_SETTINGS` with the copy `Open Apps → Default apps → Home app`. On 29+ it uses `RoleManager.createRequestRoleIntent(ROLE_HOME)`. | R (sdk 23/28/29), I (23, 26, 29), M (S8+) |
-| API-5 | Profiles below 26. | `UserManager.getUserProfiles()` is used, with no `LauncherApps.getProfiles()` call (it's API 26). | R (sdk 23) |
-| API-6 | Quiet mode: paused work app on API 23, on 24-27 and on 28+. | 23: assumed not paused. 24-27: greyed with the hint, never launches, no `requestQuietModeEnabled`. 28+: tap brings up the system unpause prompt. | R |
-| API-7 | SAF picker on API 23-25. | Onboarding shows the `Show internal storage` hint (⋮ in the picker). `DocumentsContract.isTreeUri` is never called. `"wt"` truncation is verified by reading back. | I (23), M (Tab S2) |
-| API-8 | Private space below 35. | No calls to private-space APIs. Already gated. | R |
-| API-9 | Lint `NewApi` = error in CI. | A deliberately ungated call in a scratch branch fails CI (one-time check). | CI |
+| API-1 | Install on API 28 (the S8+, if it's used as a test-only device, or an API 28 emulator locally). | `INSTALL_FAILED_OLDER_SDK`. Documented as unsupported, not a bug. | M |
+| API-2 | Onboarding `Set as Home` on 29+. | `RoleManager.createRequestRoleIntent(ROLE_HOME)`. If the user declines, the onboarding step stays, and the app still works as a normal activity minus shortcuts (A§8). | R (sdk 29), I |
+| API-3 | Shortcut items on 29+. | Launch when we're the default launcher. Otherwise disabled with `Set as Home to use shortcuts` (A§8). | R, I |
+| API-4 | Private space below 35. | No private-space API calls. Gated at 35. | R (sdk 29) |
+| API-5 | Quiet mode on 29+: paused work app. | Greyed with the badge. Tap brings up the system unpause prompt (`requestQuietModeEnabled`). | R, I |
+| API-6 | Lint `NewApi` = error. | A deliberately ungated API 30+ call in a scratch branch fails CI (one-time check). | CI |
 
 ## 14. Samsung One UI quirks
 
@@ -325,8 +322,8 @@ Marked **(R)** where the expectation comes from research (public reports or docs
 
 | ID | Steps | Expected / what to record | Basis |
 |---|---|---|---|
-| OU-1 | **Default launcher prompt:** install, open, `Set as Home`. Then press Home after installing another launcher, and after an OTA. | The RoleManager dialog on One UI 8 (A53/S25). On the S8+ (API 28): the settings fallback (API-4). Record whether One UI resets the default home after an update or an app update (reported on some OEMs, A§13 "home role resets"). | (R) for resets |
-| OU-2 | **Secure Folder as a profile.** One UI 8 reclassified Secure Folder as a **private** profile. Older One UI implemented it as a **work (managed) profile** (Android Authority, Android Police reports on One UI 8). A53/S25: Secure Folder exists, open or hidden. | One UI 8: not in our drawer as a work profile, and not shown unless we hold ACCESS_HIDDEN_PROFILES + HOME (we don't). On older One UI (A51 on Android 13, S8+): Secure Folder may show up as the "first managed profile" and be treated as `work`. Record which profile `InstalledApps` picks when both a real work profile and Secure Folder exist. See Q-v3-4. | (R) |
+| OU-1 | **Default launcher prompt:** install, open, `Set as Home`. Then press Home after installing another launcher, and after an OTA. | The RoleManager dialog on One UI 8 (A53/S25). Record whether One UI resets the default home after an update or an app update (reported on some OEMs, A§13 "home role resets"). | (R) for resets |
+| OU-2 | **Secure Folder as a profile.** One UI 8 reclassified Secure Folder as a **private** profile. Older One UI implemented it as a **work (managed) profile** (Android Authority, Android Police reports on One UI 8). A53/S25: Secure Folder exists, open or hidden. | One UI 8: not in our drawer as a work profile, and not shown unless we hold ACCESS_HIDDEN_PROFILES + HOME (we don't). On older One UI (e.g. the optional A51 on Android 13): Secure Folder may show up as the "first managed profile" and be treated as `work`. Record which profile `InstalledApps` picks when both a real work profile and Secure Folder exist. See Q-v3-4. | (R) |
 | OU-3 | **Game Launcher / Game Booster.** | Game Launcher is an app, not a profile. Record whether games are hidden from LauncherApps when "Hide game apps" is on in Game Launcher. Expected: still listed by LauncherApps (they're normal launchable activities), unless Samsung hides them. | (R), unverified |
 | OU-4 | **Battery optimisation and app sleeping:** Settings → Battery → Background usage limits (Sleeping / Deep sleeping apps), and "Put unused apps to sleep". | Our polling runs only while home is visible, so sleep should not affect it. Check: (a) after 1 h idle with the launcher in "Sleeping apps", pressing Home polls immediately (LR-1 ≤ 1 s); (b) the launcher is never auto-added to Deep sleeping; (c) the git client's own sync isn't killed (that's the git client's problem, but record it). The default home is normally exempt from app standby (R). | (R) |
 | OU-5 | **One UI Home gestures:** Settings → Display → Navigation bar → Swipe gestures, with our launcher as Home. | Gestures stay enabled with a third-party home. Record (a) swipe-up-to-home latency before the first tap registers (a known One UI delay with third-party launchers: recents are provided by One UI Home), and (b) whether the recents animation targets our icon. Document it, but don't treat it as our bug. | (R) |
@@ -336,37 +333,30 @@ Marked **(R)** where the expectation comes from research (public reports or docs
 
 ## 15. Devices, emulators and performance
 
-### 15.1 Device matrix (A§18.1, A§18.3)
-API levels are the latest **official** Android for each model, from A§18.3. The installed version on Christopher's units isn't known; record it on first run (`adb shell getprop ro.build.version.release` / `ro.build.version.sdk`, and the One UI version from Settings → About).
+### 15.1 Device matrix
+API levels are the latest **official** Android for each model, as listed in A§18.3. The version actually installed on Christopher's units isn't known; record it on first run (`adb shell getprop ro.build.version.sdk`, and the One UI version from Settings → About).
 
-| Order | Device | Latest official Android (API) | Role | Coverage | Not available |
-|---|---|---|---|---|---|
-| 1 | **Galaxy A53** | 16 (36) | First test device | **Full manual pass**, git sync, One UI quirks (§14), battery (LR-7) | — |
-| 2 | **Galaxy S25 Ultra** | 16 (36) | Daily phone | Full pass after the A53. Private space and Secure Folder (OU-2) | — |
-| 3 | **Galaxy Tab S2** *or* **OnePlus 2** (one per release, alternating) | Tab S2: 7.0 (24). OnePlus 2: 6.0.1 / OxygenOS 3 (23) | Wall display | Smoke + API gates (§13) + performance (§15.3) | Shortcuts, adaptive icons, RoleManager. Quiet-mode request (both). Private space |
-| when convenient | Galaxy A51 | 13 (33) | Spare | Smoke | Private space |
-| when convenient | Galaxy S8+ | 9 (28) | Wall display | Smoke, home-settings fallback (API-4) | RoleManager, private space |
-| when convenient | OnePlus One (modded) | Stock 6.0.1 (23); **custom ROM version unknown**, likely newer | Wall display | Smoke only | Depends on the ROM. Record it, don't assume |
+| Order | Device | Latest official Android (API) | Coverage |
+|---|---|---|---|
+| 1 | **Galaxy A53** | 16 (36) | **Full manual pass**, git sync first, One UI quirks (§14), poll cost and battery (LR-7), cold start (PF-2) |
+| 2 | **Galaxy S25 Ultra** | 16 (36) | Full pass after the A53. Private space, Secure Folder (OU-2) |
+| optional | Galaxy A51 | 13 (33) | Smoke. Secure Folder on older One UI (OU-2). No private space |
+| test-only | S8+ (28), Tab S2 (24), OnePlus 2 (23), OnePlus One (modded, ROM version unknown) | Below minSdk 29 | Not supported. At most API-1 (install refused). No performance targets |
 
 ### 15.2 Emulator matrix (CI)
 | API | Image | Purpose |
 |---|---|---|
-| 23 | `default` x86 | minSdk floor: shortcuts greyed, legacy icons, settings fallback, SAF hint. Pending until minSdk 23 lands |
-| 26 | `default` x86 | Shortcuts and adaptive icons begin. `LauncherApps.getProfiles` |
-| 29 | `default` x86 | RoleManager begins |
+| 29 | `default` x86 | minSdk floor. RoleManager, `getProfiles`, quiet-mode request |
 | 35 | `google_apis` x86_64 | Private space. Edge-to-edge |
 | 36 | `google_apis` x86_64 | Current (A53/S25 level) |
 
-Implemented as `.github/workflows/emulator-smoke.yml` (PR #23): nightly, on demand, or on PRs labelled `emulator`. For now it installs and cold-starts with crash/ANR detection, plus `am start -W` timings. Instrumented tests (`connectedDebugAndroidTest`) join the same matrix once `app/src/androidTest` exists.
+Implemented as `.github/workflows/emulator-smoke.yml` (PR #23): nightly, on demand, or on PRs labelled `emulator`. It installs and cold-starts with crash/ANR detection, plus `am start -W` timings. Instrumented tests (`connectedDebugAndroidTest`) join the same matrix once `app/src/androidTest` exists.
 
 ### 15.3 Performance budgets and how to measure them
 | ID | Budget | Device | Method | Pass |
 |---|---|---|---|---|
-| PF-1 | Cold start to first frame **≤ 1.5 s** | OnePlus 2 (API 23, JIT-only, R8-minified release build) | `adb shell am force-stop dev.nasawa.configlauncher`, then `adb shell am start -W -n dev.nasawa.configlauncher/.MainActivity`. Read `TotalTime`. 10 runs after one warm-up install, with a 300-item config. Cross-check the `Displayed` line in logcat. Macrobenchmark `StartupTimingMetric` (`timeToInitialDisplayMs`) on the API 26+ devices. | Median ≤ 1500 ms, no run > 2000 ms |
-| PF-2 | Cold start < 500 ms (A§11) | A53 | Same, plus Macrobenchmark `StartupTimingMetric` with a baseline profile installed | Median < 500 ms |
-| PF-3 | **Smooth drawer scrolling with 2000 apps** | Galaxy Tab S2 (API 24) | Install 2000 dummy launchable APKs (generated stub APKs, `adb install-multiple` in batches). Open the drawer and fling top-to-bottom 5 times. Measure with `adb shell dumpsys gfxinfo dev.nasawa.configlauncher reset` before and `dumpsys gfxinfo … framestats` after. Macrobenchmark `FrameTimingMetric` needs API 24+, so it works here. | **Janky frames ≤ 5%** and p90 frame time ≤ 16.7 ms (60 Hz); no frame > 100 ms. If it fails, A§18.3 says: try `Reduce motion`, don't raise minSdk |
-| PF-4 | First drawer open with 2000 apps | Tab S2 | Perfetto trace from tap to first drawn frame of the list | Record it (no budget set, see Q-v3-5) |
-| PF-5 | Poll cost and battery | A53 (+ OnePlus 2 for CPU) | See LR-7 | ≤ 5 ms per poll, < 1%/h |
+| PF-2 | Cold start to first frame < 500 ms with a 300-item config (A§11) | A53 | `adb shell am force-stop dev.nasawa.configlauncher`, then `adb shell am start -W -n dev.nasawa.configlauncher/.MainActivity` and read `TotalTime`. 10 runs after one warm-up. Cross-check with Macrobenchmark `StartupTimingMetric` (`timeToInitialDisplayMs`), R8-minified release build with a baseline profile. | Median < 500 ms |
+| PF-5 | Poll cost and battery | A53 | See LR-7 | ≤ 5 ms per poll, < 1%/h |
 
 ## 16. Manual QA matrix, for later
 
@@ -406,8 +396,8 @@ Report anything that differs, with a screenshot.
 
 - `build` job (existing): `./gradlew testDebugUnitTest` (JVM + Robolectric + store fakes, including `FixtureConformanceTest`, `KotlinOnlyConformanceTest`, `WriterRefusalTest`) and `assembleDebug`.
 - Add a step for `python3 test-fixtures/check_schema.py` (needs `pip install jsonschema`).
-- `emulator-smoke` job (PR #23): API 23/26/29/35/36 matrix, nightly, on demand, or on the `emulator` label.
-- Robolectric at `@Config(sdk = [23, 26, 35])` for the API-gate cases. Lint `NewApi` as an error.
+- `emulator-smoke` job (PR #23): API 29/35/36 matrix, nightly, on demand, or on the `emulator` label.
+- Robolectric at `@Config(sdk = [29, 35])` for the API-gate cases. Lint `NewApi` as an error.
 - A test that fails on `android.*` imports in `model` and `config` (A§10, exists as `PureLayerTest`).
 
 ## Open questions (v3)
@@ -418,7 +408,5 @@ All of Q1-Q16 from v2 are resolved by A§17. Still open:
 2. **Q-v3-2** Drawer with a hardware keyboard or DeX: still focus and show the IME?
 3. **Q-v3-3** Label backdrop: does it apply to folder labels and the dock (where labels are hidden), or home page labels only?
 4. **Q-v3-4** Secure Folder on older One UI (A51, S8+) can look like a managed profile. If both a real work profile and Secure Folder exist, `InstalledApps` picks the "first managed profile". Should Secure Folder be excluded explicitly (if detectable), and should "first work profile wins" (OQ-29) prefer the real one?
-5. **Q-v3-5** No budget is set for the first drawer open with 2000 apps on the Tab S2 (PF-4). Set one, e.g. ≤ 1 s?
-6. **Q-v3-6** Auto-merge Undo (CM-6): if the file changes again between the merge and the Undo tap, does Undo still write the old file version (overwriting the newer agent edit), or is it disabled?
-7. **Q-v3-7** The OnePlus 2 and the Tab S2 alternate per release. Which one comes first for v0.1?
-8. **Q-v3-8** API 25: A§18.3 gates shortcuts at 26 although 25 could launch them. No device runs 25, so the emulator matrix skips it. Confirm no test at 25 is needed.
+5. **Q-v3-6** Auto-merge Undo (CM-6): if the file changes again between the merge and the Undo tap, does Undo still write the old file version (overwriting the newer agent edit), or is it disabled?
+6. **Q-v3-9** minSdk 29 came from the coordinator (2026-10-18, 15:27 MDT), but ARCHITECTURE §18.3 on main still says 23, and Sprite's open PR #31 implements 23 with API gates. Archimedes should amend §18.3 (device list, cost section, CI matrix), and #31 needs re-scoping. Until then, this plan follows minSdk 29.
