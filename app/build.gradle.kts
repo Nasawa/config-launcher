@@ -22,9 +22,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     lint {
-        // A missed SDK gate (e.g. private space, 35+) must fail CI. Only NewApi for now;
-        // the other pre-existing lint findings are a separate cleanup.
-        checkOnly += "NewApi"
+        // Full lint runs in CI; any error fails the build. A missed SDK gate must fail too.
         error += "NewApi"
         abortOnError = true
         checkReleaseBuilds = false

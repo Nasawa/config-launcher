@@ -2,6 +2,7 @@ package dev.nasawa.configlauncher
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -14,6 +15,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Launcher: back on home does nothing. Compose BackHandlers (drawer, dialogs) still take priority.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {}
+        })
         setContent { HomeScreen(vm) }
     }
 
@@ -21,7 +26,4 @@ class MainActivity : ComponentActivity() {
     override fun onStart() { super.onStart(); vm.store.start() }
     override fun onStop() { vm.store.stop(); super.onStop() }
 
-    @Deprecated("Launcher: back on home does nothing")
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() { }
 }
