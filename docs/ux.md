@@ -95,7 +95,7 @@ Gestures and taps (home):
 |---|---|
 | Tap app | Launch via `LauncherApps.startMainActivity` |
 | Tap folder | Open folder (§3) |
-| Tap dimmed item | Nothing launches. A hint sheet says why: `Not installed`, `Shortcut no longer available`, `Work apps are paused` (tap → system unpause prompt) or `Set as Home to use shortcuts`, with **`Remove from layout`** (one write). `Open store page` comes later |
+| Tap dimmed item | Nothing launches. A hint sheet says why: `Not installed`, `Shortcut no longer available`, `Work apps are paused`, `Turn on "Include work apps in config" to use this.` (tap → system unpause prompt) or `Set as Home to use shortcuts`, with **`Remove from layout`** (one write). `Open store page` comes later |
 | Long-press app, shortcut or folder | Item sheet showing the **real app name and package** (so a label override can't disguise an app), plus `Edit layout`, `App info`, `Remove from home` |
 | Long-press empty space | Home menu: `Edit layout`, `Reload layout`, `Settings` |
 | Swipe up anywhere / tap ⌃ handle | Open the drawer (§2) |
@@ -108,12 +108,16 @@ Gestures and taps (home):
 - An `app` with an `activity` that no longer exists falls back to the package's only launcher activity, if there is
   exactly one (the file is left unchanged), and is dimmed if there are several (ARCHITECTURE OQ-27).
 - Installed apps that are placed nowhere are **Unsorted**: per `unsorted.mode` they appear in the drawer (default), also
-  on a synthetic last page titled `unsorted.pageTitle` (default `Unsorted`), or nowhere. Unsorted apps are never written
+  on a synthetic last page titled `unsorted.pageTitle` (default `Unsorted`). `hidden` only removes that page; the drawer still lists them (ARCHITECTURE §17 Q11). Unsorted apps are never written
   to the file. Only an explicit drag places them.
 - Work-profile apps show the system work badge. With **Include work apps in config** off (default) they appear only in
-  the drawer and **can't be placed** on pages, the dock or folders (drag is refused, see §4.2).
-- Private-space apps appear only in the system private-space section of the drawer while it's unlocked. They're never
-  placed, never written, and never shown as Unsorted.
+  the drawer and **can't be placed** on pages, the dock or folders (drag is refused, see §4.2). Work items **already in
+  the file** while the setting is off render greyed with the work badge. Tapping one shows the hint
+  `Turn on "Include work apps in config" to use this.` They aren't invalid and are never deleted. Turning the setting on
+  makes them live without a write (§17 Q12).
+- Private-space apps appear only in the system-style private-space section at the bottom of the drawer while it's
+  unlocked. They're never placed, never written, never shown as Unsorted, and not affected by `drawer.hidden`. They
+  **can't be dragged** out of that section, and long-press offers only the system actions (§17 Q13).
 - Labels: bidi and zero-width control characters are stripped at render time (the file is left as written).
 
 ---
@@ -138,9 +142,10 @@ Gestures and taps (home):
 | Search | Field at top, hint `Search apps`. **The keyboard does not open automatically** (Q-C2). Filters live on each keystroke: case- and accent-insensitive match on the label start or word start, then anywhere. Enter launches the first result. No results: `No apps match "xyz".` |
 | Sorting | `drawer.sort`: `label` (default, A–Z with locale-aware `Collator`, numbers first) or `installTime` (newest first). Not editable in the UI in the MVP |
 | Groups | `drawer.rules[]` create titled groups (the rule's `group`) at the top of the list, in rule order, each sorted as above. An app matching no rule is listed under `All apps`. Rules never affect home pages |
-| Hidden apps | Package names in `drawer.hidden[]`. Not shown in the list, search or Unsorted. Menu `⋮` → `Show hidden apps` toggles a section at the bottom titled `Hidden apps (3)`. Long-press a drawer app → `Hide`; long-press a hidden app → `Unhide`. Each is one write. Home-screen items stay visible even if hidden from the drawer |
+| What's listed | **Every launchable app** in the personal profile (and the work profile, badged), **including apps already placed** on pages, the dock or in folders, minus `drawer.hidden` (§17 b). Private space has its own section (§1.2) |
+| Hidden apps | Package names in `drawer.hidden[]`. Not shown in the list, search or Unsorted. Long-press a drawer app → `Hide` (one write). Hidden apps are listed in **Settings → Hidden apps**, where `Unhide` is one write. A hidden app placed explicitly on a page still shows and launches there |
 | Long-press app | `Add to home` (first free cell, page 1 onward, else a new page), `Hide`, `App info`. Dragging out of the drawer enters edit mode on home (§4). Work apps offer `Add to home` only when **Include work apps in config** is on |
-| Menu `⋮` | `Show hidden apps` (checkbox), `Settings` |
+| Menu `⋮` | `Settings` |
 
 ---
 
@@ -247,14 +252,15 @@ apps in the drawer.
 
 | ID | Cause | Banner text (exact) | Buttons |
 |---|---|---|---|
-| **B1** | JSON parse error (syntax, duplicate key, bad encoding, over 256 KiB or too deeply nested) | `Can't read launcher.json. Showing the last working layout.` | `Details` |
+| **B1** | JSON parse error (syntax, duplicate key, bad encoding, over 2 MiB or too deeply nested, a NUL character) | `Can't read launcher.json. Showing the last working layout.` | `Details` |
 | **B2** | Validation errors (schema: wrong type, unknown non-`x-` key, unsupported `type` such as `widget`, missing `schemaVersion`; plus duplicate IDs, overlapping or out-of-range cells, grid outside 2–12) | `launcher.json has 3 problems. Showing the last working layout.` (`1 problem` singular) | `Details` |
-| **B3** | Folder access lost or folder gone (persisted grant missing) | `Can't reach your config folder. Showing the last working layout.` | `Reconnect` (re-pick the folder) · `Use built-in copy` (keep using the app's copy; dismisses the banner) |
-| **B4** | Folder fine, `launcher.json` missing | `No launcher.json yet.` | `Create from current layout` |
+| **B3** | Folder access lost or folder gone: the persisted grant is missing, or querying the folder itself fails | `Can't reach your config folder. Showing the last working layout.` | `Reconnect` (re-pick the folder) only, since nothing can be created there (§17 AQ-8) |
+| **B4** | Folder readable, no `launcher.json` in it. Never auto-created | `No launcher.json yet.` | `Create from current layout` · `Reconnect` (wrong folder picked, or the sync app hasn't delivered the file yet). Not cleared by our own create alone; it clears when a valid file appears (§17 AQ-8, a) |
 | **B5** | Save failed (§4.3) | `Couldn't save your change.` | `Retry` |
-| **B6** | Conflict (§4.4) | `launcher.json changed while you were editing.` | `Use file` · `Keep mine` (only `Use file` if the replayed result fails validation) |
+| **B5** (size) | The serialized layout would be over 2 MiB, so the writer refuses (§17 Q16). The edit stays on screen, in memory | `Couldn't save your change: launcher.json would be over 2 MB.` | `Retry` (after removing items or `x-` data) |
+| **B6** | Conflict (§4.4) | `launcher.json changed while you were editing.` With more than one pending edit: `launcher.json changed while you were editing (2 changes).` | `Use file` · `Keep mine` (only `Use file` if the replayed result fails validation). Edits made while B6 is up join the queue and stay on screen (§17 Q8) |
 | **B7** | `schemaVersion` newer than supported | `This file needs a newer Config Launcher.` | `Details` |
-| **B8** (notice) | `schemaVersion` older: migrated in memory, not yet written | `launcher.json uses an older format. It will be upgraded on your next edit.` | `Upgrade file` (backup to `.configlauncher/backup/` first, then write) |
+| **B8** (notice, lowest priority: shown only when no B1–B6 banner is up, and below them) | `schemaVersion` older: migrated in memory, not yet written | `launcher.json uses an older format (v{N}). It will be upgraded on your next change.` | `Upgrade now` (saves the original to `.configlauncher/backup/launcher.v{N}.{timestamp}.json`, then writes through the normal path with the hash check and B6) · `✕` (dismissed for that file hash; it returns only for a different older-format file. The next edit still upgrades, with a backup) |
 | — (notice) | Sync conflict copies next to the file (§5) | `Sync conflict copies found: <names>. Only launcher.json is used.` | `×` |
 
 `Create from current layout` writes the layout currently on screen (last working copy, or the built-in default) to
@@ -322,6 +328,7 @@ Shown on first launch, before the home screen. Each step is one full screen with
    - Body: `Pick a folder for launcher.json. A folder that a sync app (like Syncthing) or a git app keeps in sync lets you edit it from your computer, with history. Config Launcher also keeps a small .configlauncher folder there for status and backups.`
    - Button: `Choose folder` → system picker (`ACTION_OPEN_DOCUMENT_TREE`). Take a persistable read+write grant.
    - Picker cancelled → stay on this screen, no message. (Whether to add a "skip" path is Q-C1.)
+   - **Cloud folder** (the picked folder's provider isn't local storage, `com.android.externalstorage.documents`): a soft warning before continuing: `Cloud folders can take a while to sync. A Syncthing or git folder works best.` Buttons: `Use anyway` · `Choose another folder`. Not blocked (§17 Q15).
 3. **Folder result**
    - **Contains a valid `launcher.json`:** `Found launcher.json with 3 pages and 24 items.` Buttons: `Use this layout` · `Start fresh` (the existing file is first saved to `.configlauncher/backup/`).
    - **Contains an invalid `launcher.json`:** `launcher.json in this folder has problems.` Buttons: `See problems` (§6.2) · `Start fresh` (backup first, as above) · `Choose another folder`.
@@ -346,7 +353,8 @@ Shown on first launch, before the home screen. Each step is one full screen with
 |---|---|
 | `Config folder` | Folder name and last load time, `Change folder`, `Reload layout` |
 | `Restore previous layout` | Lists the app-private history (last 10, newest first, with time). Picking one writes it to `launcher.json` like any edit (hash check, safe write) |
-| `Include work apps in config` | Switch, default **off**. Off: work apps show in the drawer with the badge but can't be placed, and nothing about them is written. Proposal (not defined in ARCHITECTURE): turning it off doesn't delete work items already in the file. They stay and show dimmed (Q-C7) |
+| `Include work apps in config` | Switch, default **off**. Off: work apps show in the drawer with the badge but can't be placed, and nothing new about them is written. Work items already in the file stay, greyed, with the hint in §1.2. Turning it on makes them live without a write (§17 Q12) |
+| `Hidden apps` | The packages in `drawer.hidden`, each with `Unhide` (one write) |
 | `Home app` | Status + `Set as home app` |
 | `Grid` | Columns/rows pickers (3–6 × 4–7). They write `grid` like any edit. Shrinking that would push items off-grid is refused with `Move apps out of the last column first.` |
 | `About` | Version and licenses. No Kvaesitso code is copied (ARCHITECTURE §13) |
@@ -357,11 +365,13 @@ Shown on first launch, before the home screen. Each step is one full screen with
 
 | When | Text |
 |---|---|
-| External reload | `Layout updated from launcher.json.` |
+| External reload (also when a drag is cancelled while a new file is waiting, §17 Q6) | `Layout updated from launcher.json.` |
+| Backup copy couldn't be updated (app storage full; the folder write succeeded). One time, retried on the next load or write (§17 Q4) | `Couldn't update the backup copy (phone storage full).` |
+| Work item tap while the opt-in is off | `Turn on "Include work apps in config" to use this.` |
 | Problem fixed | `Layout loaded.` |
 | Dimmed item tap | Hint sheet (§1.1): `Not installed` / `Shortcut no longer available` / `Work apps are paused` / `Set as Home to use shortcuts`, with [`Remove from layout`] |
 | First edit while the file is invalid | `Your broken launcher.json was saved to .configlauncher/broken/.` |
-| `Keep mine` skipped an edit | `1 change skipped because the item was removed in the file.` [`Undo`] (plural: `3 changes skipped…`) |
+| `Keep mine` skipped an edit | `1 change skipped because the item was removed in the file.` [`Undo`] (plural: `3 changes skipped…`). A folder whose members are mostly gone: `Folder "<Label>" was skipped because its apps were removed in the file.` (§17 Q9: a partial folder is built from the remaining members; with fewer than 2, the remaining one is placed as a plain item) |
 | Work app drag refused | `Turn on "Include work apps in config" in Settings to place work apps.` |
 | Removed from home | `Removed <Label> from home.` [`Undo`] (Undo = a second write restoring it) |
 | Hidden | `<Label> hidden from the app list.` [`Undo`] |
@@ -447,7 +457,7 @@ The architecture proposes answers to some of these (noted). They stay here until
 - **Q-C4** Home labels: plain white with a shadow (spec), or an optional dark backdrop behind labels for busy wallpapers?
 - **Q-C5** The architecture chose JSON only (no comments; use `x-note` keys). OK for you? (Same as ARCHITECTURE §14 Q2.)
 - **Q-C6** History: the architecture keeps the last 10 versions in app-private storage (not in your folder) and relies on git/Syncthing for the PC side. Enough?
-- **Q-C7** If you turn **Include work apps in config** off after placing work apps, should those items stay in the file (spec: they stay, dimmed) or be offered for removal?
+- ~~Q-C7~~ Resolved by ARCHITECTURE §17 Q12: work items stay in the file, greyed with a hint, never deleted. They go live again when the setting is turned on.
 - Also open in ARCHITECTURE §14: sync tool, `.configlauncher/status.json` in your folder, work profile/private space use, distribution, your phone model, and widgets after the MVP.
 
 ## UI questions for Sprite
@@ -473,6 +483,7 @@ All seven are answered in ARCHITECTURE §16 and applied above:
 | AQ-6 | ✅ Hash check before writing, B6 `Use file` / `Keep mine` (replay by ID). Hash, not `revision`, is the conflict key |
 | AQ-7 | ✅ App-private `last-good.json`, survives process death and reboots, not uninstall |
 
-New for Archimedes:
-- **AQ-8** B4 (`launcher.json` missing): should it also offer `Reconnect`, in case the user picked the wrong folder? The architecture names only "Create".
-- **AQ-9** B8 wording and placement for an older `schemaVersion` (the architecture names only the `Upgrade file` action). Confirm the copy.
+| AQ-8 | ✅ §17: B3 (no access) = `Reconnect` only; B4 (readable, file missing) = `Create from current layout` + `Reconnect`. Never auto-created |
+| AQ-9 | ✅ §17: B8 is the lowest-priority notice, copy `…older format (v{N}). It will be upgraded on your next change.`, actions `Upgrade now` (backup first) and `✕` (per file hash) |
+
+No architecture questions are open.
