@@ -12,7 +12,7 @@ Status: proposal for review, 2026-10-18. Author: Archimedes (architecture). Buil
 | Choice | Decision | Why |
 |---|---|---|
 | Language/UI | Kotlin 2.x, Jetpack Compose (Material 3), single `MainActivity` with the HOME category | Matches the spike; Compose renders an immutable model naturally. |
-| minSdk | **23** (Android 6.0), changed from 26 in §18 | The current AndroidX/Compose artifacts' own floor is 23; it covers every device Christopher owns (OnePlus 2 and stock OnePlus One stop at 23). Shortcuts need 25+ and are disabled below that; see §18.3 for the gates. |
+| minSdk | **29** (Android 10), see §18.3 (supersedes the earlier 26 and 23 rulings) | Covers his daily and test phones (S25 Ultra, A53, A51) with no compatibility gates except private space (35): RoleManager, quiet-mode requests, shortcuts, adaptive icons and `LauncherApps.getProfiles()` are all available. The old devices are test-only, not targets. |
 | target / compile | **targetSdk 35, compileSdk 37** (§18) | compileSdk 37 is required by core-ktx 1.19 and Compose BOM 2026.09; targetSdk stays 35 (edge-to-edge default, no 36/37 behaviour changes taken yet). |
 | JSON | `kotlinx.serialization` for the model; `org.json`/kotlinx `JsonElement` tree for preserving `x-` keys | No reflection, multiplatform-friendly, fast. |
 | Validation | Hand-written Kotlin validator mirroring the schema, plus schema tests on the JVM with a JSON Schema library (networknt) against the same examples | Pulling a full 2020-12 validator into the APK costs size and startup; the Kotlin validator also gives friendlier, path-based messages. The test suite keeps the two in lockstep. |
@@ -123,7 +123,7 @@ Every merge or discarded edit writes the pre-merge local model to `filesDir/conf
 
 ## 7. Model and app reconciliation
 - `model`: immutable data classes (`LauncherConfig`, `Page`, `Item` sealed: `AppItem`, `ShortcutItem`, `FolderItem`, `DrawerRule`…) plus `x-` extras as `JsonObject`. Pure, no Android imports, JVM-testable.
-- `apps`: `LauncherApps.getActivityList(null, user)` for each profile from `LauncherApps.getProfiles()` (API 26+), `LauncherApps.Callback` for install/remove/change, `getShortcuts` for shortcut metadata, icons via `LauncherActivityInfo.getBadgedIcon` cached in memory (LRU) keyed by component+user.
+- `apps`: `LauncherApps.getActivityList(null, user)` for each profile from `LauncherApps.getProfiles()`, `LauncherApps.Callback` for install/remove/change, `getShortcuts` for shortcut metadata, icons via `LauncherActivityInfo.getBadgedIcon` cached in memory (LRU) keyed by component+user.
 - Profiles: `personal` = the current user; `work` = managed profile (`UserManager.isManagedProfile` via `LauncherApps`); `private` = Android 15 private space (`LauncherUserInfo` on API 35); **never written to the file** and never shown in Unsorted (§15 OQ-31). The schema has no `private` value. Config never stores numeric user IDs or serials, since those differ per device and after reprovisioning. If several work profiles exist (rare), the first wins in v1.
 - Reconciliation output is a derived `ResolvedLayout` (config + install state + icons/labels) that Compose renders. It never mutates the config.
 
@@ -137,7 +137,7 @@ Every merge or discarded edit writes the pre-merge local model to `filesDir/conf
 - Normal permissions only if needed by the scaffold: `EXPAND_STATUS_BAR` (swipe down for notifications), `SET_WALLPAPER_HINTS` is not needed. `REQUEST_DELETE_PACKAGES` for an "Uninstall" menu item is deferred to later (it shows the system confirmation anyway).
 - Config content is data, never code: no arbitrary intents/URIs in v1, launch only resolved (package, activity) pairs from `LauncherApps` and shortcuts from `startShortcut`.
 
-**Default home role.** On API 29+ use `RoleManager.createRequestRoleIntent(ROLE_HOME)`; on 26-28 open `Settings.ACTION_HOME_SETTINGS`. Onboarding shows a "Set as Home" step, and the app works (as a normal activity) without the role, minus shortcuts. `MainActivity` declares `MAIN` + `HOME` + `DEFAULT`, `launchMode=singleTask`, `stateNotNeeded`, `excludeFromRecents`, and handles `onNewIntent` (Home pressed while on home → go to page 0 / close drawer).
+**Default home role.** Use `RoleManager.createRequestRoleIntent(ROLE_HOME)` (minSdk 29, so no fallback). Onboarding shows a "Set as Home" step, and the app works (as a normal activity) without the role, minus shortcuts. `MainActivity` declares `MAIN` + `HOME` + `DEFAULT`, `launchMode=singleTask`, `stateNotNeeded`, `excludeFromRecents`, and handles `onNewIntent` (Home pressed while on home → go to page 0 / close drawer).
 
 ## 9. Error UX
 Principle: **the home screen always works**; errors never blank it.
@@ -167,7 +167,7 @@ Root: `ConfigLauncherApp` (Application, holds `AppGraph`). Data flow: `store` em
 - **JVM unit tests (bulk of coverage):** codec round-trip (including `x-` keys and canonical output byte-for-byte), validator cases mirroring every schema rule, migrations with golden files, merge/replay table tests (move vs external delete, occupied cell, duplicate add, drag during external edit), placement, self-write guard logic with a fake clock.
 - **Schema conformance:** a test runs every file in `schema/examples/` and `app/src/test/resources/configs/{valid,invalid}/` through both the networknt JSON Schema validator and the Kotlin validator and asserts they agree. CI also validates `schema/examples/*.json` with Python `jsonschema` (no Android toolchain needed).
 - **Store tests:** `ConfigStore` against a fake `DocumentAccess` interface (in-memory files with mtime, failures injectable: truncate-not-honoured, write error midway, rename unsupported, permission revoked).
-- **Instrumented tests (emulator API 26 and 35):** real SAF via a test `DocumentsProvider` in the androidTest APK; LauncherApps listing; pin-shortcut flow; Compose UI tests for drag-drop and banners.
+- **Instrumented tests (emulator API 29 and 35):** real SAF via a test `DocumentsProvider` in the androidTest APK; LauncherApps listing; pin-shortcut flow; Compose UI tests for drag-drop and banners.
 - **Manual QA matrix (Grace):** Syncthing-synced folder edited from a PC, git client folder (e.g. MGit), a cloud provider (Google Drive) to document the expected degraded behaviour, work profile, private space on 35, Pixel + one OEM (Samsung).
 - **Performance:** startup to first frame with a 300-item config < 500 ms on a mid device; poll cost measured.
 
@@ -197,6 +197,7 @@ Root: `ConfigLauncherApp` (Application, holds `AppGraph`). Data flow: `store` em
 | Two validators drifting | Conformance test (§11). |
 | GPL if Kvaesitso code is copied | Reference only; copying code makes the app GPL-3, which conflicts with this repo's MIT license. **Departs from spike** (it says GPL is "fine"): it is fine only if we relicense, so we don't copy. |
 | OEM launcher quirks (home role resets, Samsung) | Manual QA on one OEM device. |
+| minSdk 29 excludes Christopher's older devices (S8+, Tab S2, OnePlus 2/One) | Accepted: they are test-only (§18.3). A custom ROM on Android 10+ brings one back with no code change. |
 
 ## 14. Open questions for Christopher (resolved 2026-10-18, see §18.1)
 1. **File name and location:** is `launcher.json` in a folder of your choice OK, and which sync tool will you use (Syncthing, a git client, Drive)? This decides what Grace tests first.
@@ -330,7 +331,7 @@ These override earlier sections where they differ.
 ### 18.1 Answers to §14 and docs/ux.md Q-C
 | Question | Answer | Effect on the design |
 |---|---|---|
-| §14 Q8 devices | Daily phone **Galaxy S25 Ultra**; tests first on a **Galaxy A53**; also A51, S8+, Galaxy Tab S2, OnePlus 2, and a modded OnePlus One as wall displays. | minSdk 23 (§18.3). QA order: A53 → S25 Ultra → old devices. |
+| §14 Q8 devices | Daily phone **Galaxy S25 Ultra**; tests first on a **Galaxy A53**; also A51, S8+, Galaxy Tab S2, OnePlus 2, and a modded OnePlus One as wall displays. | minSdk 29 (§18.3). QA order: A53 → S25 Ultra → A51. The other devices are out of scope (test-only, and only if a custom ROM gives them Android 10+). |
 | §14 Q1 sync tool | **git is the primary sync target.** | Grace tests a git client folder first; Syncthing and Drive second. README leads with git. |
 | §14 Q2 / Q-C5 | **JSON only is OK.** | No change. |
 | §14 Q3 / Q-C3 | **Unsorted apps go in the drawer only.** | Unplaced apps live only in the drawer; `unsorted` is accepted and ignored (§18.5 AF-2). |
@@ -357,44 +358,26 @@ These override earlier sections where they differ.
 
 **Drawer keyboard (Q-C2).** Opening the drawer focuses the search field and shows the keyboard. Swipe-down or Back with the keyboard up hides the keyboard first, then a second Back closes the drawer. On the wall-display devices (no hardware keyboard, rarely used for search) the user can turn off `Open keyboard with drawer` (default on).
 
-### 18.3 minSdk ruling: **23**
-**Dependency floor (checked in the published AAR manifests on Google Maven, 2026-10-18):** core / core-ktx 1.19.1 → 23; activity / activity-compose 1.13.0 → 23; lifecycle-runtime-compose / viewmodel-compose 2.11.0 → 23; Compose BOM 2026.09.00 = ui / foundation / runtime 1.12.1 → 23, material3 1.4.0 → 21; documentfile 1.1.0 → 21. **The real floor is 23**; 22 or lower is impossible without downgrading AndroidX. kotlinx.serialization and our code use no `java.time` or `java.nio.file` (verified by grep), so no core-library desugaring is needed.
+### 18.3 minSdk ruling: **29** (supersedes the API 23 ruling, 2026-10-18)
+Christopher clarified that the old devices are for testing only, not targets. minSdk 23 was not near-free: about 8 API checks, an extra emulator and dedicated performance work for 2015 hardware. **minSdk 29 (Android 10)**; compileSdk 37 and targetSdk 35 unchanged. (The dependency floor is still 23, so 29 is our choice, not a constraint.)
 
-**Devices:**
-| Device | Latest official Android (API) | Role | Covered at 23? | Notes |
-|---|---|---|---|---|
-| Galaxy S25 Ultra | 16 (36) | Daily phone | Yes | Full features, private space. |
-| Galaxy A53 | 16 (36) | First test device | Yes | Full features. |
-| Galaxy A51 | 13 (33) | Spare | Yes | Full except private space. |
-| Galaxy S8+ | 9 (28) | Wall display | Yes | No RoleManager (settings fallback); adaptive icons OK. |
-| Galaxy Tab S2 | 7.0 (24) | Wall display | Yes | No shortcuts, legacy icons. |
-| OnePlus 2 | 6.0.1 / OxygenOS 3 (23) | Wall display | Yes | No shortcuts, legacy icons, no quiet mode. |
-| OnePlus One (modded) | Stock 6.0.1 (23); custom ROM likely newer | Wall display | Yes | Whatever ROM it runs, it's ≥ 23. Christopher can confirm the version, but it doesn't change the ruling. |
-At minSdk 24 we would lose the OnePlus 2 (and the One if it runs stock); at 26 we'd lose the Tab S2 too. **23 is the only value that covers every device he owns.**
+| Device | Latest official Android (API) | In scope at 29? |
+|---|---|---|
+| Galaxy S25 Ultra (daily) | 16 (36) | **Yes**, full features incl. private space |
+| Galaxy A53 (first test device) | 16 (36) | **Yes**, full features |
+| Galaxy A51 | 13 (33) | **Yes**, all but private space |
+| Galaxy S8+ | 9 (28) | No (unless a custom ROM gives Android 10+) |
+| Galaxy Tab S2 | 7.0 (24) | No (unless a custom ROM gives Android 10+) |
+| OnePlus 2 | 6.0.1 (23) | No (unless a custom ROM gives Android 10+) |
+| OnePlus One (modded) | Stock 6.0.1 (23) | Only if its custom ROM is Android 10+ |
 
-**Cost on API 23-25:**
-- **Pinned shortcuts:** `LauncherApps.getShortcuts/pinShortcuts/startShortcut` are 25; the pin-request flow (`ACTION_CONFIRM_PIN_SHORTCUT`, `PinItemRequest`) is 26. Ruling: on 23-25 shortcut items render greyed with `Shortcuts need Android 8 or later.` and never launch; the pin flow is 26+ only (the manifest intent filter is harmless on older versions). No legacy `INSTALL_SHORTCUT` broadcast support. API 25 could technically launch existing shortcuts, but none of his devices run 25, so a single gate at 26 keeps it simple.
-- **Adaptive icons (26):** `getBadgedIcon` returns a legacy bitmap/drawable on 23-25; draw it as-is. No icon shape masking below 26. Zero extra code beyond not assuming `AdaptiveIconDrawable`.
-- **Home role (29):** `RoleManager` on 29+, `Settings.ACTION_HOME_SETTINGS` on 23-28 (already in §8). On some old Samsung ROMs that intent may be missing; fall back to `Settings.ACTION_SETTINGS` with the copy `Open Apps → Default apps → Home app`.
-- **Profiles:** `LauncherApps.getProfiles()` is **26** (the current code calls it unconditionally). On 23-25 use `UserManager.getUserProfiles()`. `UserManager.isQuietModeEnabled` is **24** and `requestQuietModeEnabled` is **28**: below 24 assume not paused; on 24-27 a paused work app shows the hint and doesn't launch.
-- **Private space (35):** already gated.
-- **SAF:** `ACTION_OPEN_DOCUMENT_TREE` and persisted grants are 21; fine on 23. Old `ExternalStorageProvider` quirks: on 23-25 internal storage is hidden in the picker until the user taps ⋮ → `Show internal storage`, so onboarding copy on those versions adds that hint; `"wt"` truncation works; `DocumentsContract.isTreeUri` is 24, so don't use it; `ContentObserver` notifications are even rarer, but polling already covers that.
-- **Notification channels (26):** not applicable; the launcher posts no notifications. If a later feature does, gate on 26.
-- **Dynamic colour (31) and themed icons (33):** gate when added; Material3 falls back to the static scheme.
-- **Compose on 2015-era hardware** (OnePlus 2: Snapdragon 810, 3-4 GB; One: 801, 3 GB; Tab S2: Exynos 5433, 3 GB): workable for a static grid but startup and first drawer open will be slow. Mitigations: R8-minified release builds only on those devices, baseline profile (profileinstaller works from API 24; on 23 it's JIT-only, so the OnePlus 2 is the slowest case), drawer list `LazyVerticalGrid` with stable keys, icons decoded once into the existing LRU cache at the home cell size, no animations beyond the system defaults, and no blur. Budget: first frame ≤ 1.5 s cold on the OnePlus 2, drawer scroll without visible jank at 2000 items on the Tab S2. If those budgets fail, a `Reduce motion` setting disables page/drawer animations rather than raising minSdk.
-- **Test matrix:** emulators API 23, 26, 29, 35 and 36 in CI (unit + Robolectric at `@Config(sdk=[23, 26, 35])`), plus manual on A53 (primary), S25 Ultra, and one old device (Tab S2 or OnePlus 2) per release. The other wall displays are smoke-tested only when convenient. That's one extra emulator and one extra manual device compared with minSdk 26.
+**What this removes:** the RoleManager fallback (`ACTION_HOME_SETTINGS` / `ACTION_SETTINGS` and the "Open Apps → Default apps → Home app" hint), the quiet-mode request check (28) and `isQuietModeEnabled` check (24), the shortcut and pin-request checks (25/26) and the "Shortcuts need Android 8" hint, the adaptive-icon check (26), the `getProfiles()` fallback (26), and the "Show internal storage" picker hint. **The only version gate left is private space (35)**, already in code (`getLauncherUserInfo`). Dynamic colour (31) and themed icons (33) get gates only if those features are added.
 
-**Code gates Sprite needs to add** (no other change is required for 23):
-1. `app/build.gradle.kts`: `minSdk = 23` (compileSdk 37 and targetSdk 35 are already set).
-2. `InstalledApps.profiles()`: `if (SDK_INT >= 26) launcherApps.profiles else userManager.userProfiles`.
-3. `InstalledApps.load()`: `isQuietModeEnabled` only when `SDK_INT >= 24`, else `false`.
-4. `InstalledApps.launch(app)`: `requestQuietModeEnabled` only when `SDK_INT >= 28`; otherwise return false and show the paused hint.
-5. `InstalledApps.launch(ShortcutItem)` and any `getShortcuts`/`pinShortcuts`: only when `SDK_INT >= 26`; below that the item resolves as unavailable with the "needs Android 8" hint.
-6. Pin-shortcut activity (when added): `@RequiresApi(26)`; `LauncherApps.getPinItemRequest` only on 26+.
-7. Home role request: `RoleManager` on 29+, `ACTION_HOME_SETTINGS` on 23-28 with the `ACTION_SETTINGS` fallback.
-8. Icons: never cast to `AdaptiveIconDrawable` without `SDK_INT >= 26`.
-9. Onboarding: on `SDK_INT < 26`, add the `Show internal storage` hint to the picker step.
-10. Keep Android Lint `NewApi` as an error in CI so a missed gate fails the build; add Robolectric runs at sdk 23.
+**Also removed:** the API 23-28 code-gate list, the 1.5 s OnePlus 2 cold-start target and the Tab S2 drawer target, and the API 23 and 26 emulators.
+
+**Testing:** Robolectric at `@Config(sdk = [29, 35])`; emulators API 29, 35 and 36; manual on A53 (primary), S25 Ultra, and A51 when convenient. Lint `NewApi` stays an error. R8-minified release builds and a baseline profile remain normal practice, with no special old-hardware budget.
+
+**Sprite:** set `minSdk = 29` in `app/build.gradle.kts`, delete any 23-28 gates already added, and keep the 35 private-space gate.
 
 ### 18.4 Copy rulings on docs/ux.md
 - **Q15 cloud warning, `Choose another folder`: approved as written** (`Use anyway` · `Choose another folder`, reopening the picker).
