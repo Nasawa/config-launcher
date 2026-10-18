@@ -20,6 +20,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -38,6 +40,8 @@ fun HomeScreen(vm: HomeViewModel) {
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
+    val drag = remember { DragController({ vm.store.engine }) { vm.store.edit(it) } }
+    LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.store.useFolder(uri)
     }
@@ -65,14 +69,24 @@ fun HomeScreen(vm: HomeViewModel) {
                         }
                     }
                 }
+                if (ui.load.conflict) ConflictBanner(onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
                 if (ui.load.errors.isNotEmpty()) ErrorBanner(ui.load.errors)
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
-                HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { pages.getOrNull(it)?.id ?: it }) { index ->
-                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, onOpen) }
+                pages.getOrNull(pager.currentPage).let { p ->
+                    drag.currentPageId = p?.id; drag.currentPageSynthetic = p?.synthetic == true
+                }
+                drag.firstPageId = pages.firstOrNull { !it.synthetic }?.id
+                drag.grid = ui.layout.grid
+                drag.dockCount = ui.layout.dock.size
+                HorizontalPager(
+                    pager, Modifier.weight(1f).fillMaxWidth(), key = { pages.getOrNull(it)?.id ?: it },
+                    userScrollEnabled = drag.dragged == null,
+                ) { index ->
+                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, onOpen) }
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.currentPage)
-                Dock(ui.layout.dock, vm.apps, onOpen)
+                Dock(ui.layout.dock, vm.apps, drag, onOpen)
             }
         }
 
@@ -104,6 +118,18 @@ fun HomeScreen(vm: HomeViewModel) {
 }
 
 @Composable
+private fun ConflictBanner(onUseFile: () -> Unit, onKeepMine: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(8.dp).background(Color(0xFF4A3B00), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("launcher.json changed while you were editing.", color = Color.White, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        TextButton(onUseFile) { Text("Use file") }
+        TextButton(onKeepMine) { Text("Keep mine") }
+    }
+}
+
+@Composable
 private fun ErrorBanner(errors: List<String>) {
     var expanded by remember(errors) { mutableStateOf(false) }
     Column(
@@ -118,7 +144,7 @@ private fun ErrorBanner(errors: List<String>) {
 }
 
 @Composable
-private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, onOpen: (ResolvedItem) -> Unit) {
+private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, onOpen: (ResolvedItem) -> Unit) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = if (page.synthetic) maxOf(grid.rows, (page.items.maxOfOrNull { it.item.y ?: 0 } ?: 0) + 1) else grid.rows
     Column(Modifier.fillMaxSize().padding(8.dp)) {
@@ -128,7 +154,7 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, onOpen
                 Row(Modifier.fillMaxWidth().then(if (page.synthetic) Modifier.height(96.dp) else Modifier.weight(1f))) {
                     for (x in 0 until grid.columns) {
                         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                            byCell[x to y]?.let { Tile(it, apps) { onOpen(it) } }
+                            byCell[x to y]?.let { r -> with(drag) { Tile(r, apps, Modifier.draggable(r, page.synthetic)) { onOpen(r) } } }
                         }
                     }
                 }
@@ -136,7 +162,7 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, onOpen
         }
         if (page.synthetic) {
             Column(Modifier.weight(1f).verticalScrollCompat(), content = body)
-        } else Column(Modifier.weight(1f), content = body)
+        } else Column(Modifier.weight(1f).onGloballyPositioned { drag.gridRect = it.boundsInRoot() }, content = body)
     }
 }
 
@@ -153,20 +179,20 @@ private fun PageDots(count: Int, current: Int) {
 }
 
 @Composable
-private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, onOpen: (ResolvedItem) -> Unit) {
-    if (items.isEmpty()) return
+private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragController, onOpen: (ResolvedItem) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(8.dp).background(Color(0x22FFFFFF), RoundedCornerShape(20.dp)).padding(6.dp),
+        Modifier.fillMaxWidth().padding(8.dp).heightIn(min = 64.dp).onGloballyPositioned { drag.dockRect = it.boundsInRoot() }.background(Color(0x22FFFFFF), RoundedCornerShape(20.dp)).padding(6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        items.forEach { r -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Tile(r, apps, showLabel = false) { onOpen(r) } } }
+        items.forEach { r -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { with(drag) { Tile(r, apps, Modifier.draggable(r, false), showLabel = false) { onOpen(r) } } } }
+        if (items.isEmpty()) Text("Dock: long-press an app and drop it here", color = Color.Gray, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterVertically))
     }
 }
 
 @Composable
-fun Tile(r: ResolvedItem, apps: InstalledApps, showLabel: Boolean = true, onClick: () -> Unit) {
+fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onClick: () -> Unit) {
     Column(
-        Modifier.clickable(onClick = onClick).padding(4.dp).alpha(if (r.missing) 0.4f else 1f),
+        modifier.clickable(onClick = onClick).padding(4.dp).alpha(if (r.missing) 0.4f else 1f),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (r.item is FolderItem) FolderIcon(r, apps) else AppIconImage(r.app, apps, 48)

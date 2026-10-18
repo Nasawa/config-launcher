@@ -20,7 +20,7 @@ import java.io.File
 class ConfigStore(private val context: Context, private val scope: CoroutineScope) {
     private val prefs = Prefs(context)
     val localDir: File = context.getExternalFilesDir(null) ?: context.filesDir
-    val engine = ConfigEngine(currentSource(), LastGoodStore(File(context.filesDir, "config")))
+    val engine = ConfigEngine(currentSource(), LastGoodStore(File(context.filesDir, "config")), scope = scope)
     val state get() = engine.state
 
     private var pollJob: Job? = null
@@ -51,6 +51,10 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     }
 
     fun pollNow() { scope.launch(Dispatchers.IO) { engine.poll(force = true) } }
+
+    fun edit(e: dev.nasawa.configlauncher.model.Edit) { scope.launch(Dispatchers.IO) { engine.edit(e) } }
+    fun useFile() { scope.launch(Dispatchers.IO) { engine.resolveUseFile() } }
+    fun keepMine() { scope.launch(Dispatchers.IO) { engine.resolveKeepMine() } }
 
     fun useFolder(uri: Uri) {
         context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
