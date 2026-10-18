@@ -53,7 +53,7 @@ Items (discriminated by `type`):
 **Canonical form.** The launcher writes 2-space indented JSON, keys in schema order, `x-` keys after known keys, LF endings, trailing newline, UTF-8 without BOM. Agents are encouraged (not required) to emit the same so git diffs stay small. `revision` is incremented on every launcher write; agents should increment it too but correctness does not depend on it.
 
 ## 4. Config store (SAF folder)
-**Folder selection.** First run (or Settings → "Config folder") launches `ACTION_OPEN_DOCUMENT_TREE`. We call `takePersistableUriPermission(READ|WRITE)` and store the tree URI in DataStore. On every start we check `contentResolver.persistedUriPermissions`; if the grant is gone, show the "Reconnect folder" banner and keep rendering last-good. If the folder has no `launcher.json`, offer "Create from current layout" (seeded with dock defaults and everything else Unsorted).
+**Folder selection.** First run (or Settings → "Config folder") launches `ACTION_OPEN_DOCUMENT_TREE`. We call `takePersistableUriPermission(READ|WRITE)` and store the tree URI in DataStore. On every start we check `contentResolver.persistedUriPermissions`; if the grant is gone, show the "Reconnect folder" banner and keep rendering last-good. If the folder has no `launcher.json`, never create it silently: show B4 with `Create from current layout` and `Reconnect` (§17 a, AQ-8).
 
 Why a tree, not a single document: we need to create temp/backup files beside the config and re-find `launcher.json` by name after an external tool replaces it (Syncthing and git replace files by rename, which changes the document ID on some providers).
 
@@ -69,7 +69,7 @@ Why a tree, not a single document: we need to create temp/backup files beside th
 - A (docId, lastModified, size) change triggers a read. Because mtime has 1-2 s granularity on some filesystems, a read also computes SHA-256 and compares against the last applied hash; equal hash = no-op.
 
 **Load pipeline (inbound binding).**
-1. Read bytes (cap 256 KiB, checked via `COLUMN_SIZE` before reading and enforced while streaming; larger is rejected, see §15 OQ-9).
+1. Read bytes (cap 2 MiB, see §17 Q16; checked via `COLUMN_SIZE` before reading and enforced while streaming; larger is rejected, see §15 OQ-9).
 2. If SHA-256 equals the last applied or last self-written hash, stop (§5 self-write guard).
 3. Wait for stability: re-stat after 300 ms; if size/mtime changed, restart (handles a sync client mid-write).
 4. Parse → migrate → validate. On any failure: keep the current model, show the error banner (§9), do not touch last-good.
@@ -193,7 +193,7 @@ Root: `ConfigLauncherApp` (Application, holds `AppGraph`). Data flow: `store` em
 | Provider changes document ID on replace | Always re-resolve `launcher.json` by name in the tree. |
 | Cloud providers (Drive) slow/offline | Supported but "best effort"; recommend Syncthing/local folder. |
 | Work/private profile identity | Symbolic profile names, never numeric IDs. |
-| Startup cost on large configs | Render last-good first; icons loaded lazily; 256 KiB cap. |
+| Startup cost on large configs | Render last-good first; icons loaded lazily; 2 MiB cap, writer refuses output over it (§17 Q16). |
 | Two validators drifting | Conformance test (§11). |
 | GPL if Kvaesitso code is copied | Reference only; copying code makes the app GPL-3, which conflicts with this repo's MIT license. **Departs from spike** (it says GPL is "fine"): it is fine only if we relicense, so we don't copy. |
 | OEM launcher quirks (home role resets, Samsung) | Manual QA on one OEM device. |
@@ -222,7 +222,7 @@ Answers to OQ-1 to OQ-31 in [docs/test-plan.md](docs/test-plan.md). Coordinator 
 | 6 | JSON only (RFC 8259, no comments, no JSON5/YAML). Filename `launcher.json` at the root of the picked folder. |
 | 7 | A UTF-8 BOM is accepted on read and stripped; the launcher always writes without one. Other encodings (UTF-16 etc.) are a parse error. |
 | 8 | Grey out at runtime, not a validation error: whether a shortcut is published depends on device state, not the file. Greyed shortcuts never launch. |
-| 9 | 256 KiB file (refused before full read via `COLUMN_SIZE` and a streaming cap), JSON nesting depth 8 at the parser and folder depth 1 in the model (see 10), 2000 items total, 20 pages, 144 items per page, labels 60 chars, IDs 64 chars, other strings 256. **Override:** coordinator said depth 4; the legal v1 structure (root, pages, page, items, folder, items, item) already needs 7 JSON levels, so the parser limit is 8 (one spare) and the *folder* nesting limit is stricter than 4. The parser counts depth itself, so deep input fails fast without StackOverflowError. |
+| 9 | ~~256 KiB~~ **2 MiB file since §17 Q16** (refused before full read via `COLUMN_SIZE` and a streaming cap), JSON nesting depth 8 at the parser and folder depth 1 in the model (see 10), 2000 items total, 20 pages, 144 items per page, labels 60 chars, IDs 64 chars, other strings 256. **Override:** coordinator said depth 4; the legal v1 structure (root, pages, page, items, folder, items, item) already needs 7 JSON levels, so the parser limit is 8 (one spare) and the *folder* nesting limit is stricter than 4. The parser counts depth itself, so deep input fails fast without StackOverflowError. |
 | 10 | No. Folders hold apps and shortcuts only (enforced by the schema). |
 | 11 | Bidi controls (U+202A-202E, U+2066-2069), zero-width characters and other Cf/Cc characters are stripped from labels at render time; the file is left as written. A label override is always shown with the app's real icon, and the long-press sheet shows the real app name and package, so a label cannot disguise a different app. NUL or invalid UTF-8/lone surrogates are a parse error. |
 | 12 | Duplicate keys in one object are rejected (parse error with a path). |
@@ -273,3 +273,53 @@ Answers to OQ-1 to OQ-31 in [docs/test-plan.md](docs/test-plan.md). Coordinator 
 | AQ-5 | Separate fields: opaque `id` (`^[a-z0-9][a-z0-9_-]{0,63}$`), `package`, optional `activity`, optional `profile` (`personal` default, `work` opt-in). No profile marker inside IDs; private space is never written. |
 | AQ-6 | Hash check before writing (adopted). On mismatch, B6 with `Use file` / `Keep mine`; `Keep mine` replays my ops by ID onto the file, and the version that loses is snapshotted. `revision` isn't enough: sync tools and agents may not bump it, so the content hash is the conflict key. During a drag the incoming file is held until drop (OQ-24). |
 | AQ-7 | App-private `filesDir/config/last-good.json`, written by temp + rename after every successful load and verified write; survives process death and reboots, not uninstall (OQ-13). Rendered at cold start before the folder read finishes. |
+
+## 17. Resolved: test plan v2 and ux v2
+Rulings on docs/test-plan.md v2 (#5) Q1-Q16 and docs/ux.md v2 (#6) AQ-8/AQ-9. These override earlier sections where they differ.
+
+### Q16 (blocking): byte cap vs item cap. Ruling: **2 MiB read cap**, items stay at 2000, writer never emits more than the cap.
+The math (canonical 2-space JSON, measured with a generator, 20 pages × 100 apps, 12×12 grid, deepest indentation):
+- Short realistic strings (20-char package, 60 ASCII-char labels, 64-char IDs): **~663 KiB**. Grace's 301 KB measured shorter IDs/labels, so 256 KiB was never safe.
+- Long legal strings (100-char package, 152-char activity, 60 emoji labels at 4 bytes each, 64-char IDs, `profile` written): **~1.46 MiB**.
+So the coordinator's 1 MiB is **not** enough for a legal config with long labels; it fails before any `x-` keys or tags are added. 2 MiB leaves ~0.5 MiB for `x-` keys and tags on top of the long-string worst case. A fully theoretical maximum (every string at 256 chars, every tag filled, unlimited `x-` values) has no useful bound, so the cap is enforced as an invariant rather than proven: **the writer serializes, measures, and refuses to write anything over 2 MiB** (B5 `Couldn't save your change: launcher.json would be over 2 MB.`, edit kept in memory). The launcher therefore can never write a file it refuses to read. Parsing 2 MiB with kotlinx is tens of ms on a mid-range phone, and the cap is checked via `COLUMN_SIZE` and a streaming limit before reading, so OOM protection is unchanged. Compact JSON was rejected because it makes agent and git diffs unreadable. Schema: `tags` gets `maxItems: 16`, and `x-` values are documented as counted against the 2 MiB budget.
+
+### Section 3 and 4 confirmations
+- **(a) Missing `launcher.json`: confirmed, never auto-created.** B4 shows with an explicit create button. **Override on the label:** `Create from current layout` (Pragma's existing wording) instead of "Create starter file", because the usual cause is an external delete, and recreating from what's on screen (last-good) keeps the user's layout; the starter is used only when there is no last-good. First-run onboarding keeps its own "Create layout" step, which is explicit too.
+- **(b) Drawer lists all apps: confirmed.** The drawer shows every launchable app in the personal profile (and the work profile, badged), **including apps already placed** on pages, the dock or in folders, minus packages in `drawer.hidden`. `drawer.hidden` hides from the drawer and from Unsorted only; a hidden app placed explicitly on a page still shows and launches there. Hidden apps stay reachable through Settings → Hidden apps (unhide = write). Private-space apps never come from the file: they are shown only in the system-style private-space section at the bottom of the drawer while it is unlocked, are not affected by `drawer.hidden`, are never counted as Unsorted, and can't be dragged out of that section (Q13).
+
+### Q1-Q15
+| Q | Ruling |
+|---|---|
+| Q1 | Yes: the schema adds `maxLength: 256` to `package`, `activity`, `packagePrefix`, `drawer.hidden[]` and `drawer.rules[].match.packages[]` (`shortcutId` already has it). The schema should state every per-field limit it can. |
+| Q2 | Yes: the conformance test asserts "Kotlin rejects ⊇ schema rejects" on `invalid/`, both accept everything in `valid/`, and a named Kotlin-only list: duplicate IDs, overlapping cells, cells outside `grid`, the 2000-item total, duplicate JSON keys, parser depth, byte cap, NUL/invalid encoding. A fixture in that list must be accepted by the schema validator, so the list stays honest. |
+| Q3 | Parse error (B1). The parser rejects `\u0000` and raw NUL in any string, matching OQ-11. |
+| Q4 | Non-blocking: the folder write already succeeded, so the layout is saved. Show a one-time snackbar `Couldn't update the backup copy (phone storage full).`, log it in status.json, retry on the next successful load or write. No banner. |
+| Q5 | Yes: every 5th foreground poll (~10 s) reads the file and compares hashes regardless of mtime/size, and every resume always hashes. Cost is one read of ≤2 MiB, usually a few KB. |
+| Q6 | Yes: on cancel there are no pending ops, so `incoming` is applied as a normal reload with the usual `Layout updated from launcher.json.` snackbar. |
+| Q7 | The B6 hash check comes first. If the file changed since we loaded it, the change is a new version: it is validated, and if valid, the broken-file path no longer applies (B6 prompt as usual). The broken-copy snapshot happens only when the file on disk is still the same broken bytes (hash unchanged) at write time. |
+| Q8 | They join the pending queue and stay on screen; nothing is written until the user picks. `Use file` discards all of them, `Keep mine` replays all of them. The banner counts them (`2 changes`). |
+| Q9 | Build a partial folder from the members that still exist and aren't already in another folder; if fewer than 2 remain, skip the folder and place the remaining member as a plain item. Report skips in the snackbar. |
+| Q10 | Yes: a poll is one children query (plus a hash read every 5th), target ≤ 5 ms CPU each, < 1% battery per hour with the home screen on, no polling at all when home isn't visible. Grace measures with Battery Historian on one device. |
+| Q11 | Yes, the drawer still lists them (see b). `hidden` only removes the synthetic Unsorted page. To keep an app out of the drawer, use `drawer.hidden`. |
+| Q12 | Render them greyed with the work badge and the hint `Turn on "Include work apps in config" to use this.`; not invalid, never deleted. Turning the setting on makes them live without a write. |
+| Q13 | Blocked in the UI: private-space apps can't be dragged to pages, the dock or folders; long-press offers only the system actions. |
+| Q14 | Commit `status.json`? No. The README should recommend gitignoring `.configlauncher/tmp`-style churn: ignore `.configlauncher/launcher.json.tmp` and `.configlauncher/status.json`; commit or ignore `backup/` and `broken/` by preference (git already has history, so ignoring is fine). Pragma adds a sample `.gitignore` snippet. |
+| Q15 | Ship as best effort, with a soft warning in onboarding when the picked tree's authority is a cloud provider (not `com.android.externalstorage.documents`): `Cloud folders can take a while to sync. A Syncthing or git folder works best.` with `Use anyway`. Not blocked. |
+
+### AQ-8 and AQ-9
+- **AQ-8: yes.** Two distinct states: **B3** (persisted grant missing from `persistedUriPermissions`, or the tree query throws `SecurityException`/`FileNotFoundException` for the tree itself) shows `Reconnect` only, since we can't create anything there. **B4** (tree readable, no `launcher.json` child) shows `Create from current layout` and `Reconnect` (picked the wrong folder, or the sync client hasn't delivered the file yet). B4 is never auto-dismissed by our own create; it clears when a valid file appears.
+- **AQ-9:** B8 is a notice (lowest priority: shown only when no B1-B6 banner is up, and below them in the stack). Copy: `launcher.json uses an older format (v{N}). It will be upgraded on your next change.` Actions `Upgrade now` and `✕`. `Upgrade now` writes immediately, after saving the original to `.configlauncher/backup/launcher.v{N}.{timestamp}.json`; it goes through the normal write path (hash check, B6 on conflict). This is consistent with §3 rule 3, which already allows an explicit upgrade action. `✕` dismisses B8 for that file hash (stored in DataStore), so it returns only if a different older-format file arrives; the next edit still upgrades with a backup. Rename the action from `Upgrade file` to `Upgrade now` since the body already says "launcher.json".
+
+### Follow-ups
+**Sprite (code):**
+1. Read cap 256 KiB → 2 MiB (pre-read size check and streaming limit); writer measures output and refuses over 2 MiB with B5 (Q16). Update `CanonicalSizeTest` to assert the 2000-item long-string config is under the cap.
+2. Kotlin validator: 256-char limits on package/activity/packagePrefix/hidden/match.packages; `tags` ≤ 16 (Q1). NUL rejected in the parser (Q3).
+3. Poller: hash every 5th poll and on resume (Q5).
+4. Store: B6 check before the broken-copy snapshot (Q7); edits during B6 join the queue (Q8); partial-folder replay (Q9); drag-cancel applies `incoming` (Q6); last-good write failure is a snackbar plus status.json entry (Q4).
+5. Drawer: all apps including placed ones minus `drawer.hidden`; `unsorted.mode: hidden` only removes the Unsorted page (b, Q11); private-space section not draggable (Q13); work items greyed when the opt-in is off (Q12).
+6. B3 vs B4 detection and actions (AQ-8); B8 `Upgrade now` with backup, notice priority, dismiss per hash (AQ-9); never auto-create on B4 (a).
+7. Onboarding cloud-provider warning by tree authority (Q15).
+
+**Pragma (docs):** README line 98 and ux.md B1 "over 256 KiB" → 2 MiB; B4 adds `Reconnect`; B8 copy and `Upgrade now`; B5 adds the over-2 MB message; Q4 snackbar, Q12 hint and Q15 warning copy; drawer section states "includes placed apps"; README `.gitignore` snippet (Q14).
+
+**Grace (QA):** update HC-7 and the size fixtures to 2 MiB (just-under / just-over), add a 2000-item long-string valid fixture (~1.46 MiB) and a writer-refusal case; conformance test with the Kotlin-only list (Q2); NUL fixture as B1 (Q3); constant-mtime provider case (Q5); Q6-Q9 rows in the conflict matrix; battery/poll measurement (Q10); B3 vs B4 and B8 dismiss-per-hash cases; drawer-with-placed-apps and private-space drag-blocked cases.
