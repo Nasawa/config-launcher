@@ -31,5 +31,14 @@ class LocalFileSource(val dir: File) : ConfigSource {
         if (!temp.renameTo(file)) throw IOException("could not replace ${file.name}")
     }
 
+    override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
+        val d = File(File(dir, ".configlauncher"), subdir)
+        if (!d.isDirectory && !d.mkdirs()) throw IOException("can't create ${d.path}")
+        val f = File(d, name)
+        val t = File(d, "$name.tmp")
+        FileOutputStream(t).use { it.write(bytes); it.fd.sync() }
+        if (!t.renameTo(f)) throw IOException("could not write ${f.name}")
+    }
+
     companion object { const val FILE_NAME = "launcher.json" }
 }

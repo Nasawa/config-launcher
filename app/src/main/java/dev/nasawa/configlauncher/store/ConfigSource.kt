@@ -15,6 +15,13 @@ interface ConfigSource {
     /** Replace launcher.json with [bytes] safely (implementation-specific, see ARCHITECTURE.md §5). Throws on failure. */
     @Throws(IOException::class)
     fun write(bytes: ByteArray)
+
+    /**
+     * Write a sidecar file at `.configlauncher/<subdir>/<name>` ([subdir] may be empty), creating
+     * directories as needed. Never touches launcher.json, so it never changes [stamp] (no reload loop).
+     */
+    @Throws(IOException::class)
+    fun writeSidecar(subdir: String, name: String, bytes: ByteArray)
 }
 
 internal fun java.io.InputStream.readCapped(maxBytes: Int): ByteArray {
