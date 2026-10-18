@@ -2,16 +2,17 @@ package dev.nasawa.configlauncher.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.nasawa.configlauncher.store.ConfigEngine.Inspection
 
-/** docs/ux.md §7 step 2 with the §18.2 "Skip for now" secondary button. */
+/** docs/ux.md §7 step 2 with the §18.2 "Skip for now" secondary button and its confirm sheet. */
 @Composable
-fun FirstRunScreen(onChooseFolder: () -> Unit, onSkip: () -> Unit) {
+fun FirstRunScreen(onChooseFolder: () -> Unit, onSkip: () -> Unit, cancelled: Boolean = false) {
+    var confirmSkip by remember { mutableStateOf(false) }
     MaterialTheme(colorScheme = darkColorScheme()) {
         Surface(Modifier.fillMaxSize(), color = Color(0xFF101418)) {
             Column(Modifier.fillMaxSize().systemBarsPadding().padding(24.dp), verticalArrangement = Arrangement.Center) {
@@ -26,20 +27,27 @@ fun FirstRunScreen(onChooseFolder: () -> Unit, onSkip: () -> Unit) {
                     Text(dev.nasawa.configlauncher.apps.SdkGates.INTERNAL_STORAGE_HINT, color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
                 }
                 Spacer(Modifier.height(24.dp))
+                if (cancelled) Text("No folder chosen. You can skip this and connect one later in Settings.",
+                    color = Color(0xFFFFCDD2), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
                 Button(onChooseFolder, Modifier.fillMaxWidth()) { Text("Choose folder") }
-                TextButton(onSkip, Modifier.fillMaxWidth()) { Text("Skip for now") }
-                Text("Skipping keeps your layout on this phone only. You can choose a folder later from the ⋮ menu.",
-                    style = MaterialTheme.typography.bodySmall, color = Color.Gray, modifier = Modifier.align(Alignment.CenterHorizontally))
+                TextButton({ confirmSkip = true }, Modifier.fillMaxWidth()) { Text("Skip for now") }
             }
         }
+        if (confirmSkip) AlertDialog(
+            onDismissRequest = { confirmSkip = false },
+            title = { Text("Use without a folder?") },
+            text = { Text("Your layout will be kept only on this phone. You can't edit it from your computer until you choose a folder in Settings.") },
+            confirmButton = { TextButton({ confirmSkip = false; onSkip() }) { Text("Skip for now") } },
+            dismissButton = { TextButton({ confirmSkip = false; onChooseFolder() }) { Text("Choose folder") } },
+        )
     }
 }
 
 @Composable
-fun CloudDialog(onUseAnyway: () -> Unit, onDismiss: () -> Unit) = AlertDialog(
+fun CloudDialog(onUseAnyway: () -> Unit, onDismiss: () -> Unit, onChooseAnother: () -> Unit = onDismiss) = AlertDialog(
     onDismissRequest = onDismiss,
     confirmButton = { TextButton(onUseAnyway) { Text("Use anyway") } },
-    dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
+    dismissButton = { TextButton(onChooseAnother) { Text("Choose another folder") } },
     text = { Text("Cloud folders can take a while to sync. A Syncthing or git folder works best.") },
 )
 

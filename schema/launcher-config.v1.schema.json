@@ -62,7 +62,7 @@
       "$ref": "#/$defs/drawer"
     },
     "unsorted": {
-      "description": "Where installed apps that are not placed anywhere appear.",
+      "description": "DEPRECATED, accepted and ignored in v1 (ARCHITECTURE.md section 18.5, AF-2): validated for type, never acted on, never written by the launcher. Unplaced apps always appear in the drawer. Removed in schema v2 with a migration.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -72,14 +72,17 @@
             "page",
             "hidden"
           ],
-          "default": "drawer"
+          "default": "drawer",
+          "deprecated": true
         },
         "pageTitle": {
           "type": "string",
           "maxLength": 40,
-          "default": "Unsorted"
+          "default": "Unsorted",
+          "deprecated": true
         }
-      }
+      },
+      "deprecated": true
     }
   },
   "$defs": {
