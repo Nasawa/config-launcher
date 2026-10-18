@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- No QUERY_ALL_PACKAGES: LauncherApps returns launchable activities for the default launcher.
-     No storage, accessibility, device-admin or root permissions. -->
+<!-- No QUERY_ALL_PACKAGES and no storage, accessibility, device-admin or root permissions.
+     LauncherApps results are subject to package visibility (Android 11+), so the <queries>
+     entry below makes every MAIN/LAUNCHER activity visible, which is all a launcher needs. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
     <application
         android:label="@string/app_name"
         android:theme="@android:style/Theme.Material.NoActionBar"
