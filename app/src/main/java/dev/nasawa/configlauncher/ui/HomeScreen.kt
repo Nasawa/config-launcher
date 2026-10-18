@@ -168,7 +168,11 @@ fun HomeScreen(vm: HomeViewModel) {
                 val ime = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
                 // ux.md §2: focus + keyboard on open; with TalkBack, focus only (no auto keyboard).
                 val talkBack = remember { (ctx.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager).isTouchExplorationEnabled }
-                LaunchedEffect(Unit) { if (keyboardOnOpen) { focus.requestFocus(); if (!talkBack) ime?.show() } }
+                val config = androidx.compose.ui.platform.LocalConfiguration.current
+                LaunchedEffect(Unit) {
+                    if (DrawerKeyboard.focus(keyboardOnOpen)) focus.requestFocus()
+                    if (DrawerKeyboard.showIme(keyboardOnOpen, talkBack, config)) ime?.show()
+                }
                 val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
                 // Scrolling the list hides the keyboard; tapping the field brings it back.
                 LaunchedEffect(gridState.isScrollInProgress) { if (gridState.isScrollInProgress) ime?.hide() }
