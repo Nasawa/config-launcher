@@ -17,8 +17,14 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("drawerKeyboard", true)
         set(v) = sp.edit { putBoolean("drawerKeyboard", v) }
 
-    /** First run finished (folder picked or "Skip for now", §18.2). */
-    var onboarded: Boolean
-        get() = sp.getBoolean("onboarded", false) || folderUri != null
-        set(v) = sp.edit { putBoolean("onboarded", v) }
+    /**
+     * §18.5 persisted "no folder" state: true once the user chose app-only (Skip for now / Use phone
+     * storage). Distinct from never onboarded, so onboarding doesn't ask again.
+     */
+    var appOnly: Boolean
+        get() = sp.getBoolean("appOnly", false)
+        set(v) = sp.edit { putBoolean("appOnly", v) }
+
+    /** First run finished: a folder is connected or app-only was chosen. */
+    val onboarded: Boolean get() = appOnly || folderUri != null
 }
