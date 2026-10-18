@@ -1,39 +1,102 @@
 package dev.nasawa.configlauncher.ui
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import dev.nasawa.configlauncher.apps.AppEntry
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.nasawa.configlauncher.apps.InstalledApps
+import dev.nasawa.configlauncher.model.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen() {
-    val context = LocalContext.current
-    val installed = remember { InstalledApps(context.applicationContext) }
-    var apps by remember { mutableStateOf(installed.load()) }
-    LaunchedEffect(Unit) { installed.changes().collect { apps = installed.load() } }
+fun HomeScreen(vm: HomeViewModel) {
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val ctx = LocalContext.current
+    var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
+    var drawerOpen by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) vm.store.useFolder(uri)
+    }
+
+    val onOpen: (ResolvedItem) -> Unit = { r ->
+        when (val item = r.item) {
+            is FolderItem -> openFolder = r
+            is ShortcutItem -> if (!vm.apps.launch(item)) Toast.makeText(ctx, "Shortcut unavailable (set as default launcher?)", Toast.LENGTH_SHORT).show()
+            is AppItem -> r.app?.let(vm.apps::launch) ?: Toast.makeText(ctx, "${item.packageName} is not installed", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     MaterialTheme(colorScheme = darkColorScheme()) {
-        Surface(Modifier.fillMaxSize()) {
-            LazyVerticalGrid(
-                GridCells.Fixed(4),
-                Modifier.fillMaxSize().systemBarsPadding().padding(8.dp),
-            ) {
-                items(apps, key = { it.key + it.userSerial }) { app ->
-                    AppIcon(app, installed) { installed.launch(app) }
+        Surface(Modifier.fillMaxSize(), color = Color(0xFF101418)) {
+            Column(Modifier.fillMaxSize().systemBarsPadding()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(ui.load.sourceName, style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
+                    if (ui.layout.mode == UnsortedMode.DRAWER) TextButton({ drawerOpen = true }) { Text("Apps (${ui.layout.unsorted.size})") }
+                    Box {
+                        TextButton({ menuOpen = true }) { Text("⋮") }
+                        DropdownMenu(menuOpen, { menuOpen = false }) {
+                            DropdownMenuItem({ Text("Pick config folder…") }, { menuOpen = false; pickFolder.launch(null) })
+                            DropdownMenuItem({ Text("Use app storage") }, { menuOpen = false; vm.store.useAppStorage() })
+                            DropdownMenuItem({ Text("Reload launcher.json") }, { menuOpen = false; vm.store.pollNow() })
+                        }
+                    }
+                }
+                if (ui.load.errors.isNotEmpty()) ErrorBanner(ui.load.errors)
+                val pages = ui.layout.pages
+                val pager = rememberPagerState { pages.size }
+                HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { pages.getOrNull(it)?.id ?: it }) { index ->
+                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, onOpen) }
+                }
+                if (pages.size > 1) PageDots(pages.size, pager.currentPage)
+                Dock(ui.layout.dock, vm.apps, onOpen)
+            }
+        }
+
+        openFolder?.let { folder ->
+            AlertDialog(
+                onDismissRequest = { openFolder = null },
+                confirmButton = { TextButton({ openFolder = null }) { Text("Close") } },
+                title = { Text(folder.title) },
+                text = {
+                    LazyVerticalGrid(GridCells.Fixed(4)) {
+                        items(folder.children, key = { it.item.id }) { c -> Tile(c, vm.apps) { openFolder = null; onOpen(c) } }
+                    }
+                },
+            )
+        }
+
+        if (drawerOpen) {
+            ModalBottomSheet({ drawerOpen = false }) {
+                LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxHeight(0.85f).padding(8.dp)) {
+                    items(ui.layout.unsorted, key = { it.key }) { app ->
+                        Tile(ResolvedItem(AppItem("drawer", app.packageName, app.activityName), app), vm.apps) {
+                            drawerOpen = false; vm.apps.launch(app)
+                        }
+                    }
                 }
             }
         }
@@ -41,14 +104,93 @@ fun HomeScreen() {
 }
 
 @Composable
-fun AppIcon(app: AppEntry, installed: InstalledApps, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun ErrorBanner(errors: List<String>) {
+    var expanded by remember(errors) { mutableStateOf(false) }
     Column(
-        modifier.clickable(onClick = onClick).padding(6.dp),
+        Modifier.fillMaxWidth().padding(8.dp).background(Color(0xFF5C1F1F), RoundedCornerShape(8.dp))
+            .clickable { expanded = !expanded }.padding(10.dp),
+    ) {
+        Text("launcher.json has ${errors.size} problem(s). Showing the last working layout.", color = Color.White)
+        val shown = if (expanded) errors else errors.take(1)
+        shown.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFCDD2)) }
+        if (!expanded && errors.size > 1) Text("Tap to see all", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
+    }
+}
+
+@Composable
+private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, onOpen: (ResolvedItem) -> Unit) {
+    val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
+    val rows = if (page.synthetic) maxOf(grid.rows, (page.items.maxOfOrNull { it.item.y ?: 0 } ?: 0) + 1) else grid.rows
+    Column(Modifier.fillMaxSize().padding(8.dp)) {
+        page.title?.let { Text(it, style = MaterialTheme.typography.titleSmall, color = Color.LightGray, modifier = Modifier.padding(4.dp)) }
+        val body: @Composable ColumnScope.() -> Unit = {
+            for (y in 0 until rows) {
+                Row(Modifier.fillMaxWidth().then(if (page.synthetic) Modifier.height(96.dp) else Modifier.weight(1f))) {
+                    for (x in 0 until grid.columns) {
+                        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            byCell[x to y]?.let { Tile(it, apps) { onOpen(it) } }
+                        }
+                    }
+                }
+            }
+        }
+        if (page.synthetic) {
+            Column(Modifier.weight(1f).verticalScrollCompat(), content = body)
+        } else Column(Modifier.weight(1f), content = body)
+    }
+}
+
+@Composable
+private fun Modifier.verticalScrollCompat(): Modifier = this.then(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()))
+
+@Composable
+private fun PageDots(count: Int, current: Int) {
+    Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.Center) {
+        repeat(count) { i ->
+            Box(Modifier.padding(3.dp).size(6.dp).background(if (i == current) Color.White else Color.DarkGray, RoundedCornerShape(3.dp)))
+        }
+    }
+}
+
+@Composable
+private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, onOpen: (ResolvedItem) -> Unit) {
+    if (items.isEmpty()) return
+    Row(
+        Modifier.fillMaxWidth().padding(8.dp).background(Color(0x22FFFFFF), RoundedCornerShape(20.dp)).padding(6.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+    ) {
+        items.forEach { r -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Tile(r, apps, showLabel = false) { onOpen(r) } } }
+    }
+}
+
+@Composable
+fun Tile(r: ResolvedItem, apps: InstalledApps, showLabel: Boolean = true, onClick: () -> Unit) {
+    Column(
+        Modifier.clickable(onClick = onClick).padding(4.dp).alpha(if (r.missing) 0.4f else 1f),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val bmp = remember(app) { installed.icon(app, 144) }
-        if (bmp != null) Image(bmp.asImageBitmap(), app.label, Modifier.size(48.dp))
-        else Spacer(Modifier.size(48.dp))
-        Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+        if (r.item is FolderItem) FolderIcon(r, apps) else AppIconImage(r.app, apps, 48)
+        if (showLabel) Text(
+            r.title, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.widthIn(max = 76.dp),
+        )
+    }
+}
+
+@Composable
+private fun AppIconImage(app: InstalledApp?, apps: InstalledApps, sizeDp: Int) {
+    val bmp = remember(app) { app?.let { apps.icon(it, 144) } }
+    if (bmp != null) Image(bmp.asImageBitmap(), null, Modifier.size(sizeDp.dp))
+    else Box(Modifier.size(sizeDp.dp).background(Color.DarkGray, RoundedCornerShape(12.dp)))
+}
+
+@Composable
+private fun FolderIcon(r: ResolvedItem, apps: InstalledApps) {
+    Box(Modifier.size(48.dp).background(Color(0x33FFFFFF), RoundedCornerShape(14.dp)).padding(5.dp)) {
+        Column {
+            r.children.take(4).chunked(2).forEach { row ->
+                Row { row.forEach { c -> Box(Modifier.padding(1.dp)) { AppIconImage(c.app, apps, 17) } } }
+            }
+        }
     }
 }

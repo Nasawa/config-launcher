@@ -3,6 +3,7 @@
      No storage, accessibility, device-admin or root permissions. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
+        android:name=".ConfigLauncherApp"
         android:label="@string/app_name"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:allowBackup="false">
