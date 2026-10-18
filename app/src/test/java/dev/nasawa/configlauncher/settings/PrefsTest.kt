@@ -32,3 +32,13 @@ class DrawerPrefsTest {
         assertFalse(p.drawerKeyboard)
     }
 }
+
+@RunWith(AndroidJUnit4::class)
+class LabelBackdropPrefsTest {
+    private val p get() = Prefs(ApplicationProvider.getApplicationContext())
+    @Test fun offByDefaultAndPersists() {
+        assertFalse(p.labelBackdrop)
+        p.labelBackdrop = true
+        assertTrue(p.labelBackdrop)
+    }
+}

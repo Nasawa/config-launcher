@@ -422,7 +422,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | Banners | Polite live region, announced once. Buttons are focusable. The error detail view reads as a list of problems |
 | Touch targets | ≥ **48 × 48 dp** for everything (cells 64 × 80 dp, dock slots 64 dp, chip ≥ 48 dp hit area, banner buttons 48 dp tall) |
 | Font scaling | Labels and text use sp and follow the system font size up to 200 %. Grid labels stay 1 line and ellipsize; at ≥ 150 % labels may be hidden on the home grid (still spoken by TalkBack) if cells can't fit them. The drawer always shows labels (wrapping to 2 lines). Banners and settings wrap, never truncate |
-| Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (follow the system theme; Material 3 dynamic colour off for status colours). Home labels over wallpaper: white text with a 1 dp 50 % black shadow, plus possibly a `Label backdrop` scrim setting (Q-C4, not in the MVP settings) |
+| Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (follow the system theme; Material 3 dynamic colour off for status colours). Home labels over wallpaper: white text with a 1 dp 50 % black shadow, plus an optional `Label backdrop` setting (Q-C4, §18.1: rounded 40 % black scrim behind each home label, off by default) |
 | Reduced motion | Respect `Settings.Global.ANIMATOR_DURATION_SCALE == 0` and "Remove animations": no page-slide spring, folder open as a fade, no shake (use a red outline), no jiggle ever |
 | Colour | Status is never colour-only: ▲ warning / ■ error glyphs, dimmed tiles also say "not installed" to TalkBack |
 
@@ -456,7 +456,7 @@ The architecture proposes answers to some of these (noted). They stay here until
 - **Q-C1** *(Answered §18.1: yes, built.)* Onboarding requires picking a folder (architecture). Do you also want a "skip for now" path using app-only storage (no external editing)? Not in the architecture today.
 - **Q-C2** *(Answered §18.1: keyboard up, with a setting to turn it off.)* Should the drawer open with the keyboard up (search-first, like KISS) or without it (the spec's default)?
 - **Q-C3** Unplaced apps: the architecture defaults to the drawer (`unsorted.mode: "drawer"`), with an optional synthetic `Unsorted` page (`"page"`). Is the drawer the right default for you? (Same as ARCHITECTURE §14 Q3.)
-- **Q-C4** Home labels: plain white with a shadow (spec), or an optional dark backdrop behind labels for busy wallpapers?
+- **Q-C4** *(Answered §18.1: built, off by default.)* Home labels: plain white with a shadow (spec), or an optional dark backdrop behind labels for busy wallpapers?
 - **Q-C5** The architecture chose JSON only (no comments; use `x-note` keys). OK for you? (Same as ARCHITECTURE §14 Q2.)
 - **Q-C6** History: the architecture keeps the last 10 versions in app-private storage (not in your folder) and relies on git/Syncthing for the PC side. Enough?
 - ~~Q-C7~~ Resolved by ARCHITECTURE §17 Q12: work items stay in the file, greyed with a hint, never deleted. They go live again when the setting is turned on.

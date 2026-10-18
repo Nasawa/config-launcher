@@ -41,6 +41,7 @@ fun HomeScreen(vm: HomeViewModel) {
     val ctx = LocalContext.current
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }
+    var backdrop by remember { mutableStateOf(vm.store.prefs.labelBackdrop) }
     var keyboardOnOpen by remember { mutableStateOf(vm.store.prefs.drawerKeyboard) }
     var menuOpen by remember { mutableStateOf(false) }
     val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }) { vm.store.edit(it) } }
@@ -101,6 +102,9 @@ fun HomeScreen(vm: HomeViewModel) {
                         DropdownMenu(menuOpen, { menuOpen = false }) {
                             DropdownMenuItem({ Text("Pick config folder…") }, { menuOpen = false; moving = true; pickFolder.launch(null) })
                             DropdownMenuItem({ Text("Use phone storage") }, { menuOpen = false; vm.store.useAppStorage() })
+                            DropdownMenuItem({ Text("Label backdrop") }, {
+                                backdrop = !backdrop; vm.store.prefs.labelBackdrop = backdrop
+                            }, trailingIcon = { Checkbox(backdrop, null) })
                             DropdownMenuItem({ Text("Open keyboard with drawer") }, {
                                 keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
                             }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
@@ -118,6 +122,7 @@ fun HomeScreen(vm: HomeViewModel) {
                 drag.firstPageId = pages.firstOrNull { !it.synthetic }?.id
                 drag.grid = ui.layout.grid
                 drag.dockCount = ui.layout.dock.size
+                CompositionLocalProvider(LocalLabelBackdrop provides backdrop) {
                 HorizontalPager(
                     pager, Modifier.weight(1f).fillMaxWidth(), key = { pages.getOrNull(it)?.id ?: it },
                     userScrollEnabled = drag.dragged == null,
@@ -126,6 +131,7 @@ fun HomeScreen(vm: HomeViewModel) {
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.currentPage)
                 Dock(ui.layout.dock, vm.apps, drag, onOpen)
+                }
             }
         }
 
@@ -274,7 +280,8 @@ fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, sh
         if (r.item is FolderItem) FolderIcon(r, apps) else AppIconImage(r.app, apps, 48)
         if (showLabel) Text(
             Labels.clean(r.title), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.widthIn(max = 76.dp),
+            style = MaterialTheme.typography.labelSmall, color = Color.White,
+            modifier = Modifier.widthIn(max = 76.dp).then(LabelBackdrop.modifier(LocalLabelBackdrop.current)),
         )
     }
 }
