@@ -15,5 +15,5 @@ done
 adb logcat -d > smoke/logcat.txt
 grep -E 'TotalTime|WaitTime' smoke/am-start.txt || true
 if grep -E "FATAL EXCEPTION|ANR in $PKG" smoke/logcat.txt; then echo "crash or ANR"; exit 1; fi
-adb shell ps | grep -q "$PKG" || { echo "process not running"; exit 1; }
+adb shell "ps -A 2>/dev/null || ps" | grep -q "$PKG" || { echo "process not running"; exit 1; }
 echo "smoke OK"
