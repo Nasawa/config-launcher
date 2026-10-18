@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+<<<<<<< HEAD
+  "pages": [{"id": "home", "items": []}]
+=======
+  "pages": [{"id": "work", "items": []}]
+>>>>>>> origin/main
+}

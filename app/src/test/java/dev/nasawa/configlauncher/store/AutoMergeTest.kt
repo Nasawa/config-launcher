@@ -45,17 +45,61 @@ class AutoMergeTest {
         assertFalse(e.poll(force = true)) // our merged write is an echo
     }
 
-    @Test fun undoWritesTheFileVersionBack() = runBlocking {
-        val (e, src) = setup()
-        e.edit(Edit.MoveToCell("a", "home", 2, 2))
-        src.file.writeText(agent)
-        e.flush()
+    private fun merged(): Triple<ConfigEngine, LocalFileSource, LastGoodStore> {
+        val (e, src, lg) = setup()
+        runBlocking { e.edit(Edit.MoveToCell("a", "home", 2, 2)); src.file.writeText(agent); src.file.setLastModified(2000); assertTrue(e.flush()) }
+        return Triple(e, src, lg)
+    }
+    private fun pos(c: dev.nasawa.configlauncher.model.LauncherConfig, id: String) = c.pages[0].items.first { it.id == id }.let { it.x to it.y }
+
+    @Test fun undoUnchangedFileRevertsThroughWritePath() = runBlocking {
+        val (e, src, lg) = merged()
+        val before = lg.historyFiles().size
         assertTrue(e.undoMerge())
-        assertEquals(agent, src.file.readText())
-        assertEquals(3 to 0, e.state.value.config.pages[0].items.first { it.id == "a" }.let { it.x to it.y })
+        val c = onDisk(src)
+        assertEquals(3 to 0, pos(c, "a"))           // agent's position back
+        assertEquals("Bee", c.pages[0].items.first { it.id == "b" }.label)
         assertFalse(e.state.value.mergeUndo)
-        assertFalse(e.poll(force = true))
-        assertFalse(e.undoMerge()) // one-shot
+        assertTrue("history snapshots before the Undo write", lg.historyFiles().size >= before + 2)
+        assertFalse(e.poll(force = true))           // self-write guard
+        assertFalse(e.undoMerge())                  // one-shot
+    }
+
+    @Test fun undoAfterGitPullRevertsOnlyMergedItems() = runBlocking {
+        val (e, src, lg) = merged()
+        // A git pull lands during the snackbar: renames b and adds d; a stays where the merge put it.
+        val pulled = src.file.readText().replace("\"Bee\"", "\"Bumble\"")
+            .replace("\"dock\": [", "\"dock\": [{\"id\":\"d\",\"type\":\"app\",\"package\":\"p.d\"},")
+        src.file.writeText(pulled); src.file.setLastModified(9000)
+        assertTrue(e.poll(force = true))
+        assertTrue("external reload keeps Undo", e.state.value.mergeUndo)
+        val before = lg.historyFiles().size
+        assertTrue(e.undoMerge())
+        val c = onDisk(src)
+        assertEquals(3 to 0, pos(c, "a"))           // only the merged item reverted
+        assertEquals("Bumble", c.pages[0].items.first { it.id == "b" }.label) // pull kept
+        assertEquals(listOf("d", "c"), c.dock!!.map { it.id })
+        assertTrue(lg.historyFiles().size >= before + 3)
+        assertTrue(lg.historyFiles().any { it.readText() == pulled })
+    }
+
+    @Test fun undoCancelledWhenPullTouchedTheSameItem() = runBlocking {
+        val (e, src, lg) = merged()
+        val pulled = src.file.readText().replace("\"x\": 2", "\"x\": 1") // pull moves a again
+        assertNotEquals(src.file.readText(), pulled)
+        src.file.writeText(pulled); src.file.setLastModified(9000)
+        val before = lg.historyFiles().size
+        assertFalse(e.undoMerge())
+        assertEquals(pulled, src.file.readText())   // never overwrites the pull
+        assertEquals("File changed again, Undo cancelled.", e.state.value.notice)
+        assertFalse(e.state.value.mergeUndo)
+        assertEquals("no write, no new snapshots", before, lg.historyFiles().size)
+    }
+
+    @Test fun writtenLocalEditExpiresUndo() = runBlocking {
+        val (e, _) = merged()
+        e.edit(Edit.MoveToCell("b", "home", 0, 4)); assertTrue(e.flush())
+        assertFalse(e.undoMerge())
     }
 
     @Test fun askBeforeMergingRestoresPrompt() = runBlocking {

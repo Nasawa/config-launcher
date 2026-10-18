@@ -70,6 +70,8 @@ data class LoadState(
  * §17 Q5) → capped read → hash guard → 300 ms stability re-check → parse/migrate/validate →
  * atomic swap into [state] → last-good. Pure Kotlin; Android wiring lives in ConfigStore.
  */
+private const val CANCELLED = "File changed again, Undo cancelled."
+
 class ConfigEngine(
     @Volatile var source: ConfigSource,
     private val lastGood: LastGoodStore,
@@ -86,8 +88,10 @@ class ConfigEngine(
     @Volatile private var invalidBytes: ByteArray? = null
     /** §18.2 `Ask before merging` (default off): when true, conflicts show the B6 prompt instead of auto-merging. */
     @Volatile var askBeforeMerge = false
-    /** The file's bytes before the last automatic merge, for Undo ("Use file"). */
+    /** §18.2 Undo record: pre-merge file bytes, the hash the merge wrote, and the items it touched. */
     private var undoBytes: ByteArray? = null
+    private var mergedHash: String? = null
+    private var undoTouched: List<dev.nasawa.configlauncher.model.UndoMerge.Touched> = emptyList()
 
     /** While true (drag in progress) inbound reloads are held until drop (OQ-24). */
     @Volatile var dragging = false
@@ -130,24 +134,39 @@ class ConfigEngine(
      * target file is copied to `.configlauncher/backup/` first). Otherwise the target's file is used
      * and our current layout is kept as a history entry. An empty target always gets our layout.
      */
-    suspend fun moveTo(target: ConfigSource, useMine: Boolean): Boolean {
-        mutex.withLock {
-            val existing = target.read(Limits.MAX_BYTES)
-            val mine = existing == null || useMine
-            if (existing != null && useMine) {
-                // Folder: agent-visible backup. App-only (§18.5): no .configlauncher, so private history.
-                try { target.writeSidecar("backup", StatusJson.brokenFileName(clock()), existing) }
-                catch (_: UnsupportedOperationException) { runCatching { lastGood.snapshot(existing) } }
-            }
-            if (!mine) runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
-            source = target; lastStamp = null; lastStatusKey = null
-            _state.update { it.copy(sourceName = target.displayName, issue = null, reconnectable = target.reconnectable) }
-            if (mine) {
-                try { writeLocked(_state.value.config) } catch (e: Exception) { return fail(Issue.SaveFailed("Couldn't move your layout: ${e.message}")) }
-                return true
-            }
+    suspend fun moveTo(target: ConfigSource, useMine: Boolean): Boolean = mutex.withLock {
+        val existing = try { target.read(Limits.MAX_BYTES) } catch (e: Exception) {
+            _state.update { it.copy(notice = "Couldn't read that folder: ${e.message}") }; return false
         }
-        return poll(force = true) || _state.value.issue == null
+        val mine = existing == null || useMine
+        val adopted = if (mine) null else when (val r = ConfigCodec.decode(existing!!)) {
+            is ParseResult.Ok -> r.config
+            // Grace review: never adopt an invalid folder file. Nothing changes; the user can replace it or fix it.
+            is ParseResult.Invalid -> { _state.update { it.copy(notice = "launcher.json in that folder has problems, so it wasn't used.") }; return false }
+        }
+        if (existing != null && useMine) {
+            // Folder: agent-visible backup first; if that fails, don't overwrite. App-only (§18.5): private history.
+            try { target.writeSidecar("backup", StatusJson.brokenFileName(clock()), existing) }
+            catch (_: UnsupportedOperationException) { runCatching { lastGood.snapshot(existing) } }
+            catch (e: Exception) { _state.update { it.copy(notice = "Couldn't back up the folder's launcher.json: ${e.message}") }; return false }
+        }
+        val oldSource = source; val oldState = _state.value; val oldStamp = lastStamp
+        if (adopted != null) runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
+        source = target; lastStamp = null; lastStatusKey = null
+        try {
+            if (adopted != null) {
+                val hash = ConfigCodec.sha256(existing!!)
+                lastStamp = target.stamp()
+                _state.value = LoadState(adopted, Origin.FILE, target.displayName, hash, reconnectable = target.reconnectable)
+                saveLastGood(existing)
+            } else writeLocked(oldState.config)
+            true
+        } catch (e: Exception) {
+            // Roll back: the old source stays in charge and nothing is reported as moved.
+            source = oldSource; lastStamp = oldStamp
+            _state.value = oldState.copy(notice = "Couldn't move your layout: ${e.message}")
+            false
+        }
     }
 
     suspend fun switchSource(newSource: ConfigSource) {
@@ -200,7 +219,9 @@ class ConfigEngine(
             is ParseResult.Ok -> {
                 invalidHash = null; invalidBytes = null
                 writeStatus("ok", emptyList(), hash)
-                _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash, reconnectable = src.reconnectable)
+                // An external reload doesn't expire Undo (§18.2); it takes the "changed" path.
+                _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash, reconnectable = src.reconnectable,
+                    mergeUndo = undoBytes != null, notice = _state.value.notice.takeIf { undoBytes != null })
                 saveLastGood(bytes)
                 true
             }
@@ -254,7 +275,7 @@ class ConfigEngine(
         }
         val cfg = _state.value.config.let { it.copy(revision = (it.revision ?: 0) + 1) }
         try { writeLocked(cfg) } catch (e: Exception) { return fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")) }
-        pending.clear(); invalidHash = null
+        pending.clear(); invalidHash = null; clearUndo()
         _state.update { it.copy(pendingEdits = 0, issue = null, notice = when {
             brokenName != null -> "Your broken launcher.json was saved to .configlauncher/broken/."
             stillBroken -> "Your broken launcher.json was saved to history."
@@ -275,8 +296,9 @@ class ConfigEngine(
         if (ConfigCodec.decode(ConfigCodec.encodeBytes(out)) !is ParseResult.Ok) return false
         runCatching { lastGood.snapshot(fileBytes) }
         runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
-        try { writeLocked(out) } catch (e: Exception) { fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")); return true }
-        pending.clear(); undoBytes = fileBytes
+        val written = try { writeLocked(out) } catch (e: Exception) { fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")); return true }
+        pending.clear(); undoBytes = fileBytes; mergedHash = written
+        undoTouched = dev.nasawa.configlauncher.model.UndoMerge.record(fileCfg, out)
         val kept = ops.size - skipped
         _state.update {
             it.copy(pendingEdits = 0, issue = null, mergeUndo = true, notice = MergeCopy.notice(kept, skipped))
@@ -284,24 +306,35 @@ class ConfigEngine(
         return true
     }
 
-    /** Snackbar Undo after an automatic merge: write the file's pre-merge version back ("Use file"). */
+    /**
+     * Snackbar Undo after an automatic merge (§18.2 Undo safety rule). Re-reads and hashes the file:
+     * unchanged → write the pre-merge version through [writeLocked]; changed → revert only the
+     * touched items by ID onto the new file, or cancel with no write. Both versions go to history first.
+     */
     suspend fun undoMerge(): Boolean = mutex.withLock {
-        val bytes = undoBytes ?: return false
-        undoBytes = null
-        val cfg = (ConfigCodec.decode(bytes) as? ParseResult.Ok)?.config ?: return false
+        val before = undoBytes ?: return false
+        val touched = undoTouched
+        clearUndo()
+        val cancel = { msg: String -> _state.update { it.copy(mergeUndo = false, notice = msg) }; false }
+        val now = try { source.read(Limits.MAX_BYTES) } catch (_: Exception) { null } ?: return cancel(CANCELLED)
+        val target: LauncherConfig = if (ConfigCodec.sha256(now) == mergedHash) {
+            (ConfigCodec.decode(before) as? ParseResult.Ok)?.config ?: return cancel(CANCELLED)
+        } else {
+            val nowCfg = (ConfigCodec.decode(now) as? ParseResult.Ok)?.config ?: return cancel(CANCELLED)
+            val r = dev.nasawa.configlauncher.model.UndoMerge.revert(nowCfg, touched) ?: return cancel(CANCELLED)
+            if (ConfigCodec.decode(ConfigCodec.encodeBytes(r)) !is ParseResult.Ok) return cancel(CANCELLED)
+            r.copy(revision = (nowCfg.revision ?: 0) + 1)
+        }
         runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
-        try {
-            val hash = ConfigCodec.sha256(bytes)
-            selfWrites.addLast(hash); while (selfWrites.size > 4) selfWrites.removeFirst()
-            source.write(bytes)
-            lastStamp = source.stamp()
-            _state.value = _state.value.copy(config = cfg, origin = Origin.FILE, baseHash = hash, mergeUndo = false, notice = null, issue = null)
-            saveLastGood(bytes)
-            true
-        } catch (e: Exception) { fail(Issue.SaveFailed("Couldn't undo: ${e.message}")) }
+        runCatching { lastGood.snapshot(before) }
+        if (ConfigCodec.sha256(now) != mergedHash) runCatching { lastGood.snapshot(now) }
+        try { writeLocked(target); _state.update { it.copy(mergeUndo = false, notice = null) }; true }
+        catch (e: Exception) { fail(Issue.SaveFailed("Couldn't undo: ${e.message}")) }
     }
 
-    fun dismissMergeUndo() { undoBytes = null; _state.update { it.copy(mergeUndo = false) } }
+    private fun clearUndo() { undoBytes = null; mergedHash = null; undoTouched = emptyList() }
+
+    fun dismissMergeUndo() { clearUndo(); _state.update { it.copy(mergeUndo = false) } }
 
     /** B6 "Use file": drop local edits (snapshotted to history) and load the file. */
     suspend fun resolveUseFile() {
