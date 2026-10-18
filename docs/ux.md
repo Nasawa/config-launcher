@@ -220,9 +220,9 @@ Success is silent (no "saved" toast). A reload never causes a write.
 |---|---|---|
 | File changed, valid, **not** in edit mode | Reload and re-render in place (no page jump; the open drawer or folder stays open if it still exists) | Snackbar (3 s): `Layout updated from launcher.json.` |
 | File changed while **dragging** | Hold the reload until the drag ends, then run the conflict check | — |
-| File changed **and** we have a pending edit (hash mismatch at write time, or an incoming file while ops are pending) | **Default: automatic merge** (§18.2). The pending ops are replayed by ID onto the file and the result is written, with no prompt. "Just touched" means exactly the items targeted by pending (unwritten) ops; everything else comes from the file. Both pre-merge versions go to history | Snackbar: `Layout updated from launcher.json. Kept your 2 changes.` [`Undo`] (Undo writes the file's version back, i.e. "Use file") |
+| File changed **and** we have a pending edit (hash mismatch at write time, or an incoming file while ops are pending) | **Default: automatic merge** (§18.2). The pending ops are replayed by ID onto the file and the result is written, with no prompt. "Just touched" means exactly the items targeted by pending (unwritten) ops; everything else comes from the file. Both pre-merge versions go to history | Snackbar per §9.1 (all kept, all skipped or mixed). Undo writes the file's version back, i.e. "Use file" |
 | Same, with **`Ask before merging`** on (Settings, default off), or if the merged result fails validation (regardless of the setting) | Nothing is overwritten. Banner B6 | `launcher.json changed while you were editing.` Actions: **`Use file`** (discard my pending edits and load the file; my version is saved to history) · **`Keep mine`** (the same replay as the automatic merge) |
-| Merge (automatic or `Keep mine`) and a target item was deleted in the file | That edit is skipped | Snackbar: `1 change skipped because the item was removed in the file.` [`Undo`] |
+| Merge (automatic or `Keep mine`) and a target item was deleted in the file | That edit is skipped | Counted in the §9.1 snackbar |
 | Merge and the target cell is taken in the file | Placed in the nearest free cell on the same page, else the first free cell, else a new page | — |
 | File changed and is invalid | §6 error banner (B1/B2). Editing still works (§4.1) | see §6 |
 
@@ -388,21 +388,71 @@ Shown on first launch, before the home screen. Each step is one full screen with
 
 | When | Text |
 |---|---|
-| Automatic merge kept pending edits (§18.2) | `Layout updated from launcher.json. Kept your 2 changes.` [`Undo`] (singular: `Kept your change.`) |
 | External reload (also when a drag is cancelled while a new file is waiting, §17 Q6) | `Layout updated from launcher.json.` |
 | Backup copy couldn't be updated (app storage full; the folder write succeeded). One time, retried on the next load or write (§17 Q4) | `Couldn't update the backup copy (phone storage full).` |
 | Work item tap while the opt-in is off | `Turn on "Include work apps in config" to use this.` |
 | Problem fixed | `Layout loaded.` |
 | Dimmed item tap | Hint sheet (§1.1): `Not installed` / `Shortcut no longer available` / `Work apps are paused` / `Set as Home to use shortcuts`, with [`Remove from layout`] |
 | First edit while the file is invalid | `Your broken launcher.json was saved to .configlauncher/broken/.` |
-| A merge (automatic or `Keep mine`) skipped an edit | `1 change skipped because the item was removed in the file.` [`Undo`] (plural: `3 changes skipped…`) |
-| A merge (automatic or `Keep mine`) skipped a folder, one member left (placed alone, §17 Q9) | `Folder "<Label>" wasn't recreated because its other apps were removed or moved in the file. "<App>" was placed on its own.` [`Undo`] |
-| Same, no members left | `Folder "<Label>" wasn't recreated because its apps were removed or moved in the file.` [`Undo`] |
+| Merge results (kept and skipped changes, folder skips) | See §9.1 |
 | Work app drag refused | `Turn on "Include work apps in config" in Settings to place work apps.` |
 | Removed from home | `Removed <Label> from home.` [`Undo`] (Undo = a second write restoring it) |
 | Hidden | `<Label> hidden from the app list.` [`Undo`] |
 
 ---
+
+### 9.1 Merge snackbar (automatic merge and `Keep mine`)
+One snackbar per merge, never two. It leads with what happened, then gives counts. `k` = changes kept, `s` = changes skipped
+(an edit whose item was removed in the file; a folder that wasn't recreated counts as one skipped change).
+
+| Case | Text (exact) | Undo |
+|---|---|---|
+| All kept, k = 1 | `Layout updated from launcher.json. Kept your change.` | Yes |
+| All kept, k ≥ 2 | `Layout updated from launcher.json. Kept your 2 changes.` | Yes |
+| Mixed, 1/1 | `Layout updated from launcher.json. Kept 1 change, skipped 1.` | Yes |
+| Mixed, n/1 | `Layout updated from launcher.json. Kept 3 changes, skipped 1.` | Yes |
+| Mixed, 1/n | `Layout updated from launcher.json. Kept 1 change, skipped 3.` | Yes |
+| Mixed, n/n | `Layout updated from launcher.json. Kept 2 changes, skipped 2.` (61 characters) | Yes |
+| All skipped, s = 1, and it's a regular edit | `1 change skipped because the item was removed in the file.` | No |
+| All skipped, s ≥ 2 | `2 changes skipped because the items were removed in the file.` | No |
+| All skipped, s = 1, and it's a folder with one member left (§17 Q9) | `Folder "<Label>" wasn't recreated because its other apps were removed or moved in the file. "<App>" was placed on its own.` | No |
+| All skipped, s = 1, and it's a folder with no members left | `Folder "<Label>" wasn't recreated because its apps were removed or moved in the file.` | No |
+
+Rules:
+- **Folder message:** shown only when the folder is the *only* change and it was skipped. In every other case it's folded into the counts (one folder = one skipped change). The full story is in history.
+- **Undo** (automatic merge only) restores the file's version as it arrived, i.e. "Use file" (§18.2), with Sprite's safety rule: if the file changed again since the merge, only the items the merge touched are reverted. Skipped edits stay skipped either way. **All-skipped merges have no Undo**, because nothing of yours was written and the screen already shows the file's version. The pre-merge phone layout stays in `Restore previous layout`.
+- **`Keep mine`** (B6) uses the same table, minus Undo, because the user has just chosen. All kept shows nothing extra.
+- Snackbar duration: 6 s when it has Undo (Material long), 4 s without.
+- **TalkBack** announces the full sentence, not the short form. Mixed: `Layout updated from launcher.json. Kept 2 changes. Skipped 2 changes because their items were removed or moved in the file.` The Undo action is exposed as the snackbar's action and announced by the system (`Undo, button`). All-kept and all-skipped announce the visible text.
+- **Android resources** (no hard-coded English in Kotlin):
+  ```xml
+  <string name="merge_updated">Layout updated from launcher.json.</string>
+  <plurals name="merge_kept_all">
+      <item quantity="one">Kept your change.</item>
+      <item quantity="other">Kept your %d changes.</item>
+  </plurals>
+  <!-- Mixed: %1$s = merge_updated, %2$s = merge_kept_part, %3$s = merge_skipped_part -->
+  <string name="merge_mixed">%1$s %2$s, %3$s.</string>
+  <plurals name="merge_kept_part">
+      <item quantity="one">Kept %d change</item>
+      <item quantity="other">Kept %d changes</item>
+  </plurals>
+  <plurals name="merge_skipped_part">
+      <item quantity="one">skipped %d</item>
+      <item quantity="other">skipped %d</item>
+  </plurals>
+  <plurals name="merge_skipped_all">
+      <item quantity="one">%d change skipped because the item was removed in the file.</item>
+      <item quantity="other">%d changes skipped because the items were removed in the file.</item>
+  </plurals>
+  <plurals name="merge_skipped_a11y">
+      <item quantity="one">Skipped %d change because its item was removed or moved in the file.</item>
+      <item quantity="other">Skipped %d changes because their items were removed or moved in the file.</item>
+  </plurals>
+  <string name="merge_folder_one_left">Folder "%1$s" wasn't recreated because its other apps were removed or moved in the file. "%2$s" was placed on its own.</string>
+  <string name="merge_folder_none_left">Folder "%1$s" wasn't recreated because its apps were removed or moved in the file.</string>
+  ```
+  `merge_mixed` is `merge_updated` + `merge_kept_part` + `merge_skipped_part`. Always pass the count as the plurals quantity *and* the format argument (`getQuantityString(id, n, n)`).
 
 ## 10. Copy style guide
 
@@ -461,7 +511,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 - [ ] Folders: `label`, create/rename/add/remove/delete rules (§3), open card, max 48.
 - [ ] Edit mode: entry/exit, outlines, drag targets (§4.2), no reflow, 30 s idle exit, **allowed while invalid** with the broken-copy snackbar, work-app refusal when the opt-in is off.
 - [ ] Write path (§4.3): ID-based ops → 750 ms debounce (never mid-drag) → hash check → canonical serialize (`x-` keys kept) → temp write + verify → `"wt"` write + verify → restore on failure → remember hash, history (10). B5 on failure.
-- [ ] Conflict (§4.4): hold during drag, automatic merge with `Kept your N changes` + Undo by default, B6 `Use file` / `Keep mine` only with `Ask before merging` or a failed merge (replay by ID, skipped-op snackbar with Undo, nearest free cell).
+- [ ] Conflict (§4.4): hold during drag, automatic merge with the §9.1 snackbar (kept / skipped / mixed, Undo only when something was kept) by default, B6 `Use file` / `Keep mine` only with `Ask before merging` or a failed merge (replay by ID, skipped-op snackbar with Undo, nearest free cell).
 - [ ] Reload (§5): 2 s poll while visible + immediate on resume, ContentObserver as a hint, 300 ms stability check, hash decides, no page jump, sync-conflict notice.
 - [ ] Banners B1–B8 (§6.1), collapse chip, live region, auto-clear. Detail view (§6.2) with 1-based line/column, paths and excerpts; Copy errors; Restore with confirmation (backup to `.configlauncher/backup/`).
 - [ ] First run (§7) with exact copy, `Skip for now` (app-private source, Choose folder later, Use phone storage, one-time reminder), persistable grant, three folder outcomes, format note, home role request (RoleManager), one-time hint.
