@@ -1,18 +1,19 @@
 package dev.nasawa.configlauncher.store
 
-import dev.nasawa.configlauncher.config.ConfigCodec
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 
 /**
- * launcher.json in app-specific storage (no permission needed; reachable with
- * `adb push launcher.json /sdcard/Android/data/dev.nasawa.configlauncher/files/`).
- * Writes are temp file + fsync + rename, which is atomic on the same filesystem.
+ * launcher.json in a real directory we own. In the app it is the AF-1 app-only source
+ * (`filesDir/config/source/launcher.json`, ARCHITECTURE.md §18.5) with [sidecars] = false: no
+ * `.configlauncher/`, no status.json. Tests also use it with sidecars as a stand-in for a folder.
+ * Writes are `launcher.json.tmp` in the same directory + fsync + rename (atomic; no read-back verify).
+ * Debug builds: `adb shell run-as dev.nasawa.configlauncher sh -c 'cat > files/config/source/launcher.json' < launcher.json`.
  */
-class LocalFileSource(val dir: File) : ConfigSource {
+class LocalFileSource(val dir: File, val sidecars: Boolean = true) : ConfigSource {
     val file = File(dir, FILE_NAME)
-    private val temp = File(File(dir, ".configlauncher"), "$FILE_NAME.tmp")
+    private val temp = File(dir, "$FILE_NAME.tmp")
 
     override val displayName = "App storage"
     override val reconnectable = false
@@ -26,13 +27,13 @@ class LocalFileSource(val dir: File) : ConfigSource {
     }
 
     override fun write(bytes: ByteArray) {
-        temp.parentFile!!.mkdirs()
+        if (!dir.isDirectory && !dir.mkdirs()) throw IOException("can't create ${dir.path}")
         FileOutputStream(temp).use { it.write(bytes); it.fd.sync() }
-        if (ConfigCodec.sha256(temp.readBytes()) != ConfigCodec.sha256(bytes)) throw IOException("temp file verification failed")
         if (!temp.renameTo(file)) throw IOException("could not replace ${file.name}")
     }
 
     override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
+        if (!sidecars) throw UnsupportedOperationException("app-only mode has no .configlauncher folder (§18.5)")
         val d = File(File(dir, ".configlauncher"), subdir)
         if (!d.isDirectory && !d.mkdirs()) throw IOException("can't create ${d.path}")
         val f = File(d, name)

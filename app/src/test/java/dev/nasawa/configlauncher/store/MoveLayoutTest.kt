@@ -81,4 +81,26 @@ class MoveLayoutTest {
         assertNull(e.state.value.issue)
         assertFalse(e.poll(force = true))
     }
+
+    @Test fun appOnlyModeWritesNoConfiglauncherFolder() = runBlocking {
+        val dir = tmp.newFolder("apponly")
+        val phone = LocalFileSource(dir, sidecars = false)
+        val e = ConfigEngine(phone, LastGoodStore(tmp.newFolder("lg4")), 0)
+        assertTrue(e.moveTo(phone, useMine = false))
+        phone.file.writeText("{ broken"); phone.file.setLastModified(5000)
+        e.poll(force = true)
+        assertNotNull(e.state.value.issue)
+        assertFalse(File(dir, ".configlauncher").exists())
+        assertEquals(listOf("launcher.json"), dir.list()!!.toList())
+    }
+
+    @Test fun replaceIntoAppOnlyBacksUpToHistory() = runBlocking {
+        val (e, _) = phone()
+        val lgDir = tmp.newFolder("lg5")
+        val e2 = ConfigEngine(LocalFileSource(tmp.newFolder("x")), LastGoodStore(lgDir), 0)
+        val target = LocalFileSource(tmp.newFolder("apponly2"), sidecars = false); target.file.writeText(theirs)
+        assertTrue(e2.moveTo(target, useMine = true))
+        assertFalse(File(target.dir, ".configlauncher").exists())
+        assertTrue(LastGoodStore(lgDir).historyFiles().any { it.readText() == theirs })
+    }
 }

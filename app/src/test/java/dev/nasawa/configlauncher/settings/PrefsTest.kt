@@ -13,7 +13,7 @@ class PrefsTest {
 
     @Test fun firstRunUntilSkippedOrFolderPicked() {
         assertFalse(p.onboarded)
-        p.onboarded = true
+        p.appOnly = true
         assertTrue(p.onboarded)
     }
 
