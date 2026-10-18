@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.nasawa.configlauncher.apps.InstalledApps
 import dev.nasawa.configlauncher.model.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,8 +43,31 @@ fun HomeScreen(vm: HomeViewModel) {
     var menuOpen by remember { mutableStateOf(false) }
     val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }) { vm.store.edit(it) } }
     var cloudUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var onboarded by remember { mutableStateOf(vm.store.prefs.onboarded) }
+    // true: the pick moves the layout (first run, menu); false: Reconnect just re-grants the folder.
+    var moving by remember { mutableStateOf(false) }
+    var moveAsk by remember { mutableStateOf<Pair<android.net.Uri, dev.nasawa.configlauncher.store.ConfigEngine.Inspection>?>(null) }
+    val scope = rememberCoroutineScope()
+    val proceed = { uri: android.net.Uri ->
+        if (!moving) vm.store.useFolder(uri)
+        else scope.launch {
+            val ins = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vm.store.inspectFolder(uri) }
+            if (ins == null || ins is dev.nasawa.configlauncher.store.ConfigEngine.Inspection.Empty) { vm.store.moveToFolder(uri, useMine = true); onboarded = true }
+            else moveAsk = uri to ins
+        }
+        Unit
+    }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) { if (vm.store.isCloudFolder(uri)) cloudUri = uri else vm.store.useFolder(uri) }
+        if (uri != null) { if (vm.store.isCloudFolder(uri)) cloudUri = uri else proceed(uri) }
+    }
+    if (!onboarded) {
+        FirstRunScreen(
+            onChooseFolder = { moving = true; pickFolder.launch(null) },
+            onSkip = { vm.store.skipOnboarding(); onboarded = true },
+        )
+        cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }) }
+        moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it); onboarded = true }, { moveAsk = null }) }
+        return
     }
     LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
     val toast = { msg: String -> Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
@@ -73,14 +97,14 @@ fun HomeScreen(vm: HomeViewModel) {
                     Box {
                         TextButton({ menuOpen = true }) { Text("⋮") }
                         DropdownMenu(menuOpen, { menuOpen = false }) {
-                            DropdownMenuItem({ Text("Pick config folder…") }, { menuOpen = false; pickFolder.launch(null) })
-                            DropdownMenuItem({ Text("Use app storage") }, { menuOpen = false; vm.store.useAppStorage() })
+                            DropdownMenuItem({ Text("Pick config folder…") }, { menuOpen = false; moving = true; pickFolder.launch(null) })
+                            DropdownMenuItem({ Text("Use phone storage") }, { menuOpen = false; vm.store.useAppStorage() })
                             DropdownMenuItem({ Text("Reload launcher.json") }, { menuOpen = false; vm.store.pollNow() })
                         }
                     }
                 }
                 if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
-                ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = vm.store::useAppStorage) }
+                ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }) }
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
                 pages.getOrNull(pager.currentPage).let { p ->
@@ -100,14 +124,8 @@ fun HomeScreen(vm: HomeViewModel) {
             }
         }
 
-        cloudUri?.let { uri ->
-            AlertDialog(
-                onDismissRequest = { cloudUri = null },
-                confirmButton = { TextButton({ cloudUri = null; vm.store.useFolder(uri) }) { Text("Use anyway") } },
-                dismissButton = { TextButton({ cloudUri = null }) { Text("Cancel") } },
-                text = { Text("Cloud folders can take a while to sync. A Syncthing or git folder works best.") },
-            )
-        }
+        cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }) }
+        moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it) }, { moveAsk = null }) }
 
         openFolder?.let { folder ->
             AlertDialog(

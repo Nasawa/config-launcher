@@ -103,6 +103,42 @@ class ConfigEngine(
         else LoadState(DefaultLayout.config, Origin.DEFAULT, source.displayName)
     }
 
+    /** What a candidate source holds, for the §18.2 "move layout" dialog. */
+    sealed interface Inspection {
+        data object Empty : Inspection
+        data class Valid(val pages: Int, val items: Int) : Inspection
+        data class Invalid(val errors: List<String>) : Inspection
+    }
+
+    fun inspect(src: ConfigSource): Inspection {
+        val bytes = src.read(Limits.MAX_BYTES) ?: return Inspection.Empty
+        return when (val r = ConfigCodec.decode(bytes)) {
+            is ParseResult.Ok -> Inspection.Valid(r.config.pages.size, r.config.pages.sumOf { it.items.size } + r.config.dock.orEmpty().size)
+            is ParseResult.Invalid -> Inspection.Invalid(r.errors)
+        }
+    }
+
+    /**
+     * §18.2 move the layout to [target]. [useMine]: our current layout is written there (an existing
+     * target file is copied to `.configlauncher/backup/` first). Otherwise the target's file is used
+     * and our current layout is kept as a history entry. An empty target always gets our layout.
+     */
+    suspend fun moveTo(target: ConfigSource, useMine: Boolean): Boolean {
+        mutex.withLock {
+            val existing = target.read(Limits.MAX_BYTES)
+            val mine = existing == null || useMine
+            if (existing != null && useMine) target.writeSidecar("backup", StatusJson.brokenFileName(clock()), existing)
+            if (!mine) runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
+            source = target; lastStamp = null; lastStatusKey = null
+            _state.update { it.copy(sourceName = target.displayName, issue = null, reconnectable = target.reconnectable) }
+            if (mine) {
+                try { writeLocked(_state.value.config) } catch (e: Exception) { return fail(Issue.SaveFailed("Couldn't move your layout: ${e.message}")) }
+                return true
+            }
+        }
+        return poll(force = true) || _state.value.issue == null
+    }
+
     suspend fun switchSource(newSource: ConfigSource) {
         mutex.withLock {
             source = newSource

@@ -18,7 +18,7 @@ import java.io.File
  * for app storage and a ContentObserver hint for SAF (ARCHITECTURE.md §4).
  */
 class ConfigStore(private val context: Context, private val scope: CoroutineScope) {
-    private val prefs = Prefs(context)
+    val prefs = Prefs(context)
     val localDir: File = context.getExternalFilesDir(null) ?: context.filesDir
     val engine = ConfigEngine(currentSource(), LastGoodStore(File(context.filesDir, "config")), scope = scope)
     val state get() = engine.state
@@ -68,7 +68,32 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         switch()
     }
 
-    fun useAppStorage() {
+    /** First run "Skip for now": app-only storage; a folder can be chosen later. */
+    fun skipOnboarding() { prefs.onboarded = true; useAppStorage(moveLayout = false) }
+
+    fun inspectFolder(uri: Uri): ConfigEngine.Inspection? =
+        runCatching { engine.inspect(SafSource(context.contentResolver, uri)) }.getOrNull()
+
+    /** §18.2 move the current layout into a picked folder ([useMine]) or adopt the folder's file. */
+    fun moveToFolder(uri: Uri, useMine: Boolean) {
+        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        prefs.folderUri = uri; prefs.onboarded = true
+        val wasRunning = pollJob != null
+        stop()
+        scope.launch(Dispatchers.IO) { engine.moveTo(currentSource(), useMine); if (wasRunning) withContext(Dispatchers.Main) { start() } }
+    }
+
+    fun useAppStorage(moveLayout: Boolean = true) {
+        if (moveLayout) {
+            prefs.folderUri?.let { old -> runCatching { context.contentResolver.releasePersistableUriPermission(old, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } }
+            prefs.folderUri = null
+            val wasRunning = pollJob != null
+            stop()
+            // §18.2: copy the current layout into the phone file, then make it the source.
+            scope.launch(Dispatchers.IO) { engine.moveTo(currentSource(), useMine = true); if (wasRunning) withContext(Dispatchers.Main) { start() } }
+            return
+        }
+
         prefs.folderUri?.let { old ->
             runCatching { context.contentResolver.releasePersistableUriPermission(old, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
         }

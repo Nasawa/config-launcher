@@ -327,7 +327,9 @@ Shown on first launch, before the home screen. Each step is one full screen with
    - Title: `Choose your config folder`
    - Body: `Pick a folder for launcher.json. A folder that a sync app (like Syncthing) or a git app keeps in sync lets you edit it from your computer, with history. Config Launcher also keeps a small .configlauncher folder there for status and backups.`
    - Button: `Choose folder` → system picker (`ACTION_OPEN_DOCUMENT_TREE`). Take a persistable read+write grant.
-   - Picker cancelled → stay on this screen, no message. (Whether to add a "skip" path is Q-C1.)
+   - Picker cancelled → stay on this screen, no message.
+   - Secondary button `Skip for now` (Q-C1, ARCHITECTURE §18.2): uses app-only storage on the phone and lands on the home screen. Note under the buttons: `Skipping keeps your layout on this phone only. You can choose a folder later from the ⋮ menu.`
+   - Choosing a folder later (⋮ → `Pick config folder…`): no `launcher.json` there → the current layout is written there. A file exists → dialog `This folder already has a launcher.json.` with `Use the folder's layout` (current layout kept in history) · `Replace it with mine` (folder file copied to `.configlauncher/backup/` first). ⋮ → `Use phone storage` copies the current layout to the phone file and releases the folder grant.
    - **Cloud folder** (the picked folder's provider isn't local storage, `com.android.externalstorage.documents`): a soft warning before continuing: `Cloud folders can take a while to sync. A Syncthing or git folder works best.` Buttons: `Use anyway` · `Choose another folder`. Not blocked (§17 Q15).
 3. **Folder result**
    - **Contains a valid `launcher.json`:** `Found launcher.json with 3 pages and 24 items.` Buttons: `Use this layout` · `Start fresh` (the existing file is first saved to `.configlauncher/backup/`).
@@ -451,7 +453,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 
 The architecture proposes answers to some of these (noted). They stay here until you confirm.
 
-- **Q-C1** Onboarding requires picking a folder (architecture). Do you also want a "skip for now" path using app-only storage (no external editing)? Not in the architecture today.
+- **Q-C1** *(Answered §18.1: yes, built.)* Onboarding requires picking a folder (architecture). Do you also want a "skip for now" path using app-only storage (no external editing)? Not in the architecture today.
 - **Q-C2** Should the drawer open with the keyboard up (search-first, like KISS) or without it (the spec's default)?
 - **Q-C3** Unplaced apps: the architecture defaults to the drawer (`unsorted.mode: "drawer"`), with an optional synthetic `Unsorted` page (`"page"`). Is the drawer the right default for you? (Same as ARCHITECTURE §14 Q3.)
 - **Q-C4** Home labels: plain white with a shadow (spec), or an optional dark backdrop behind labels for busy wallpapers?
