@@ -3,8 +3,13 @@ package dev.nasawa.configlauncher.store
 import dev.nasawa.configlauncher.config.ConfigCodec
 import dev.nasawa.configlauncher.config.Limits
 import dev.nasawa.configlauncher.config.ParseResult
+import dev.nasawa.configlauncher.model.Edit
+import dev.nasawa.configlauncher.model.Edits
 import dev.nasawa.configlauncher.model.LauncherConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +50,10 @@ data class LoadState(
     /** Hash of the file version [config] was derived from (the write-back base hash). */
     val baseHash: String? = null,
     val issue: Issue? = null,
+    /** Local edits not yet written (optimistic; already shown). */
+    val pendingEdits: Int = 0,
+    /** launcher.json changed under pending edits (banner B6: Use file / Keep mine). */
+    val conflict: Boolean = false,
     /** One-shot snackbar text, cleared by [ConfigEngine.consumeNotice]. */
     val notice: String? = null,
 ) {
@@ -61,7 +70,15 @@ class ConfigEngine(
     @Volatile var source: ConfigSource,
     private val lastGood: LastGoodStore,
     private val stabilityMs: Long = 300,
+    private val scope: CoroutineScope? = null,
+    private val debounceMs: Long = 750,
 ) {
+    private val pending = mutableListOf<Edit>()
+    private var flushJob: Job? = null
+    /** Hash of the file bytes that last failed to parse/validate (for the OQ-15 broken-copy path). */
+    private var invalidHash: String? = null
+    /** While true (drag in progress) inbound reloads are held until drop (OQ-24). */
+    @Volatile var dragging = false
     private val mutex = Mutex()
     private var lastStamp: Stamp? = null
     private var pollCount = 0
@@ -94,6 +111,7 @@ class ConfigEngine(
     suspend fun poll(force: Boolean = false): Boolean = mutex.withLock { pollLocked(force) }
 
     private suspend fun pollLocked(force: Boolean): Boolean {
+        if (dragging || pending.isNotEmpty() || _state.value.conflict) return false
         val src = source
         val hashAnyway = force || (++pollCount % 5 == 0)
         val stamp = try { src.stamp() } catch (e: Exception) { return fail(classify(e, src)) }
@@ -117,13 +135,84 @@ class ConfigEngine(
         }
         lastStamp = stamp
         return when (val r = ConfigCodec.decode(bytes)) {
-            is ParseResult.Invalid -> fail(classifyParse(r.errors))
+            is ParseResult.Invalid -> { invalidHash = hash; fail(classifyParse(r.errors)) }
             is ParseResult.Ok -> {
+                invalidHash = null
                 _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash)
                 saveLastGood(bytes)
                 true
             }
         }
+    }
+
+    /**
+     * Outbound binding (§5): apply [edit] to the shown model now; write after [debounceMs] of quiet.
+     * Edits made while B6 is up join the queue (§17 Q8). Returns false for a no-op edit.
+     */
+    suspend fun edit(edit: Edit): Boolean {
+        mutex.withLock {
+            val r = Edits.apply(_state.value.config, edit)
+            if (!r.applied) return false
+            pending += edit
+            _state.update { it.copy(config = r.config, pendingEdits = pending.size) }
+        }
+        scheduleFlush()
+        return true
+    }
+
+    private fun scheduleFlush() {
+        val s = scope ?: return
+        flushJob?.cancel()
+        flushJob = s.launch { delay(debounceMs); while (dragging) delay(100); flush() }
+    }
+
+    /**
+     * Write pending edits. The B6 hash check runs first (§17 Q7): if the file changed since we
+     * loaded it, enter the conflict state. Only if the file is still the same broken bytes is the
+     * broken copy snapshotted before overwriting (OQ-15).
+     */
+    suspend fun flush(): Boolean = mutex.withLock {
+        if (pending.isEmpty() || _state.value.conflict) return false
+        val current = try { source.read(Limits.MAX_BYTES) } catch (e: Exception) { return fail(Issue.SaveFailed(e.message ?: "read failed")) }
+        val curHash = current?.let { ConfigCodec.sha256(it) }
+        val base = _state.value.baseHash
+        val stillBroken = curHash != null && curHash == invalidHash
+        if (current != null && curHash != base && curHash !in selfWrites && !stillBroken) {
+            _state.update { it.copy(conflict = true) }
+            return false
+        }
+        if (stillBroken) current?.let { b -> runCatching { lastGood.snapshot(b) } }
+        val cfg = _state.value.config.let { it.copy(revision = (it.revision ?: 0) + 1) }
+        try { writeLocked(cfg) } catch (e: Exception) { return fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")) }
+        pending.clear(); invalidHash = null
+        _state.update { it.copy(pendingEdits = 0, issue = null, notice = if (stillBroken) "Your broken launcher.json was saved to history." else it.notice) }
+        true
+    }
+
+    /** B6 "Use file": drop local edits (snapshotted to history) and load the file. */
+    suspend fun resolveUseFile() {
+        mutex.withLock {
+            runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
+            pending.clear(); lastStamp = null
+            _state.update { it.copy(conflict = false, pendingEdits = 0, baseHash = null) }
+            pollLocked(force = true)
+        }
+    }
+
+    /** B6 "Keep mine": replay local ops by ID onto the file's version (snapshotted first) and write. */
+    suspend fun resolveKeepMine(): Boolean = mutex.withLock {
+        val bytes = try { source.read(Limits.MAX_BYTES) } catch (e: Exception) { return fail(Issue.SaveFailed(e.message ?: "read failed")) }
+        val fileCfg = bytes?.let { (ConfigCodec.decode(it) as? ParseResult.Ok)?.config }
+        val (merged, skipped) = if (fileCfg == null) _state.value.config to 0 else Edits.replay(fileCfg, pending.toList())
+        bytes?.let { runCatching { lastGood.snapshot(it) } }
+        val out = merged.copy(revision = maxOf(merged.revision ?: 0, _state.value.config.revision ?: 0) + 1)
+        try { writeLocked(out) } catch (e: Exception) { return fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")) }
+        pending.clear()
+        _state.update {
+            it.copy(conflict = false, pendingEdits = 0, issue = null,
+                notice = if (skipped > 0) "$skipped change(s) skipped because the item was removed or moved in the file" else null)
+        }
+        true
     }
 
     /** B4 action "Create from current layout": the only way launcher.json is ever created. */
