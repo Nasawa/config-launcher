@@ -7,13 +7,13 @@ import java.io.FileOutputStream
  * App-private last-good copy and history (AQ-7, OQ-16): filesDir/config/last-good.json,
  * written temp + rename; the replaced copy rotates into history/ (newest [keep] kept).
  */
-class LastGoodStore(private val dir: File, private val keep: Int = 10, private val clock: () -> Long = System::currentTimeMillis) {
+open class LastGoodStore(private val dir: File, private val keep: Int = 10, private val clock: () -> Long = System::currentTimeMillis) {
     private val file = File(dir, "last-good.json")
     private val history = File(dir, "history")
 
     fun load(): ByteArray? = file.takeIf { it.isFile }?.readBytes()
 
-    fun save(bytes: ByteArray) {
+    open fun save(bytes: ByteArray) {
         dir.mkdirs()
         if (file.isFile && file.readBytes().contentEquals(bytes)) return
         if (file.isFile) snapshot(file.readBytes())
