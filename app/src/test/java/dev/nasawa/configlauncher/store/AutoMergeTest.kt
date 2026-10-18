@@ -40,7 +40,7 @@ class AutoMergeTest {
         assertEquals(listOf("c"), c.dock!!.map { it.id })
         assertEquals(10L, c.revision)
         assertTrue(e.state.value.mergeUndo)
-        assertEquals("Layout updated from launcher.json. Kept your 1 change.", e.state.value.notice)
+        assertEquals("Layout updated from launcher.json. Kept your change.", e.state.value.notice)
         assertTrue("both pre-merge versions in history", lg.historyFiles().size >= before + 2 && lg.historyFiles().any { it.readText() == agent })
         assertFalse(e.poll(force = true)) // our merged write is an echo
     }

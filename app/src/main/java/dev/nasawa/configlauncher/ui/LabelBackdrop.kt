@@ -12,9 +12,9 @@ import androidx.compose.ui.unit.dp
 val LocalLabelBackdrop = compositionLocalOf { false }
 
 object LabelBackdrop {
-    /** 40 % black (§18.1 Q-C4). */
-    val scrim = Color(0x66000000)
+    /** 60 % black (docs/ux.md §1.1, AQ-10: 5.7:1 for white text even over a white wallpaper). */
+    val scrim = Color(0x99000000)
 
     fun modifier(enabled: Boolean): Modifier =
-        if (enabled) Modifier.background(scrim, RoundedCornerShape(6.dp)).padding(horizontal = 4.dp, vertical = 1.dp) else Modifier
+        if (enabled) Modifier.background(scrim, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp) else Modifier
 }

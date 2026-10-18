@@ -4,7 +4,7 @@ package dev.nasawa.configlauncher.store
 object MergeCopy {
     fun notice(kept: Int, skipped: Int): String {
         val base = "Layout updated from launcher.json." +
-            if (kept > 0) " Kept your $kept change${if (kept == 1) "" else "s"}." else ""
+            when (kept) { 0 -> ""; 1 -> " Kept your change."; else -> " Kept your $kept changes." }
         return if (skipped > 0) "$base $skipped change(s) skipped because the item was removed or moved in the file" else base
     }
 }
