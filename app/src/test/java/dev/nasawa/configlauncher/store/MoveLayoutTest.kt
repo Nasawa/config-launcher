@@ -72,4 +72,13 @@ class MoveLayoutTest {
         assertTrue(e.moveTo(phone, useMine = true))
         assertEquals(listOf("p1", "p2"), ids(phone.file))
     }
+
+    @Test fun skipOnFreshInstallWritesStarterSoNoB4() = runBlocking {
+        val phone = LocalFileSource(tmp.newFolder("fresh"))
+        val e = ConfigEngine(phone, LastGoodStore(tmp.newFolder("lg3")), 0)
+        assertTrue(e.moveTo(phone, useMine = false))
+        assertTrue(phone.file.isFile)
+        assertNull(e.state.value.issue)
+        assertFalse(e.poll(force = true))
+    }
 }

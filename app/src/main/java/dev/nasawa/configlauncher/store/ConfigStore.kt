@@ -69,7 +69,13 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     }
 
     /** First run "Skip for now": app-only storage; a folder can be chosen later. */
-    fun skipOnboarding() { prefs.onboarded = true; useAppStorage(moveLayout = false) }
+    fun skipOnboarding() {
+        prefs.onboarded = true; prefs.folderUri = null
+        val wasRunning = pollJob != null
+        stop()
+        // ux.md §7: start with the starter layout (written once if the phone file doesn't exist), so B4 never shows.
+        scope.launch(Dispatchers.IO) { engine.moveTo(currentSource(), useMine = false); if (wasRunning) withContext(Dispatchers.Main) { start() } }
+    }
 
     fun inspectFolder(uri: Uri): ConfigEngine.Inspection? =
         runCatching { engine.inspect(SafSource(context.contentResolver, uri)) }.getOrNull()
