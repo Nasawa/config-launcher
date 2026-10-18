@@ -6,7 +6,6 @@ import android.content.pm.LauncherActivityInfo
 import android.content.pm.LauncherApps
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.os.Build.VERSION.SDK_INT
 import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
@@ -34,9 +33,7 @@ class InstalledApps(context: Context) {
     private fun profiles(): Map<Profile, UserHandle> {
         val me = Process.myUserHandle()
         val out = mutableMapOf(Profile.PERSONAL to me)
-        // §18.3: LauncherApps.getProfiles is 26; UserManager.getUserProfiles works on 23+.
-        val all = if (SDK_INT >= 26) launcherApps.profiles else userManager.userProfiles
-        all.firstOrNull { it != me && isManaged(it) }?.let { out[Profile.WORK] = it }
+        launcherApps.profiles.firstOrNull { it != me && isManaged(it) }?.let { out[Profile.WORK] = it }
         return out
     }
 
@@ -50,7 +47,7 @@ class InstalledApps(context: Context) {
         val out = mutableListOf<InstalledApp>()
         for ((profile, user) in profiles()) {
             users[profile] = user
-            val paused = profile == Profile.WORK && SDK_INT >= 24 && runCatching { userManager.isQuietModeEnabled(user) }.getOrDefault(false)
+            val paused = profile == Profile.WORK && runCatching { userManager.isQuietModeEnabled(user) }.getOrDefault(false)
             for (info in launcherApps.getActivityList(null, user)) {
                 val app = InstalledApp(info.componentName.packageName, info.componentName.className, info.label.toString(), profile, paused)
                 infos[app.key] = info
@@ -60,7 +57,6 @@ class InstalledApps(context: Context) {
         return out.sortedBy { it.label.lowercase() }
     }
 
-    /** Draws whatever drawable the system returns; never assumes AdaptiveIconDrawable (26+, §18.3). */
     fun icon(app: InstalledApp, sizePx: Int): Bitmap? {
         icons.get(app.key)?.let { return it }
         val d = infos[app.key]?.getBadgedIcon(0) ?: return null
@@ -75,8 +71,6 @@ class InstalledApps(context: Context) {
     fun launch(app: InstalledApp): Boolean {
         val user = users[app.profile] ?: return false
         if (app.paused) {
-            // requestQuietModeEnabled is 28; below that the caller shows the "paused" hint (§18.3).
-            if (SDK_INT < 28) return false
             runCatching { userManager.requestQuietModeEnabled(false, user) }; return true
         }
         return try {
@@ -85,7 +79,7 @@ class InstalledApps(context: Context) {
     }
 
     /** Pinned/dynamic shortcut; needs the default-launcher role (shortcut host access). */
-    fun launch(s: ShortcutItem): Boolean = if (SDK_INT < 26) false else try {
+    fun launch(s: ShortcutItem): Boolean = try {
         launcherApps.startShortcut(s.packageName, s.shortcutId, null, null, users[s.profile ?: Profile.PERSONAL] ?: Process.myUserHandle())
         true
     } catch (_: Exception) { false }
