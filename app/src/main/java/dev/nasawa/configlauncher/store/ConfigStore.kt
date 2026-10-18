@@ -90,22 +90,39 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         runCatching { engine.inspect(SafSource(context.contentResolver, uri)) }.getOrNull()
 
     /** §18.2 move the current layout into a picked folder ([useMine]) or adopt the folder's file. */
+    private val rw = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+    private fun release(uri: Uri?) { uri?.let { runCatching { context.contentResolver.releasePersistableUriPermission(it, rw) } } }
+
+    /**
+     * §18.2 move the current layout into a picked folder ([useMine]) or adopt the folder's file.
+     * Settings are saved only after the move succeeds; on failure the new grant is released and the
+     * old source stays (Grace review). On success the old folder's grant is released.
+     */
     fun moveToFolder(uri: Uri, useMine: Boolean) {
-        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        prefs.folderUri = uri; prefs.appOnly = false
+        context.contentResolver.takePersistableUriPermission(uri, rw)
+        val old = prefs.folderUri
         val wasRunning = pollJob != null
         stop()
-        scope.launch(Dispatchers.IO) { engine.moveTo(currentSource(), useMine); if (wasRunning) withContext(Dispatchers.Main) { start() } }
+        scope.launch(Dispatchers.IO) {
+            val ok = engine.moveTo(SafSource(context.contentResolver, uri), useMine)
+            if (ok) { prefs.folderUri = uri; prefs.appOnly = false; if (old != uri) release(old) }
+            else if (old != uri) release(uri)
+            if (wasRunning) withContext(Dispatchers.Main) { start() }
+        }
     }
 
     fun useAppStorage(moveLayout: Boolean = true) {
         if (moveLayout) {
-            prefs.folderUri?.let { old -> runCatching { context.contentResolver.releasePersistableUriPermission(old, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } }
-            prefs.folderUri = null; prefs.appOnly = true
+            val old = prefs.folderUri
             val wasRunning = pollJob != null
             stop()
-            // §18.2: copy the current layout into the phone file, then make it the source.
-            scope.launch(Dispatchers.IO) { engine.moveTo(currentSource(), useMine = true); if (wasRunning) withContext(Dispatchers.Main) { start() } }
+            // §18.2: copy the current layout into the phone file; only then switch settings and drop the grant.
+            scope.launch(Dispatchers.IO) {
+                if (engine.moveTo(LocalFileSource(localDir, sidecars = false), useMine = true)) {
+                    prefs.folderUri = null; prefs.appOnly = true; release(old)
+                }
+                if (wasRunning) withContext(Dispatchers.Main) { start() }
+            }
             return
         }
 

@@ -103,4 +103,36 @@ class MoveLayoutTest {
         assertFalse(File(target.dir, ".configlauncher").exists())
         assertTrue(LastGoodStore(lgDir).historyFiles().any { it.readText() == theirs })
     }
+
+    @Test fun invalidFolderFileIsNeverAdopted() = runBlocking {
+        val (e, phone) = phone()
+        val d = LocalFileSource(tmp.newFolder("bad")); d.file.writeText("{ nope")
+        assertFalse(e.moveTo(d, useMine = false))
+        assertSame(phone, e.source)
+        assertEquals(listOf("home"), e.state.value.config.pages.map { it.id })
+        assertEquals("{ nope", d.file.readText())
+    }
+
+    @Test fun failedWriteRollsBackToOldSource() = runBlocking {
+        val (e, phone) = phone()
+        val broken = object : ConfigSource by LocalFileSource(tmp.newFolder("ro")) {
+            override fun write(bytes: ByteArray) { throw java.io.IOException("read-only") }
+        }
+        assertFalse(e.moveTo(broken, useMine = true))
+        assertSame(phone, e.source)
+        assertNull(e.state.value.issue)
+        assertTrue(e.state.value.notice!!.contains("read-only"))
+        assertFalse(e.poll(force = true)) // still bound to the phone file
+    }
+
+    @Test fun failedBackupDoesNotOverwriteFolderFile() = runBlocking {
+        val (e, phone) = phone()
+        val inner = LocalFileSource(tmp.newFolder("nobackup")); inner.file.writeText(theirs)
+        val noBackup = object : ConfigSource by inner {
+            override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) { throw java.io.IOException("full") }
+        }
+        assertFalse(e.moveTo(noBackup, useMine = true))
+        assertEquals(theirs, inner.file.readText())
+        assertSame(phone, e.source)
+    }
 }

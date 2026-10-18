@@ -1,17 +1,17 @@
 # Test plan: config-launcher
 
-Sources: [`ARCHITECTURE.md`](../ARCHITECTURE.md) (cited as **A§n**; the resolved questions as **A§15 OQ-n** and **A§16 AQ-n**), [`schema/launcher-config.v1.schema.json`](../schema/launcher-config.v1.schema.json), [`docs/ux.md`](ux.md) (banners B1-B6, **UX§n**), and [`docs/research-spike.md`](research-spike.md) (**spike §n**). A§15 overrides anything that conflicts with it. The open questions from v1 of this plan (OQ-1 to OQ-31) are now decided, and each case cites the decision. The questions still open are listed at the end.
+Sources: [`ARCHITECTURE.md`](../ARCHITECTURE.md) (cited as **A§n**; resolved questions as **A§15 OQ-n**, **A§16 AQ-n**, **A§17 Qn** and **A§18.n**), [`schema/launcher-config.v1.schema.json`](../schema/launcher-config.v1.schema.json), [`docs/ux.md`](ux.md) (banners B1-B8, **UX§n**), and [`docs/research-spike.md`](research-spike.md) (**spike §n**). Later sections override earlier ones: A§18 > A§17 > A§15/§16. **v3** (this revision) replaces Q1-Q16 of v2 with the A§17 rulings and adds the A§18 changes: **minSdk 29** (coordinator ruling of 2026-10-18 15:27 MDT, superseding A§18.3's 23, which the repo hasn't been updated to yet; see Q-v3-9), automatic merge, Skip for now, the keyboard-up drawer, the label backdrop, the device matrix and performance budgets. Each case cites its ruling. The questions still open are listed at the end.
 
-Levels: **U** = JVM unit test (`model`/`config`, no Android), **S** = store test against the fake `DocumentAccess` (A§11), **R** = Robolectric, **I** = instrumented (emulator API 26 and 35, test `DocumentsProvider`), **M** = manual on a real phone.
+Levels: **U** = JVM unit test (`model`/`config`, no Android), **S** = store test against the fake `DocumentAccess` (A§11), **R** = Robolectric, **I** = instrumented (emulator matrix API 29, 35, 36, test `DocumentsProvider`), **M** = manual on a real phone.
 
-Fixtures are real files in [`test-fixtures/configs/`](../test-fixtures/configs/). Each one's expected outcome is in `manifest.json` (see §2 below). They move to `app/src/test/resources/configs/{valid,invalid}/` once the Gradle project exists (A§11).
+Fixtures are real files in [`test-fixtures/configs/`](../test-fixtures/configs/). Each one's expected outcome is in `manifest.json` (see §2 below). `test-fixtures/gen_fixtures.py` regenerates them deterministically, and `test-fixtures/check_schema.py` checks them against the schema (0 mismatches; one fixture can't be checked because Python's parser hits its recursion limit). A copy lives in `app/src/test/resources/configs/` for the JVM tests (A§11); keep the two in sync by regenerating them.
 
 ## 1. Schema validation (A§3, A§15)
 
 | ID | Steps | Expected | Level | Ref |
 |---|---|---|---|---|
 | SV-1 | Load `valid/minimal.json`. | Model built and rendered, no banner. | U, R | A§3 |
-| SV-2 | Conformance: run every fixture through networknt and the Kotlin validator. | They agree on every `both` fixture. `kotlin` fixtures are accepted by the schema but rejected by Kotlin (see open question Q2). CI also runs `test-fixtures/check_schema.py` (Python `jsonschema`). | U | A§11 |
+| SV-2 | Conformance (A§17 Q2), in `KotlinOnlyConformanceTest` and `check_schema.py`. | Both validators accept everything in `valid/`. Kotlin rejects everything the schema rejects (`both`). Each fixture tagged with a Kotlin-only rule in `manifest.json` (`kotlinOnly`: duplicate-ids, overlapping-cells, cell-outside-grid, item-total, duplicate-keys, parser-depth, byte-cap, nul-or-encoding) **must be accepted by the schema**, so the list stays honest, and must be rejected by Kotlin. | U | A§17 Q2 |
 | SV-3 | `widget`, `text`, `intent` item types. | Rejected, B2, last-good kept. No v1 type is ever silently dropped. | U | A§15 OQ-1 |
 | SV-4 | Grid out of 2-12, cell outside the grid, overlapping cells, non-integer x. | Errors that are never clamped: the whole file is rejected with B2 listing each problem. | U | A§15 OQ-2, AQ-3 |
 | SV-5 | `schemaVersion` missing, `"1"`, or `2`. | Missing or a string: invalid. 2: refused with the banner "This file needs a newer Config Launcher" and never downgrade-written. | U, R | A§3 rule 4, A§15 OQ-3 |
@@ -32,14 +32,16 @@ Principle: nothing in the file ever builds an Intent. The launcher only launches
 | HC-2 | `hostile-key-{action,uri,extras,script,cmd,exec}`, `intent-type`, `package-{intent-uri,tel-uri,http-url}`. | B2. A Robolectric assertion confirms no activity was started and `Intent.parseUri` was never called. | U, R | A§8, A§15 OQ-4 |
 | HC-3 | `valid/unknown-package.json`, then tap the item. | Greyed out. Tapping launches nothing and shows the hint "Not installed" plus "Remove from layout". | R | A§3, A§15 OQ-28 |
 | HC-4 | Shortcut whose `shortcutId` the package doesn't publish. | Valid file. Greyed out at runtime and never launched ("Shortcut no longer available"). | R | A§15 OQ-8 |
-| HC-5 | `oversize-257k.json`, served by a fake provider whose `COLUMN_SIZE` lies (reports 1 KiB). | Refused before a full read based on `COLUMN_SIZE`, and the streaming cap stops a lying size at 256 KiB. No OOM. | S | A§4 step 1, A§15 OQ-9 |
+| HC-5 | 2 MiB cap: `valid/size-257k.json`, `valid/size-just-under-2mib.json` (exactly 2,097,152 bytes), `invalid/size-just-over-2mib.json` (2,097,153). Repeat the over-cap file with a fake provider whose `COLUMN_SIZE` lies (reports 1 KiB). | The 257 KiB and exactly-2 MiB files load. The cap is inclusive. Over 2 MiB is refused before a full read, using `COLUMN_SIZE`, and the streaming cap stops a lying size at 2 MiB. No OOM, and last-good is kept. | U, S | A§4 step 1, A§17 Q16 |
 | HC-6 | `deep-nesting.json` (100k levels), `depth-9.json`, `valid/max-depth-8.json`. | Depth 9 or more: parse error, fails fast, no StackOverflowError. Exactly 8: valid. | U | A§15 OQ-9 |
-| HC-7 | Totals (`2016-items.json` is compact JSON so that it stays under the byte cap): `2016-items.json`, `21-pages.json`, 145 items on one page, 8 dock items, 49 folder items. | All rejected (2000 items, 20 pages, 144 per page, 7 dock, 48 per folder). | U | A§15 OQ-9, schema |
-| HC-8 | String caps: label of 61 chars and of 200 KiB, id of 65 chars, package of 1000 chars, shortcutId of 257 chars. | All rejected. | U | A§15 OQ-9 |
-| HC-9 | Unicode: `valid/bidi-label.json`, `valid/emoji-label.json`, `invalid-utf8`, `lone-surrogate`, `nul-in-label`, `utf16`, `valid/bom.json`. | Bidi, zero-width and other Cf/Cc characters are stripped at render and the file is untouched. The real icon is shown, and long-press shows the real name and package. Invalid UTF-8, lone surrogates, NUL and UTF-16: B1. A BOM is accepted, and the next write has none. | U, R | A§15 OQ-7, OQ-11 |
+| HC-7 | Totals: `2016-items.json` (compact so it stays under the byte cap), `21-pages.json`, 145 items on one page, 8 dock items, 49 folder items, `tags-17.json`. Plus `valid/2000-items-long-strings.json`: 2000 items with 100-char packages, 152-char activities, 60-emoji labels and 64-char IDs, 1.46 MiB canonical. | All the over-limit files are rejected: 2000 items, 20 pages, 144 per page, 7 dock, 48 per folder, 16 tags. The long-string file is valid, and its canonical re-encode is ≤ 2 MiB (`CanonicalSizeTest`). | U | A§15 OQ-9, A§17 Q1, Q16 |
+| HC-8 | String caps: label of 61 chars and of 200 KiB, id of 65 chars, package of 1000 chars, shortcutId of 257 chars, and 257-char `activity`, `drawer.hidden[]`, `packagePrefix` and `match.packages[]`. | All rejected, by the schema too (A§17 Q1 added `maxLength: 256`). | U | A§15 OQ-9, A§17 Q1 |
+| HC-8b | **Writer refusal** (WB-REFUSE): load `valid/writer-overflow-seed.json` (compact, 1.89 MiB, canonical form 2.13 MiB) and make any edit. | Write refused with B5 `Couldn't save your change: launcher.json would be over 2 MB.` The file stays byte-identical, and the edit is kept in memory (`WriterRefusalTest`). | S | A§17 Q16 |
+| HC-9 | Unicode: `valid/bidi-label.json`, `valid/emoji-label.json`, `invalid-utf8`, `lone-surrogate`, `nul-in-label` (escaped `\u0000`), `nul-raw` (raw 0x00 byte), `utf16`, `valid/bom.json`. | Bidi, zero-width and other Cf/Cc characters are stripped at render and the file is untouched. The real icon is shown, and long-press shows the real name and package. Invalid UTF-8, lone surrogates, NUL (escaped or raw) and UTF-16: **B1** (parse error, A§17 Q3). A BOM is accepted, and the next write has none. | U, R | A§15 OQ-7, OQ-11 |
 | HC-10 | `duplicate-key.json`. | B1 with a path. | U | A§15 OQ-12 |
 | HC-11 | Package names: empty, `..`, leading digit, `/`, space, no dot, non-ASCII. Activity with `/` or `;`. | B2 from schema patterns. Nothing reaches `LauncherApps`. | U | schema `packageName`, `className` |
 | HC-12 | Fuzz the parser and validator with 10k mutations of the valid fixtures. | Only "valid" or a typed error. Never an uncaught exception, and never a launch. | U | A§4 step 4 |
+| HC-12b | Q1 cap in the schema: `package-1000-chars` is now a `both` fixture. | The schema rejects it too. | U | A§17 Q1 |
 | HC-13 | Error mirror: load any invalid fixture. | `.configlauncher/status.json` gets {result, errors with JSON paths, hash, time} and no private-space data. | S | A§9, A§15 OQ-31 |
 
 ### Fixture index (`test-fixtures/configs/manifest.json`)
@@ -64,14 +66,14 @@ Principle: nothing in the file ever builds an Intent. The launcher only launches
 | `invalid/trailing-garbage.json` | parse error, B1 | parser | §15 OQ-6 |
 | `invalid/comments.json` | parse error, B1 (no comments) | parser | §15 OQ-6 |
 | `invalid/json5-trailing-comma.json` | parse error, B1 | parser | §15 OQ-6 |
-| `invalid/utf16.json` | parse error, B1 | parser | §15 OQ-7 |
-| `invalid/invalid-utf8.json` | parse error, B1 | parser | §15 OQ-11 |
-| `invalid/lone-surrogate.json` | parse error, B1 | parser | §15 OQ-11 |
-| `invalid/nul-in-label.json` | parse error, B1 | parser | §15 OQ-11 |
-| `invalid/duplicate-key.json` | parse error with path, B1 | parser | §15 OQ-12 |
-| `invalid/deep-nesting.json` | parse error, depth > 8, no StackOverflowError | parser | §15 OQ-9 |
-| `invalid/depth-9.json` | parse error, depth 9 > 8 | parser | §15 OQ-9 |
-| `invalid/oversize-257k.json` | refused before full read (COLUMN_SIZE + stream cap), B2/B1, last-good kept | store | §4 step 1, §15 OQ-9 |
+| `invalid/utf16.json` | parse error, B1 | kotlin-only (nul-or-encoding) | §15 OQ-7 |
+| `invalid/invalid-utf8.json` | parse error, B1 | kotlin-only (nul-or-encoding) | §15 OQ-11 |
+| `invalid/lone-surrogate.json` | parse error, B1 | kotlin-only (nul-or-encoding) | §15 OQ-11 |
+| `invalid/nul-in-label.json` | parse error, B1 (escaped NUL) | kotlin-only (nul-or-encoding) | §17 Q3 |
+| `invalid/nul-raw.json` | parse error, B1 (raw NUL byte: an unescaped control character, so a syntax error for any JSON parser) | parser | §17 Q3 |
+| `invalid/duplicate-key.json` | parse error with path, B1 | kotlin-only (duplicate-keys) | §15 OQ-12 |
+| `invalid/deep-nesting.json` | parse error, depth > 8, no StackOverflowError | kotlin-only (parser-depth) | §15 OQ-9 |
+| `invalid/depth-9.json` | parse error, depth 9 > 8 | kotlin-only (parser-depth) | §15 OQ-9 |
 | `invalid/missing-schemaVersion.json` | invalid, B2 | both | §15 OQ-3 |
 | `invalid/newer-schemaVersion.json` | refused, "needs a newer Config Launcher" banner, never downgrade-written | both | §3 rule 4, §15 OQ-3 |
 | `invalid/schemaVersion-string.json` | invalid, B2 | both | §15 OQ-3 |
@@ -98,13 +100,13 @@ Principle: nothing in the file ever builds an Intent. The launcher only launches
 | `invalid/package-space.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
 | `invalid/package-no-dot.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
 | `invalid/package-unicode.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
-| `invalid/package-1000-chars.json` | invalid: other strings are capped at 256 (schema has no maxLength on package) | kotlin | §15 OQ-9 |
+| `invalid/package-1000-chars.json` | invalid, B2 (256-char cap, now in the schema) | both | §17 Q1 |
 | `invalid/activity-injection.json` | invalid, B2 | both | schema className |
 | `invalid/id-uppercase.json` | invalid, B2 | both | §3 Stable IDs |
 | `invalid/id-65-chars.json` | invalid, B2 | both | §15 OQ-9 |
-| `invalid/duplicate-id.json` | invalid, B2 | kotlin | §3, §15 OQ-5 |
-| `invalid/overlapping-cells.json` | invalid, B2 | kotlin | §15 OQ-2, AQ-3 |
-| `invalid/cell-outside-grid.json` | invalid, B2 (grid is 4 wide) | kotlin | §15 OQ-2 |
+| `invalid/duplicate-id.json` | invalid, B2 | kotlin-only (duplicate-ids) | §3, §15 OQ-5 |
+| `invalid/overlapping-cells.json` | invalid, B2 | kotlin-only (overlapping-cells) | §15 OQ-2, AQ-3 |
+| `invalid/cell-outside-grid.json` | invalid, B2 (grid is 4 wide) | kotlin-only (cell-outside-grid) | §15 OQ-2 |
 | `invalid/negative-x.json` | invalid, B2 | both | §15 OQ-2 |
 | `invalid/grid-13.json` | invalid, B2 | both | §15 OQ-2 |
 | `invalid/grid-1.json` | invalid, B2 | both | §15 OQ-2 |
@@ -121,7 +123,18 @@ Principle: nothing in the file ever builds an Intent. The launcher only launches
 | `invalid/profile-numeric.json` | invalid, B2 | both | §15 OQ-29 |
 | `invalid/revision-negative.json` | invalid, B2 | both | schema |
 | `invalid/unsorted-mode-bad.json` | invalid, B2 | both | §15 OQ-25 |
-| `invalid/2016-items.json` | invalid, B2 (>2000 items total) | kotlin | §15 OQ-9 |
+| `invalid/2016-items.json` | invalid, B2 (>2000 items total) | kotlin-only (item-total) | §15 OQ-9 |
+| `valid/size-257k.json` | valid (under the 2 MiB cap) | store | §17 Q16 |
+| `valid/size-just-under-2mib.json` | valid: exactly 2 MiB (2,097,152 bytes) is accepted | store | §17 Q16 |
+| `invalid/size-just-over-2mib.json` | refused before full read (COLUMN_SIZE + streaming cap), last-good kept | kotlin-only (byte-cap) | §4 step 1, §17 Q16 |
+| `valid/2000-items-long-strings.json` | valid: 2000 items, 100-char packages, 152-char activities, 60-emoji labels, 64-char IDs (~1.46 MiB canonical) | both | §17 Q16 |
+| `valid/writer-overflow-seed.json` | valid to read (compact, under 2 MiB); after any edit the canonical output is over 2 MiB, so the writer refuses with B5 "launcher.json would be over 2 MB." and keeps the edit in memory | store | §17 Q16 |
+| `invalid/tags-17.json` | invalid, B2 (tags maxItems 16) | both | §17 Q1 |
+| `invalid/activity-257-chars.json` | invalid, B2 | both | §17 Q1 |
+| `invalid/hidden-257-chars.json` | invalid, B2 | both | §17 Q1 |
+| `invalid/package-prefix-257-chars.json` | invalid, B2 | both | §17 Q1 |
+| `invalid/match-packages-257-chars.json` | invalid, B2 | both | §17 Q1 |
+| `invalid/git-conflict-markers.json` | parse error, B1; with PR #21: "git merge conflict markers (line 3); finish the merge in git", last-good kept, no write | parser | A§18.1 git primary, CM-21, MG-4 |
 
 ## 3. Last-good fallback (A§4, A§15 OQ-13, OQ-14, OQ-15, OQ-16, AQ-7)
 
@@ -130,7 +143,7 @@ Principle: nothing in the file ever builds an Intent. The launcher only launches
 | LG-1 | Valid A is showing, then the file becomes invalid. | A stays, B1 or B2 appears, the folder file is not touched, and `last-good.json` is not overwritten. | S, R | A§4 step 4 |
 | LG-2 | Fix the file to valid B. | B is swapped in atomically (one StateFlow assignment) and the banner clears. `last-good.json` = B, and A goes to history. | S, R | A§4 steps 6-7, A§9 |
 | LG-3 | Kill the process, put an invalid folder file in place, cold start. | `filesDir/config/last-good.json` renders in the first frame, then the banner appears. | R, I | A§4 Fallback, AQ-7 |
-| LG-4 | Fresh install: no last-good, invalid or missing file. | Built-in default (one empty page, dock from role queries, all apps in the drawer). Banner "No launcher.json yet: Create" or "N problems". No crash loop, and nothing written over the bad file. | R, I | A§15 OQ-14, UX§6.1 |
+| LG-4 | Fresh install: no last-good, invalid or missing file. | Built-in default (one empty page, dock from role queries, all apps in the drawer). B4 `No launcher.json yet.` with `Create from current layout` and `Reconnect`, or B1/B2. No crash loop, and nothing is ever auto-created. | R, I | A§15 OQ-14, A§17 (a), AQ-8 |
 | LG-5 | While the file is invalid, drag an icon. | The broken file is copied to `.configlauncher/broken/launcher.<ts>.json`. Then the edited last-good layout is written to `launcher.json`, with the snackbar "Your broken launcher.json was saved to .configlauncher/broken/". | S, R | A§15 OQ-15, A§16 item 12 |
 | LG-6 | Make 11 successful loads. | `filesDir/config/history/` holds 10. None are in the synced folder. | S | A§15 OQ-16 |
 | LG-7 | `last-good.json` is written via temp + `File.renameTo`; kill between the two steps. | The previous last-good is intact. | U, R | A§4 step 7 |
@@ -163,37 +176,44 @@ Write sequence under test: write `.configlauncher/launcher.json.tmp` and verify 
 | FI-7 | Persisted permission revoked between reads (`SecurityException`). | B3 "Can't reach your layout folder", last-good rendered, edits queued in memory. No crash. On start, the `persistedUriPermissions` check shows B3. | S, R, I |
 | FI-8 | Provider unavailable: cloud offline, provider process dead, `query` returns null, `openInputStream` throws `FileNotFoundException`. | Poll fails quietly with last-good kept. Writes give B5. Recovers on the next successful poll. | S |
 | FI-9 | Disk full (`IOException: ENOSPC`) on the tmp write. | Caught before `launcher.json` is touched. B5. | S |
-| FI-10 | Disk full on app-private storage (last-good write). | The folder write still counts as success. Last-good failure is logged, and the previous last-good stays intact. Behaviour not specified, see Q4. | S |
-| FI-11 | `launcher.json` deleted externally. | B4 "launcher.json is missing", with Recreate and Choose folder. Never recreated automatically. | S, R |
+| FI-10 | Disk full on app-private storage (the last-good write). | The folder write still counts as success. One snackbar `Couldn't update the backup copy (phone storage full).`, logged in status.json, no banner, retried on the next load or write. The previous last-good stays intact. | S | A§17 Q4 |
+| FI-11 | `launcher.json` deleted externally while the folder stays readable. | B4 with `Create from current layout` and `Reconnect`. Never recreated automatically. Tapping Create writes last-good (the starter only when there is no last-good). B4 isn't cleared by our own create alone: it clears when the next poll loads a valid file. | S, R | A§17 (a), AQ-8 |
 | FI-12 | Torn read: the reader sees half of an external write. | The 300 ms stability re-check restarts. If it still parses, it fails validation and is rejected, never applied. | S |
 | FI-13 | `.configlauncher/` can't be created (read-only provider). | B5 on write. Reads still work. | S |
-| FI-14 | `COLUMN_LAST_MODIFIED` is 0 or constant (some providers). | Change still detected through size or docId, and the hash catches same-size edits on resume. Same-size edits while the home screen is showing may be missed, see Q5. | S |
+| FI-15 | Grant revoked vs file missing, side by side: (a) remove the URI from `persistedUriPermissions`; (b) tree query throws `SecurityException` or `FileNotFoundException` for the tree itself; (c) tree readable but no `launcher.json` child. | (a) and (b): **B3** `Can't reach your config folder…` with **`Reconnect` only** (no Create). (c): **B4** with `Create from current layout` and `Reconnect`. B3 and B4 never show in app-private mode (A§18.2), and B4's Reconnect is hidden there (#16). | S, R | A§17 AQ-8, A§18.2 |
+| FI-14 | Provider whose `COLUMN_LAST_MODIFIED` never changes (always 0 or a constant), with a same-size external edit (e.g. one digit changed). | Not caught by the stamp. Caught by the hash read on **every 5th foreground poll** (≤ 10 s) and on every resume. Assert: with a fake clock and constant stamp, the edit is applied within 5 polls, and immediately after `onStart`. | S | A§17 Q5 |
 
-## 6. Concurrent edits: the conflict and drag matrix (A§5, A§6, A§15 OQ-19, OQ-22, OQ-24, AQ-6)
+## 6. Concurrent edits: the conflict and drag matrix (A§5, A§6, A§17 Q6-Q9, A§18.2)
 
-"Agent edit" means the folder file's hash changes to something that is neither base nor ours. All cases: **S** for logic, **R** for B6 and snackbars, plus a Compose drag test at **I** for the rows marked †.
+**Default since A§18.2: automatic merge.** On a hash mismatch at write time, or when a file arrives while ops are pending, the launcher replays the pending ops by ID onto the file and writes the result with no prompt. Snackbar: `Layout updated from launcher.json. Kept your N changes.` with `Undo`, which writes the file's version back. Both pre-merge versions go to history. **`Ask before merging`** (Settings, off by default) brings back the B6 `Use file` / `Keep mine` prompt. If the replay fails validation, B6 appears whatever the setting.
 
-| ID | Timing | Expected |
-|---|---|---|
-| CM-1 | Agent edit, no pending local edits. | Applied directly. No B6. The replaced version goes to history. |
-| CM-2 | Agent edit lands mid-drag. † | No model swap mid-gesture, and the file is parked as `incoming`. On drop the move becomes a pending edit, the hash check fails, and B6 appears. |
-| CM-3 | CM-2 but the drop is cancelled (dropped back where it started, no op). † | `incoming` applied on drag end with no B6, because nothing is pending. Not stated in the spec, see Q6. |
-| CM-4 | Agent edit within the 750 ms debounce after a drop. | Write-time hash check ≠ base, so B6. |
-| CM-5 | Agent edit arrives after our write but before our poll sees it. | Hash is neither ours nor base, so it counts as external and is applied (no pending edits). |
-| CM-6 | B6, then `Use file`. | Pending ops discarded, the file is loaded, and the local model is snapshotted to history. |
-| CM-7 | B6, then `Keep mine`, where the agent touched different items. | Ops are replayed by ID onto the file's model: both changes survive, the file version is snapshotted first, and `revision` = max + 1. |
-| CM-8 | `Keep mine`, where the agent deleted the item I moved. | Op dropped. Snackbar "1 change skipped because the item was removed in the file", with Undo. |
-| CM-9 | `Keep mine`, where the agent put something in my target cell. | Placed in the nearest free cell on the same page, else the first free cell on any page, else a new page. |
-| CM-10 | `Keep mine` with `Add` of an app the agent already added to that container. | Skipped as a duplicate. |
-| CM-11 | `Keep mine` replay result fails validation (inject it). | Nothing written. B6 stays with only `Use file`. |
-| CM-12 | The agent writes `revision` lower than, equal to, or missing compared with ours. | Ignored for conflicts: only the hash decides, and the content is accepted. Our next write = max seen + 1. |
-| CM-13 | Agent writes twice within 300 ms. | The stability re-check applies only the final content. |
-| CM-14 | Agent edit while the file was invalid and the phone made an edit (OQ-15 path). | The broken copy is saved first. Then the hash check against the base. Order not specified, see Q7. |
-| CM-15 | Two phone edits while B6 is showing. | Not specified, see Q8. |
-| CM-16 | Ops on IDs: rename vs agent rename of the same item; CreateFolder whose members the agent moved. | Rename: mine wins on `Keep mine`. CreateFolder: members that still exist are used, and skipped members get the snackbar. Partial-member rule not specified, see Q9. |
-| CM-17 | Syncthing conflict siblings `launcher.sync-conflict-*.json` or `launcher (1).json` appear. | Ignored by the loader. A dismissible notice names them and status.json lists them. Never merged or deleted. |
+"Agent edit" means the file's hash changes to something that is neither base nor ours. Logic is tested at **S**, snackbars and B6 at **R**, and the rows marked † also get a Compose drag test at **I**. "Auto" is the default; "Ask" is with `Ask before merging` on.
 
-Unit-level table test for the replay engine: rows for {Move, Add, Remove, Rename, CreateFolder} × {target exists, removed, cell occupied, duplicate}.
+| ID | Timing / setup | Expected (Auto, default) | Expected (Ask) |
+|---|---|---|---|
+| CM-1 | Agent edit, no pending local edits. | Applied directly. No merge snackbar beyond `Layout updated from launcher.json.` The replaced version goes to history. | Same. |
+| CM-2 | Agent edit lands mid-drag. † | No model swap mid-gesture, and the file is parked as `incoming`. On drop, the move is replayed onto `incoming` and written. Snackbar `…Kept your 1 change.` + Undo. | On drop: B6. |
+| CM-3 | CM-2, but the drop is cancelled (no op). † | `incoming` applied as a normal reload with `Layout updated from launcher.json.` No merge, no B6 (Q6). | Same (nothing is pending). |
+| CM-4 | Agent edit within the 750 ms debounce after a drop. | Write-time hash ≠ base, so auto replay and write. Snackbar + Undo. | B6. |
+| CM-5 | Agent edit arrives after our write but before our poll sees it. | External, applied (nothing pending). | Same. |
+| CM-6 | **Undo** on the merge snackbar. | Writes the file's pre-merge version back through the normal write path (hash check). My ops are discarded and my pre-merge model is in history. | n/a |
+| CM-7 | Agent touched different items from mine. | Both changes survive. `revision` = max + 1. Only my ops' targets ("just touched") come from me; everything else comes from the file. | `Keep mine` gives the same result. `Use file` discards mine (snapshotted). |
+| CM-8 | Agent deleted the item I moved. | Op dropped. Skip snackbar `1 change skipped because the item was removed in the file` + Undo. | Same after `Keep mine`. |
+| CM-9 | Agent put something in my target cell. | Placed in the nearest free cell on the same page, else the first free cell on any page, else a new page. | Same after `Keep mine`. |
+| CM-10 | My `Add` duplicates an app the agent already added to that container. | Skipped as a duplicate. | Same. |
+| CM-11 | Replay result fails validation (injected). | Nothing written. **B6 regardless of the setting**, with only `Use file`. | Same. |
+| CM-12 | The agent writes `revision` lower than, equal to, or missing compared with ours. | Ignored for conflicts: the hash decides. Our next write = max seen + 1. | Same. |
+| CM-13 | Agent writes twice within 300 ms. | The stability re-check applies only the final content. | Same. |
+| CM-14 | Q7 (a): the file was broken, I edit, and the file is **still the same broken bytes** at write time. | Broken copy to `.configlauncher/broken/launcher.<ts>.json`, then write mine (OQ-15). Snackbar `Your broken launcher.json was saved…`. | Same. |
+| CM-15 | Q7 (b): the file was broken, I edit, and the agent **replaced it** before my write. | The hash check comes first: the new file is validated. If it's valid, it's a normal merge (Auto: replay + snackbar; Ask: B6), and **no** broken copy is made. If it's still invalid but different, it's treated as broken again (snapshot those bytes). | B6 when the new file is valid. |
+| CM-16 | Q8: I make two more edits while the merge is pending (Auto) or B6 is up (Ask). | Auto: all queued ops replay together, and the snackbar counts them (`Kept your 3 changes.`). | Edits stay on screen and join the queue. Nothing is written until I pick. The banner counts them (`3 changes`). `Use file` discards all, `Keep mine` replays all. |
+| CM-17 | Q9: replay `CreateFolder(f, [a,b,c])` where the agent removed `b` and moved `c` into another folder. | Partial folder from the members that still exist and aren't in another folder. Here only `a` is left, which is fewer than 2, so the folder is skipped and `a` placed on its own. Snackbar per A§18.4: `Folder "<Label>" wasn't recreated because its other apps were removed or moved in the file. "<App>" was placed on its own.` + Undo. With 2+ survivors the folder is built and the skipped members are reported. With none: `…because its apps were removed or moved in the file.` | Same after `Keep mine`. |
+| CM-18 | Rename vs an agent rename of the same item. | Mine wins (the item is "just touched"). | Same after `Keep mine`. |
+| CM-19 | Toggle `Ask before merging` on and off with ops pending. | The next conflict follows the new value. The setting is in DataStore, not launcher.json, so toggling it doesn't write the file. | — |
+| CM-20 | Syncthing conflict siblings `launcher.sync-conflict-*.json`, or `launcher (1).json`. | Ignored by the loader. A dismissible notice names them, and status.json lists them. Never merged or deleted. | Same. |
+| CM-21 | git: the pull brings a merge-conflicted file (`<<<<<<<` markers). | B1 with line and column, last-good kept. My pending ops stay queued until a valid file arrives, then merge as above. | Same (B6 once it's valid). |
+
+Unit-level table test for the replay engine: rows for {Move, Add, Remove, Rename, CreateFolder} × {target exists, removed, cell occupied, duplicate, moved to another folder}.
 
 ## 7. Live reload and latency targets (A§4, A§15 OQ-22, OQ-23, A§11)
 
@@ -205,7 +225,7 @@ Unit-level table test for the replay engine: rows for {Move, Add, Remove, Rename
 | LR-4 | Launcher in the background. | Zero polls (assert with the fake clock and no wakeups). | S |
 | LR-5 | Cold start, 300-item config. | First frame **< 500 ms** on a mid device, from last-good. | I (macrobenchmark) |
 | LR-6 | Write-back debounce. | Write starts 750 ms after the last edit and never mid-drag. | S |
-| LR-7 | Poll cost. | One children-cursor query per 2 s. Measure the time per poll and report it (no target set, see Q10). | I |
+| LR-7 | **Poll cost and battery** (A§17 Q10). Targets: ≤ 5 ms CPU per poll (one children query, plus a ≤ 2 MiB hash read every 5th poll), < 1 %/h battery with home on screen, zero polls when home isn't visible. | **Per-poll cost:** a Macrobenchmark or instrumented trace with `Trace.beginSection("cl-poll")` around `engine.poll()`, then read the slice CPU time in Perfetto. Report the median and p95 over 300 polls with a 5 KB file and with a 2 MiB file (the hash poll). Run on the A53. **Battery:** A53, screen on at fixed brightness, launcher in front, airplane mode on, for 60 min. `adb shell dumpsys batterystats --reset`, then afterwards `adb bugreport` and load it in **Battery Historian**. Compare the app's estimated mAh with the battery capacity: < 1 % of capacity per hour. Repeat with home in the background for 15 min and assert 0 `cl-poll` slices and no wakeups. | I, M |
 | LR-8 | The file is replaced via rename (new docId), as git or Syncthing do. | Re-found by name and reloaded. | S, I |
 
 Sync transfer time is excluded from all targets (A§15 OQ-23).
@@ -214,10 +234,11 @@ Sync transfer time is excluded from all targets (A§15 OQ-23).
 
 | ID | Steps | Expected | Level |
 |---|---|---|---|
-| UN-1 | Install an unplaced app, `unsorted.mode: drawer` (default). | In the drawer only. Home pages untouched, file untouched. | R, M |
+| UN-1 | Install an unplaced app, `unsorted.mode: drawer` (default). | In the drawer. Home pages untouched, file untouched. | R, M |
 | UN-2 | Same with `mode: page`. | Also shown on a synthetic last page titled `pageTitle`. Not written. | R |
-| UN-3 | Same with `mode: hidden`. | Not shown in Unsorted. The drawer still lists all apps. Whether "hidden" also hides it from the drawer list: see Q11. | R |
-| UN-4 | App in `drawer.hidden`. | Never in the drawer or Unsorted, but launches if placed. | R |
+| UN-3 | Same with `mode: hidden`. | The synthetic Unsorted page is removed (only that). The app **still shows in the drawer**. | R | A§17 Q11 |
+| UN-4 | App in `drawer.hidden`. | Not in the drawer and not in Unsorted. Still shows and launches where it's placed explicitly. Listed under Settings → Hidden apps, where unhiding writes the file. | R | A§17 (b) |
+| UN-4b | **The drawer includes placed apps:** an app placed on a page, one in the dock and one in a folder. | All three are listed in the drawer (personal plus badged work), minus `drawer.hidden`. | R, I | A§17 (b) |
 | UN-5 | Drag an Unsorted app onto a page. | The only path that writes it. Explicit edit. | R |
 | UN-6 | Uninstall a placed app. | Greyed, kept in the file. Tap shows "Not installed" plus "Remove from layout". | R, M |
 | UN-7 | Reinstall it. | Active again in place. | R, M |
@@ -232,64 +253,160 @@ Sync transfer time is excluded from all targets (A§15 OQ-23).
 |---|---|---|---|
 | WP-1 | "Include work apps in config" **off** (default). | Work apps in the drawer with the badge. They can't be placed on pages, and nothing about them reaches the file or status.json. | R, I |
 | WP-2 | Toggle **on**, drag a work app to a page. | Written with `"profile": "work"`. Launches in the work profile through LauncherApps. | I |
-| WP-3 | File contains `profile: work` while the toggle is off. | Not specified (render, grey, or ignore?), see Q12. | R |
+| WP-3 | File contains `profile: work` items while "Include work apps in config" is off. | Rendered greyed with the work badge and the hint `Turn on "Include work apps in config" to use this.` Not invalid, never deleted. Turning the setting on makes them live **without a write** (assert 0 writes). | R | A§17 Q12 |
 | WP-4 | Same package in personal and work. | Two distinct items keyed by (package, activity, profile). | R |
 | WP-5 | Work profile paused. | Items greyed with the badge. Tap calls `requestQuietModeEnabled(false)` (system prompt). Not deleted. | I, M |
 | WP-6 | Work profile removed, or the file synced from a phone without one. | Greyed, kept in the file, "Remove from layout" offered. | R |
 | WP-7 | Two work profiles. | First one wins. | R |
 | WP-8 | Numeric user IDs or serials. | Never written: grep the written file and status.json. `profile-numeric.json` and `profile-private.json` are rejected. | U |
-| PS-1 | Private space (API 35) unlocked. | Private apps appear only in the system private-space section of the drawer. Not in Unsorted. Not draggable to pages (implied, see Q13). | I, M |
+| PS-1 | Private space (API 35+) unlocked. | Private apps appear only in the private-space section at the bottom of the drawer. Not in Unsorted, and not affected by `drawer.hidden`. **Drag is blocked:** long-press offers only the system actions, and they can't be dropped on a page, the dock or a folder. Compose test: start a drag on a private tile and assert no `Edit` is emitted. | I, M | A§17 Q13 |
 | PS-2 | Private space locked. | Its apps appear nowhere. | I, M |
 | PS-3 | Any write or status.json update while private space is unlocked. | Contains no private-space package. | I |
 
-## 10. Manual QA matrix (A§11), for later
+## 10. Banners B3, B4 and B8 (A§17 AQ-8, AQ-9)
 
-Run on Christopher's phone plus a Pixel emulator. A Samsung device if one is available.
+| ID | Steps | Expected | Level |
+|---|---|---|---|
+| BN-1 | B3 vs B4: see FI-15. Also check what each banner offers. | B3: `Reconnect` only. B4: `Create from current layout` and `Reconnect`. | S, R |
+| BN-2 | B4, then tap `Create from current layout`. | Writes last-good (the starter only if there's no last-good). The banner stays until the next poll loads the valid file, then clears. It isn't cleared by the tap itself. | S, R |
+| BN-3 | B4 while the git client is mid-pull (the file shows up 2 s later). | No write from us. B4 clears on its own when the file appears. | S, M |
+| BN-4 | B8: load a file with an older `schemaVersion`. Needs a v0/v2 migration fixture once v2 exists; until then use a fake migration in a unit test. | Notice `launcher.json uses an older format (v{N}). It will be upgraded on your next change.` with `Upgrade now` and `✕`. Lowest priority: hidden while any B1-B6 is showing, and stacked below them. | R |
+| BN-5 | B8 `Upgrade now`. | The original goes to `.configlauncher/backup/launcher.v{N}.{timestamp}.json`, then a write through the normal path (hash check; auto-merge or B6 on conflict). | S, R |
+| BN-6 | **B8 `✕`, dismissed per hash:** dismiss, then (a) reload the same bytes, (b) restart the launcher, (c) have the agent write a *different* older-format file, (d) make an edit. | (a) and (b): B8 stays hidden, because the dismissed hash is in DataStore. (c): B8 comes back for the new hash. (d): the edit still upgrades, with a backup first. | R |
+| BN-7 | B8 while B2 is up. | Only B2 shows. B8 appears once B2 clears. | R |
+
+## 11. Skip for now and app-private storage (A§18.2)
+
+| ID | Steps | Expected | Level |
+|---|---|---|---|
+| SK-1 | Onboarding step 2 → `Skip for now`. | Source = `filesDir/config/source/launcher.json`, created explicitly by this choice. Settings shows `Layout stored on this phone only` with `Choose folder`. No B3 or B4 ever. | R, I, M |
+| SK-2 | App-private mode: make an edit. | True atomic temp + `renameTo`. `.configlauncher/` artifacts go under `filesDir/config/source/.configlauncher/`. FileObserver-driven, with no 2 s polling (assert 0 `cl-poll` slices). | S, R |
+| SK-3 | App-private mode, disk full. | B5. The edit is kept in memory. | S |
+| SK-4 | **Phone → folder**, folder **without** `launcher.json`. | One write of the current layout to the folder, then the folder becomes the source. The app-private file is not deleted. | S, R, M |
+| SK-5 | Phone → folder, folder **with a valid** `launcher.json`. | Dialog `This folder already has a launcher.json.` (a) `Use the folder's layout`: the folder file is loaded and the app-private file is kept as a history entry. (b) `Replace it with mine`: the folder file is copied to `.configlauncher/backup/` first, then mine is written. | S, R, M |
+| SK-6 | Phone → folder, folder with an **invalid** `launcher.json`. | Same dialog plus `See problems`, which opens the error detail. Neither choice loses either file. | R |
+| SK-7 | **Folder → phone** (Settings → `Use phone storage`). | The current layout is copied into the app-private file, and the persisted grant is released (it's gone from `persistedUriPermissions`). No B3 afterwards. | R, I |
+| SK-8 | Round trip: phone → folder → phone. | The second switch reloads/overwrites the app-private file with the current layout. Nothing is lost: the earlier app-private version is in history. See Q-v3-1 on whether it's overwritten or reloaded. | R |
+| SK-9 | Debug build: `adb push` a new `launcher.json` into the app-private path (`run-as`). | FileObserver picks it up within 1 s. | I |
+
+## 12. Drawer, keyboard and label backdrop (A§17 (b), A§18.1, A§18.2)
+
+| ID | Steps | Expected | Level |
+|---|---|---|---|
+| DR-1 | Open the drawer (default settings). | The search field is focused and the keyboard is up (Q-C2). The list includes placed apps (UN-4b). | I, M |
+| DR-2 | Keyboard up, press **Back**. | First Back hides the keyboard only. A second Back closes the drawer. | I, M |
+| DR-3 | Keyboard up, **swipe down** on the list. | Hides the keyboard first. A further swipe down closes the drawer. | I, M |
+| DR-4 | Settings → `Open keyboard with drawer` **off**, then open the drawer. | No focus, no keyboard. Tapping the field shows it. The setting survives a restart (DataStore) and doesn't touch launcher.json. | R, I |
+| DR-5 | Keyboard up with 2000 apps: type 3 letters. | Results filter on each keystroke (UX§2 rules). Enter launches the first result. | I |
+| DR-6 | Hardware keyboard or Samsung DeX (A53/S25 if available). | Search field focused, no on-screen keyboard forced. Behaviour isn't specified, see Q-v3-2. | M |
+| LB-1 | Settings → `Label backdrop` (off by default). | Off: white label with a 1 dp 50% black shadow. On: a rounded 40% black scrim behind each home label. Stored in DataStore, never written to launcher.json (assert 0 writes on toggle). | R, I |
+| LB-2 | Backdrop on, on a busy, bright wallpaper. | Label contrast ≥ 4.5:1 against the scrim (screenshot + contrast check). Folder and dock labels: see Q-v3-3. | M |
+| LB-3 | Backdrop on with a 60-emoji label and with a bidi-stripped label. | The scrim wraps the ellipsized text, with no overflow outside the cell. | I |
+
+## 13. API-level gates (minSdk 29)
+
+minSdk is 29 (Android 10). RoleManager, `LauncherApps.getProfiles`, shortcuts, adaptive icons and `requestQuietModeEnabled` are therefore always available. The pre-29 cases from the minSdk-23 draft are dropped: shortcuts below 26, plain icons, the home-settings fallback, the SAF `Show internal storage` hint. The old wall-display devices are **test-only** (Q-v3-9). Robolectric runs at `@Config(sdk = [29, 35])`. Android Lint `NewApi` is an error in CI.
+
+| ID | Steps | Expected | Level |
+|---|---|---|---|
+| API-1 | Install on API 28 (the S8+, if it's used as a test-only device, or an API 28 emulator locally). | `INSTALL_FAILED_OLDER_SDK`. Documented as unsupported, not a bug. | M |
+| API-2 | Onboarding `Set as Home` on 29+. | `RoleManager.createRequestRoleIntent(ROLE_HOME)`. If the user declines, the onboarding step stays, and the app still works as a normal activity minus shortcuts (A§8). | R (sdk 29), I |
+| API-3 | Shortcut items on 29+. | Launch when we're the default launcher. Otherwise disabled with `Set as Home to use shortcuts` (A§8). | R, I |
+| API-4 | Private space below 35. | No private-space API calls. Gated at 35. | R (sdk 29) |
+| API-5 | Quiet mode on 29+: paused work app. | Greyed with the badge. Tap brings up the system unpause prompt (`requestQuietModeEnabled`). | R, I |
+| API-6 | Lint `NewApi` = error. | A deliberately ungated API 30+ call in a scratch branch fails CI (one-time check). | CI |
+
+## 14. Samsung One UI quirks
+
+Marked **(R)** where the expectation comes from research (public reports or docs), not from a device run. Confirm on the A53 first.
+
+| ID | Steps | Expected / what to record | Basis |
+|---|---|---|---|
+| OU-1 | **Default launcher prompt:** install, open, `Set as Home`. Then press Home after installing another launcher, and after an OTA. | The RoleManager dialog on One UI 8 (A53/S25). Record whether One UI resets the default home after an update or an app update (reported on some OEMs, A§13 "home role resets"). | (R) for resets |
+| OU-2 | **Secure Folder as a profile.** One UI 8 reclassified Secure Folder as a **private** profile. Older One UI implemented it as a **work (managed) profile** (Android Authority, Android Police reports on One UI 8). A53/S25: Secure Folder exists, open or hidden. | One UI 8: not in our drawer as a work profile, and not shown unless we hold ACCESS_HIDDEN_PROFILES + HOME (we don't). On older One UI (e.g. the optional A51 on Android 13): Secure Folder may show up as the "first managed profile" and be treated as `work`. Record which profile `InstalledApps` picks when both a real work profile and Secure Folder exist. See Q-v3-4. | (R) |
+| OU-3 | **Game Launcher / Game Booster.** | Game Launcher is an app, not a profile. Record whether games are hidden from LauncherApps when "Hide game apps" is on in Game Launcher. Expected: still listed by LauncherApps (they're normal launchable activities), unless Samsung hides them. | (R), unverified |
+| OU-4 | **Battery optimisation and app sleeping:** Settings → Battery → Background usage limits (Sleeping / Deep sleeping apps), and "Put unused apps to sleep". | Our polling runs only while home is visible, so sleep should not affect it. Check: (a) after 1 h idle with the launcher in "Sleeping apps", pressing Home polls immediately (LR-1 ≤ 1 s); (b) the launcher is never auto-added to Deep sleeping; (c) the git client's own sync isn't killed (that's the git client's problem, but record it). The default home is normally exempt from app standby (R). | (R) |
+| OU-5 | **One UI Home gestures:** Settings → Display → Navigation bar → Swipe gestures, with our launcher as Home. | Gestures stay enabled with a third-party home. Record (a) swipe-up-to-home latency before the first tap registers (a known One UI delay with third-party launchers: recents are provided by One UI Home), and (b) whether the recents animation targets our icon. Document it, but don't treat it as our bug. | (R) |
+| OU-6 | **Edge panels:** enable the Apps edge panel and open apps from it. | The panel works independently of our launcher. Opening an app from it and returning Home leaves our state intact (no reload, no re-poll beyond the resume poll). | (R) |
+| OU-7 | Samsung `Show internal storage` and the "Samsung My Files" provider in the SAF picker (A53). | The picked git folder's authority is `com.android.externalstorage.documents`, so no cloud warning (Q15). | (R) |
+| OU-8 | One UI "Lock Home screen layout" and "Home screen only" settings. | Apply to One UI Home only. No effect on us. Record it. | (R) |
+
+## 15. Devices, emulators and performance
+
+### 15.1 Device matrix
+API levels are the latest **official** Android for each model, as listed in A§18.3. The version actually installed on Christopher's units isn't known; record it on first run (`adb shell getprop ro.build.version.sdk`, and the One UI version from Settings → About).
+
+| Order | Device | Latest official Android (API) | Coverage |
+|---|---|---|---|
+| 1 | **Galaxy A53** | 16 (36) | **Full manual pass**, git sync first, One UI quirks (§14), poll cost and battery (LR-7), cold start (PF-2) |
+| 2 | **Galaxy S25 Ultra** | 16 (36) | Full pass after the A53. Private space, Secure Folder (OU-2) |
+| optional | Galaxy A51 | 13 (33) | Smoke. Secure Folder on older One UI (OU-2). No private space |
+| test-only | S8+ (28), Tab S2 (24), OnePlus 2 (23), OnePlus One (modded, ROM version unknown) | Below minSdk 29 | Not supported. At most API-1 (install refused). No performance targets |
+
+### 15.2 Emulator matrix (CI)
+| API | Image | Purpose |
+|---|---|---|
+| 29 | `default` x86 | minSdk floor. RoleManager, `getProfiles`, quiet-mode request |
+| 35 | `google_apis` x86_64 | Private space. Edge-to-edge |
+| 36 | `google_apis` x86_64 | Current (A53/S25 level) |
+
+Implemented as `.github/workflows/emulator-smoke.yml` (PR #23): nightly, on demand, or on PRs labelled `emulator`. It installs and cold-starts with crash/ANR detection, plus `am start -W` timings. Instrumented tests (`connectedDebugAndroidTest`) join the same matrix once `app/src/androidTest` exists.
+
+### 15.3 Performance budgets and how to measure them
+| ID | Budget | Device | Method | Pass |
+|---|---|---|---|---|
+| PF-2 | Cold start to first frame < 500 ms with a 300-item config (A§11) | A53 | `adb shell am force-stop dev.nasawa.configlauncher`, then `adb shell am start -W -n dev.nasawa.configlauncher/.MainActivity` and read `TotalTime`. 10 runs after one warm-up. Cross-check with Macrobenchmark `StartupTimingMetric` (`timeToInitialDisplayMs`), R8-minified release build with a baseline profile. | Median < 500 ms |
+| PF-5 | Poll cost and battery | A53 | See LR-7 | ≤ 5 ms per poll, < 1%/h |
+
+## 16. Manual QA matrix, for later
+
+**git is tested first** (A§18.1). Syncthing and Drive come after.
 
 | ID | Setup | Steps | Expected |
 |---|---|---|---|
-| MS-1 | **Syncthing** folder shared with the PC. | Edit on the PC and save, then press Home. Drag on the phone and watch the PC. Edit on both at once. | Reload within sync time + 1 s on Home (+3 s while visible). The phone's write shows on the PC. B6 on a simultaneous edit. A `.sync-conflict` copy, if Syncthing makes one, produces the notice. |
-| MS-2 | Syncthing with "ignore delete" and versioning on. | Drag 5 times quickly. | One file version (debounce). No deletes are ever propagated. |
-| MG-1 | **git** client folder (e.g. MGit). | Commit and push from the PC, pull on the phone, press Home. Drag on the phone, commit, pull on the PC. | Reloads after the pull (the file is replaced, so the docId may change). The phone's write gives a canonical, small diff. `.configlauncher/` should be in `.gitignore` or committed deliberately (see Q14). |
-| MG-2 | git, with the agent's checkout leaving conflict markers. | Pull a merge conflict. | B1 with line/column, last-good kept. |
-| GD-1 | **Google Drive** folder via SAF. | Edit on the PC, wait, press Home. Drag on the phone. Turn on airplane mode and drag. | Best effort (A§13): document the observed latency. Airplane mode gives B5 or a delayed write, and the edit is never lost. Record the actual behaviour, since Drive SAF support for tree pick and `"wt"` varies. |
-| WP-M | Work profile (Test DPC on an emulator if the phone has none). | WP-1, WP-2, WP-5. | As in §9. |
-| PS-M | Private space on Android 15+. | PS-1, PS-2. | As in §9. |
+| MG-1 | **git**, primary: a git client folder on the A53 (e.g. MGit, or Termux + git), cloned from a repo the PC agent pushes to. | Agent commits and pushes; pull on the phone; press Home. | Reload ≤ 1 s after the pull on Home, ≤ 3 s if home is showing. The file is replaced, so the docId may change and it's re-resolved by name. |
+| MG-2 | git | Drag on the phone, commit and push from the git client, pull on the PC. | A small canonical diff (2-space, schema order). `revision` + 1. |
+| MG-3 | git | Phone drag not yet committed, then pull a PC change to a different item. | Depends on the git client: it may refuse the pull (dirty tree). If it merges: auto-merge snackbar `Kept your 1 change.` (CM-7). Record the client's behaviour. |
+| MG-4 | git | Pull a conflicted merge (markers; fixture `invalid/git-conflict-markers.json`). | B1 with line/column, last-good kept, no write from us (CM-21). |
+| MG-5 | git | Check `git status` after a week of use. | Only `launcher.json` (and backup/broken, by preference) changes. `.configlauncher/launcher.json.tmp` and `status.json` are gitignored per the README snippet (A§17 Q14). |
+| MG-6 | git | `git checkout` an old commit (file replaced while home is showing). | Reloads the old layout. Undo is possible with git, and the launcher's history has the previous one. |
+| MS-1 | Syncthing (second) | Edit on the PC, then drag on the phone, then edit on both at once. | As MG-1/MG-3. A Syncthing conflict copy shows the notice (CM-20). |
+| GD-1 | Google Drive (third, best effort) | Pick a Drive folder. | Soft warning `Cloud folders can take a while to sync. A Syncthing or git folder works best.` with `Use anyway` / `Choose another folder`. Record latency. Airplane mode leads to B5 or a delayed write, and the edit is never lost. |
+| WP-M | Work profile (Test DPC on an emulator if no phone has one) | WP-1, WP-2, WP-3, WP-5 | As in §9 |
+| PS-M | Private space on the S25 Ultra or A53 (Android 15+) | PS-1, PS-2, PS-3 | As in §9 |
+| SF-M | Secure Folder on the A53 and A51 | OU-2 | Record it |
 
-## 11. Manual phone checklist (≈10 min, no app-killing)
+## 17. Manual checklist: Galaxy A53 (≈10 min, git sync, no app-killing)
 
-Needs: the launcher set as Home, the folder picked, and the PC able to edit the synced `launcher.json`. One small app to install.
+Before you start: the launcher is set as Home, the config folder is the git repo folder in your git app, and the PC side can commit and push `launcher.json`. Have one small app ready to install.
 
-1. Press Home: the layout matches the file, with no banner.
-2. On the PC, move one app and save. Press Home on the phone: it updates within about a second. Try again with the home screen already showing: within about 3 s.
-3. Drag one icon on the phone. The PC file updates after sync, and the phone doesn't flicker.
-4. On the PC, delete a `}` and save. The phone keeps the layout and shows "Can't read launcher.json…". Undo the change and the banner clears.
-5. On the PC, add `"uri": "tel:911"` to an item. You get the "has 1 problem" banner and nothing dials. Remove it.
-6. Install the small app: it appears in the drawer, not on a home page. Uninstall it from a home icon if you placed it: it greys out and stays.
-7. Drag an icon on the phone, then within a second save a PC edit to a different icon. If "launcher.json changed while you were editing" appears, tap **Keep mine**: both changes stay.
-8. Only if you have one: work apps show a badge in the drawer. Pause work apps and any placed work icons grey out.
+1. **Home (30 s).** Press Home. The layout matches the file. No banner.
+2. **Agent edit via git (2 min).** On the PC, move one app, commit and push. In the git app on the phone, pull. Press Home: it updates within about a second.
+3. **Your edit via git (1.5 min).** Long-press and drag one icon. In the git app, commit and push. On the PC, pull: the file shows the move as a small diff.
+4. **Merge (1.5 min).** Drag one icon, and before committing, pull a PC change that moved a *different* icon. Expected: `Layout updated from launcher.json. Kept your 1 change.` Both moves are kept. Tap **Undo** once to see the PC version come back, then drag again if you like. (If your git app refuses to pull with local changes, note that and skip.)
+5. **Broken file (1 min).** On the PC, delete one `}`, commit, push and pull. The layout stays and the banner says the file can't be read, with the line number. Revert, push and pull: the banner goes away.
+6. **Drawer (1 min).** Open the drawer: the keyboard comes up. Type 2 letters to filter. Check that an app you placed on the home screen is also in the list. Press Back twice (keyboard, then drawer).
+7. **New app (1 min).** Install the small app: it appears in the drawer, not on a home page.
+8. **Settings (1 min).** Turn on `Label backdrop`: dark pills behind the home labels. Turn it off again. Optionally turn off `Open keyboard with drawer` and reopen the drawer.
+9. **Gestures (30 s).** Open any app and swipe up to go Home. Note if the first tap after returning feels delayed (a known One UI effect, just record it).
 
-## 12. Automation and CI
+Report anything that differs, with a screenshot.
 
-- When `:app` exists: a GitHub Actions job running `./gradlew testDebugUnitTest` (JVM + Robolectric + store fakes) on every PR, plus `python3 test-fixtures/check_schema.py`.
-- Emulator job (API 26 and 35) for the instrumented SAF, profile and drag tests: nightly or on a label.
-- A test that fails on `android.*` imports in `model` and `config` (A§10).
+## 18. Automation and CI
 
-## Open questions (still open)
+- `build` job (existing): `./gradlew testDebugUnitTest` (JVM + Robolectric + store fakes, including `FixtureConformanceTest`, `KotlinOnlyConformanceTest`, `WriterRefusalTest`) and `assembleDebug`.
+- Add a step for `python3 test-fixtures/check_schema.py` (needs `pip install jsonschema`).
+- `emulator-smoke` job (PR #23): API 29/35/36 matrix, nightly, on demand, or on the `emulator` label.
+- Robolectric at `@Config(sdk = [29, 35])` for the API-gate cases. Lint `NewApi` as an error.
+- A test that fails on `android.*` imports in `model` and `config` (A§10, exists as `PureLayerTest`).
 
-1. Q1: The schema has no `maxLength` on `package`, `activity`, `packagePrefix` and `drawer.hidden` entries, though A§15 OQ-9 caps "other strings" at 256. Should the schema add `maxLength: 256`? Currently those are Kotlin-only.
-2. Q2: A§11 says the networknt and Kotlin validators "agree" on every file in `configs/invalid/`. But duplicate IDs, overlapping cells, cells outside the grid, the 2000-item total and duplicate keys can't be expressed in JSON Schema. Should the conformance test assert "Kotlin rejects ⊇ schema rejects", with a list of Kotlin-only rules?
-3. Q3: Is NUL inside a JSON string (`\u0000`, legal JSON) a parse error (A§15 OQ-11 says so) or a validation error? This affects whether it's B1 or B2.
-4. Q4: If writing `last-good.json` fails (app storage full) after a verified folder write, what should happen: banner, or silent?
-5. Q5: Providers that report a constant `COLUMN_LAST_MODIFIED`: should a same-size external edit while the home screen is showing be caught (hash every N polls)?
-6. Q6: Agent edit mid-drag, then the drag is cancelled: apply `incoming` silently?
-7. Q7: OQ-15 broken-copy path combined with a conflicting agent edit: which comes first, the broken-copy snapshot or the B6 hash check?
-8. Q8: Do further phone edits while B6 is showing join the pending queue, or are they blocked until the user picks?
-9. Q9: `Keep mine` replay of `CreateFolder` when some members were removed or moved by the agent: build a partial folder, or skip?
-10. Q10: Is there a budget for poll cost or battery while the home screen is showing?
-11. Q11: `unsorted.mode: hidden`: does the drawer still list those apps? (A§3 says the drawer "always lists all apps".)
-12. Q12: File has `profile: work` items but "Include work apps in config" is off: render them, grey them out, or treat them as invalid?
-13. Q13: Can private-space apps be dragged anywhere at all (folders, dock), or is it blocked in the UI?
-14. Q14: Should `.configlauncher/` be committed or gitignored in a git-synced folder? Should the README say?
-15. Q15: Google Drive: is "best effort" shipped, or is Drive warned against in onboarding?
-16. Q16: **The item cap and the byte cap conflict.** A legal 2000-item config is about 301 KB in canonical (pretty) form, which is over the 256 KiB read cap, so the launcher would refuse to read its own write-back. This is shown by `CanonicalSizeTest` in PR #11. Lower the item cap (about 1700), raise the byte cap, or write compact JSON? Until then, the writer should refuse output over the cap and show B5.
+## Open questions (v3)
+
+All of Q1-Q16 from v2 are resolved by A§17. Still open:
+
+1. **Q-v3-1** Folder → phone → folder round trip (SK-8): does `Use phone storage` *overwrite* the app-private file with the current layout (A§18.2 says "copies"), and is the previous app-private version snapshotted to history first?
+2. **Q-v3-2** Drawer with a hardware keyboard or DeX: still focus and show the IME?
+3. **Q-v3-3** Label backdrop: does it apply to folder labels and the dock (where labels are hidden), or home page labels only?
+4. **Q-v3-4** Secure Folder on older One UI (A51, S8+) can look like a managed profile. If both a real work profile and Secure Folder exist, `InstalledApps` picks the "first managed profile". Should Secure Folder be excluded explicitly (if detectable), and should "first work profile wins" (OQ-29) prefer the real one?
+5. **Q-v3-6** Auto-merge Undo (CM-6): if the file changes again between the merge and the Undo tap, does Undo still write the old file version (overwriting the newer agent edit), or is it disabled?
+6. **Q-v3-9** minSdk 29 came from the coordinator (2026-10-18, 15:27 MDT), but ARCHITECTURE §18.3 on main still says 23, and Sprite's open PR #31 implements 23 with API gates. Archimedes should amend §18.3 (device list, cost section, CI matrix), and #31 needs re-scoping. Until then, this plan follows minSdk 29.
