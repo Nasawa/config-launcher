@@ -32,6 +32,8 @@ class LocalFileSource(val dir: File) : ConfigSource {
         if (!temp.renameTo(file)) throw IOException("could not replace ${file.name}")
     }
 
+    override fun siblingNames(): List<String> = dir.list()?.toList().orEmpty()
+
     override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
         val d = File(File(dir, ".configlauncher"), subdir)
         if (!d.isDirectory && !d.mkdirs()) throw IOException("can't create ${d.path}")

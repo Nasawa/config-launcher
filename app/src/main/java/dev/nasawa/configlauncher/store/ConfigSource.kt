@@ -22,6 +22,9 @@ interface ConfigSource {
      * Write a sidecar file at `.configlauncher/<subdir>/<name>` ([subdir] may be empty), creating
      * directories as needed. Never touches launcher.json, so it never changes [stamp] (no reload loop).
      */
+    /** Names of the files next to launcher.json (for OQ-21 conflict detection). */
+    fun siblingNames(): List<String> = emptyList()
+
     @Throws(IOException::class)
     fun writeSidecar(subdir: String, name: String, bytes: ByteArray)
 }
