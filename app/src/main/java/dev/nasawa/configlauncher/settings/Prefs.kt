@@ -27,4 +27,9 @@ class Prefs(context: Context) {
 
     /** First run finished: a folder is connected or app-only was chosen. */
     val onboarded: Boolean get() = appOnly || folderUri != null
+
+    /** §18.1 Q-C4: rounded 40 % black scrim behind home labels (default off). App setting, not in launcher.json. */
+    var labelBackdrop: Boolean
+        get() = sp.getBoolean("labelBackdrop", false)
+        set(v) = sp.edit { putBoolean("labelBackdrop", v) }
 }
