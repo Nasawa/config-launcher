@@ -28,6 +28,10 @@ object ConfigCodec {
     }
 
     fun decode(text: String): ParseResult {
+        // A git merge left conflict markers in the file: say so instead of a generic syntax error.
+        GitMarkers.firstLine(text)?.let {
+            return ParseResult.Invalid(listOf("not valid JSON: git merge conflict markers (line $it); finish the merge in git"))
+        }
         JsonPreScan.check(text)?.let { return ParseResult.Invalid(listOf("not valid JSON: $it")) }
         val tree = try { Json.parseToJsonElement(text) } catch (e: Exception) {
             return ParseResult.Invalid(listOf("not valid JSON: ${e.message?.lineSequence()?.firstOrNull()}"))
