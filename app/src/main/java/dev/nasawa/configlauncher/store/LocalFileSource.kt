@@ -15,6 +15,7 @@ class LocalFileSource(val dir: File) : ConfigSource {
     private val temp = File(File(dir, ".configlauncher"), "$FILE_NAME.tmp")
 
     override val displayName = "App storage"
+    override val reconnectable = false
 
     override fun stamp(): Stamp? = if (file.isFile) Stamp(file.path, file.lastModified(), file.length()) else null
 
