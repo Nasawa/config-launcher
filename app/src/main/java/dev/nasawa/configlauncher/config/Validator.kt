@@ -20,6 +20,7 @@ object Validator {
     private class Run {
         val errors = mutableListOf<String>()
         val ids = mutableMapOf<String, String>()
+        var itemCount = 0
         var columns = 4
         var rows = 5
 
@@ -37,8 +38,9 @@ object Validator {
             val v = o[k] ?: return null
             val s = (v as? JsonPrimitive)?.takeIf { it.isString }?.content
             if (s == null) { err("$path.$k", "must be a string"); return null }
-            if (max != null && s.length > max) err("$path.$k", "longer than $max characters")
-            if (s.length < min) err("$path.$k", "must not be empty")
+            val len = s.codePointCount(0, s.length) // JSON Schema counts code points
+            if (len > (max ?: Limits.MAX_STRING)) err("$path.$k", "longer than ${max ?: Limits.MAX_STRING} characters")
+            if (len < min) err("$path.$k", "must not be empty")
             if (re != null && !re.matches(s)) err("$path.$k", "\"$s\" is not valid")
             return s
         }
@@ -76,6 +78,7 @@ object Validator {
             arr(o, "pages", "", max = 20, min = 1)?.forEachIndexed { i, p -> page(p, "pages[$i]") }
             arr(o, "dock", "", max = 7)?.forEachIndexed { i, it -> item(it, "dock[$i]", Ctx.DOCK) }
             o["drawer"]?.let { drawer(it) }
+            if (itemCount > Limits.MAX_ITEMS) err("", "$itemCount items in total, at most ${Limits.MAX_ITEMS} allowed")
             o["unsorted"]?.let { u ->
                 obj(u, "unsorted")?.let { uo ->
                     keys(uo, "unsorted", setOf("mode", "pageTitle"), emptySet(), xKeys = false)
@@ -113,6 +116,7 @@ object Validator {
 
         fun item(e: JsonElement, path: String, ctx: Ctx) {
             val o = obj(e, path) ?: return
+            itemCount++
             val type = (o["type"] as? JsonPrimitive)?.takeIf { it.isString }?.content
             val common = setOf("id", "type", "label", "x", "y")
             when (type) {
@@ -121,7 +125,7 @@ object Validator {
                     str(o, "package", path, re = PKG)
                     str(o, "activity", path, re = CLS)
                     profile(o, path)
-                    arr(o, "tags", path)?.let { tags ->
+                    arr(o, "tags", path, max = Limits.MAX_TAGS)?.let { tags ->
                         val seen = mutableSetOf<String>()
                         tags.forEachIndexed { i, t ->
                             val s = (t as? JsonPrimitive)?.takeIf { it.isString }?.content
@@ -165,7 +169,7 @@ object Validator {
                 val seen = mutableSetOf<String>()
                 h.forEachIndexed { i, p ->
                     val s = (p as? JsonPrimitive)?.takeIf { it.isString }?.content
-                    if (s == null || !PKG.matches(s)) err("drawer.hidden[$i]", "must be a package name")
+                    if (s == null || !PKG.matches(s) || s.length > Limits.MAX_STRING) err("drawer.hidden[$i]", "must be a package name (at most ${Limits.MAX_STRING} characters)")
                     else if (!seen.add(s)) err("drawer.hidden", "duplicate \"$s\"")
                 }
             }
@@ -181,7 +185,7 @@ object Validator {
                     if (mo.isEmpty()) err("$rp.match", "needs at least one condition")
                     arr(mo, "packages", "$rp.match")?.forEachIndexed { j, p ->
                         val s = (p as? JsonPrimitive)?.takeIf { it.isString }?.content
-                        if (s == null || !PKG.matches(s)) err("$rp.match.packages[$j]", "must be a package name")
+                        if (s == null || !PKG.matches(s) || s.length > Limits.MAX_STRING) err("$rp.match.packages[$j]", "must be a package name (at most ${Limits.MAX_STRING} characters)")
                     }
                     str(mo, "packagePrefix", "$rp.match", max = 128)
                     str(mo, "tag", "$rp.match", max = 40)

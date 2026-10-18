@@ -46,5 +46,22 @@ class ReconcileTest {
         assertEquals(listOf(0 to 0, 1 to 0), last.items.map { it.item.x to it.item.y })
     }
 
+    @Test fun drawerListsAllAppsIncludingPlacedMinusHidden() {
+        val r = Reconcile.resolve(cfg(hidden = listOf("com.zed")), listOf(chrome, calc, zed))
+        assertEquals(listOf(calc, chrome), r.drawer)
+    }
+
+    @Test fun hiddenModeOnlyRemovesUnsortedPage() {
+        val r = Reconcile.resolve(cfg(UnsortedMode.HIDDEN), listOf(chrome, zed))
+        assertEquals(1, r.pages.size)
+        assertEquals(listOf(chrome, zed), r.drawer)
+    }
+
+    @Test fun workItemsGreyedWhenOptInOff() {
+        val c = LauncherConfig(pages = listOf(Page("p", items = listOf(AppItem("w", "com.android.chrome", profile = Profile.WORK, x = 0, y = 0)))))
+        assertTrue(Reconcile.resolve(c, listOf(workChrome)).pages[0].items[0].missing)
+        assertFalse(Reconcile.resolve(c, listOf(workChrome), includeWork = true).pages[0].items[0].missing)
+    }
+
     @Test fun drawerModeAddsNoPage() = assertEquals(1, Reconcile.resolve(cfg(), listOf(zed)).pages.size)
 }
