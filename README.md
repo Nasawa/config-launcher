@@ -3,7 +3,7 @@
 An Android home screen whose whole layout lives in one file, `launcher.json`, in a folder you choose. Rearrange apps
 on your phone and the file updates. Edit the file on your computer (or let an agent edit it) and the phone updates.
 
-- Kotlin + Jetpack Compose, Android 8.0+ (minSdk 26).
+- Kotlin + Jetpack Compose, Android 6.0+ (minSdk 23). Pinned shortcuts need Android 8.0+.
 - No risky permissions: no storage, `QUERY_ALL_PACKAGES`, Accessibility or network access. You grant access to one
   folder through Android's system folder picker, and you can revoke it.
 - Status: architecture and UX specs are done. See [ARCHITECTURE.md](ARCHITECTURE.md) and [docs/ux.md](docs/ux.md).
@@ -67,7 +67,7 @@ copies (`launcher.sync-conflict-*.json`) are never read; merge them by hand. Clo
 work on a best-effort basis and can be slow, and first run warns when you pick one.
 
 **No folder at all.** On first run you can choose *Skip for now*: the layout then lives only on the phone, and nothing
-can edit it from outside until you connect a folder in *Settings → Config folder → Connect folder*.
+can edit it from outside until you choose a folder in *Settings → Config folder → Choose folder*.
 
 ### Schema
 - JSON Schema 2020-12: [`schema/launcher-config.v1.schema.json`](schema/launcher-config.v1.schema.json). Full example:
@@ -103,8 +103,8 @@ Shape in brief:
 - `drawer.sort`: `label` or `installTime`. `drawer.hidden`: package names. `drawer.rules`: `{id, group, match}` where
   `match` uses `packages`, `packagePrefix`, `tag` or `category`. The first matching rule wins, and rules only group the
   drawer.
-- Apps you don't place live **only in the drawer**. There's no Unsorted home page, so don't write `unsorted` (it's
-  being removed from the schema; if present it's accepted and ignored). The drawer lists every app, including placed
+- Apps you don't place live **only in the drawer**. There's no Unsorted home page, so don't write `unsorted.mode:
+  page` (it stays valid in the schema but isn't offered in v1). The drawer lists every app, including placed
   ones, minus `drawer.hidden`. Installed apps that you don't place are never written to the file by the launcher.
 
 ### IDs and profiles
@@ -134,8 +134,10 @@ Shape in brief:
   it, and a missing `revision` is valid.
 - **Conflicts.** The **content hash** decides what's new, not `revision`. Any file with different content from what the
   phone last applied is loaded, even with a lower `revision`.
-  - If the phone has unsaved edits when your change arrives, the user chooses `Use file` (your version wins) or `Keep
-    mine`. `Keep mine` replays the phone's edits by ID onto **your** version, so your changes to other items survive.
+  - If the phone has unsaved edits when your change arrives, it **merges automatically**: your file wins, except the
+    items the user just touched, whose edits are replayed by ID onto your version. The phone shows
+    `Layout updated from launcher.json. Kept your 2 changes.` with *Undo*. With *Ask before merging* on, the user
+    picks `Use file` or `Keep mine` instead.
   - An edit whose item you deleted is skipped.
   - Changes that arrive during a drag wait until the drop.
 - **How the launcher writes.** Android's folder access has no atomic replace, so it writes `.configlauncher/launcher.json.tmp`
