@@ -160,7 +160,12 @@ fun HomeScreen(vm: HomeViewModel) {
                 val shown = remember(query, ui.layout.drawer) { DrawerSearch.filter(ui.layout.drawer, query) }
                 val focus = remember { androidx.compose.ui.focus.FocusRequester() }
                 val ime = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-                LaunchedEffect(Unit) { if (keyboardOnOpen) { focus.requestFocus(); ime?.show() } }
+                // ux.md §2: focus + keyboard on open; with TalkBack, focus only (no auto keyboard).
+                val talkBack = remember { (ctx.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager).isTouchExplorationEnabled }
+                LaunchedEffect(Unit) { if (keyboardOnOpen) { focus.requestFocus(); if (!talkBack) ime?.show() } }
+                val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+                // Scrolling the list hides the keyboard; tapping the field brings it back.
+                LaunchedEffect(gridState.isScrollInProgress) { if (gridState.isScrollInProgress) ime?.hide() }
                 OutlinedTextField(
                     query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp).focusRequester(focus),
                     placeholder = { Text("Search apps") }, singleLine = true,
@@ -168,7 +173,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = { shown.firstOrNull()?.let { drawerOpen = false; launchApp(it) } }),
                 )
                 if (shown.isEmpty()) Text("No apps match \"${query.trim()}\".", Modifier.padding(16.dp), color = Color.Gray)
-                LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxHeight(0.85f).padding(8.dp)) {
+                LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxHeight(0.85f).padding(8.dp), state = gridState) {
                     items(shown, key = { it.key }) { app ->
                         Tile(ResolvedItem(AppItem("drawer", app.packageName, app.activityName), app), vm.apps) {
                             drawerOpen = false; launchApp(app)
