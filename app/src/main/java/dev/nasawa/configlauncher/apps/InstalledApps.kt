@@ -70,9 +70,7 @@ class InstalledApps(context: Context) {
     /** Launch in the app's own profile. Returns false (never throws) if it can't start. */
     fun launch(app: InstalledApp): Boolean {
         val user = users[app.profile] ?: return false
-        if (app.paused) {
-            runCatching { userManager.requestQuietModeEnabled(false, user) }; return true
-        }
+        if (app.paused) { runCatching { userManager.requestQuietModeEnabled(false, user) }; return true }
         return try {
             launcherApps.startMainActivity(ComponentName(app.packageName, app.activityName), user, null, null); true
         } catch (_: Exception) { false }

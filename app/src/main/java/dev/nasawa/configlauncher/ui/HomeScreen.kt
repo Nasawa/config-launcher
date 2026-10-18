@@ -46,7 +46,6 @@ fun HomeScreen(vm: HomeViewModel) {
     var keyboardOnOpen by remember { mutableStateOf(vm.store.prefs.drawerKeyboard) }
     var menuOpen by remember { mutableStateOf(false) }
     val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }) { vm.store.edit(it) } }
-    val homeRole = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
     var cloudUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var onboarded by remember { mutableStateOf(vm.store.prefs.onboarded) }
     // true: the pick moves the layout (first run, menu); false: Reconnect just re-grants the folder.
@@ -117,12 +116,6 @@ fun HomeScreen(vm: HomeViewModel) {
                             DropdownMenuItem({ Text("Open keyboard with drawer") }, {
                                 keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
                             }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
-                            DropdownMenuItem({ Text("Set as home app") }, {
-                                menuOpen = false
-                                val rm = ctx.getSystemService(android.app.role.RoleManager::class.java)
-                                if (rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME) && !rm.isRoleHeld(android.app.role.RoleManager.ROLE_HOME))
-                                    homeRole.launch(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME))
-                            })
                             DropdownMenuItem({ Text("Reload launcher.json") }, { menuOpen = false; vm.store.pollNow() })
                         }
                     }
