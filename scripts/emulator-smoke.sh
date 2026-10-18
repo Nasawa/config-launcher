@@ -4,7 +4,7 @@ set -euo pipefail
 PKG=dev.nasawa.configlauncher
 mkdir -p smoke
 adb install -r app/build/outputs/apk/debug/*.apk
-adb logcat -c
+adb logcat -c || true   # API 26 images: "failed to clear the main log"
 for i in 1 2 3; do
   adb shell am force-stop "$PKG"
   adb shell am start -W -n "$PKG/.MainActivity" | tee -a smoke/am-start.txt
