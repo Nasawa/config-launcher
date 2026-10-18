@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Installed launchable apps via LauncherApps (no QUERY_ALL_PACKAGES). Personal profile plus the
- * first managed (work) profile; private space and other profiles are never exposed (OQ-31).
+ * first managed (work) profile that isn't Samsung Secure Folder; private space and other profiles are never exposed (OQ-31).
  */
 class InstalledApps(context: Context) {
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
@@ -33,7 +33,9 @@ class InstalledApps(context: Context) {
     private fun profiles(): Map<Profile, UserHandle> {
         val me = Process.myUserHandle()
         val out = mutableMapOf(Profile.PERSONAL to me)
-        launcherApps.profiles.firstOrNull { it != me && isManaged(it) }?.let { out[Profile.WORK] = it }
+        WorkProfile.pick(launcherApps.profiles.filter { it != me && isManaged(it) }) { u ->
+            runCatching { launcherApps.getActivityList(null, u).map { it.componentName.packageName } }.getOrDefault(emptyList())
+        }?.let { out[Profile.WORK] = it }
         return out
     }
 
