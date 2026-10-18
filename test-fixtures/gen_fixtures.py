@@ -115,6 +115,7 @@ add(I,'hidden-257-chars.json',m(lambda c:c['drawer'].__setitem__('hidden',['com.
 add(I,'package-prefix-257-chars.json',m(lambda c:c['drawer']['rules'][0]['match'].update(packagePrefix='a'*257)),'invalid, B2','both','§17 Q1','')
 add(I,'match-packages-257-chars.json',m(lambda c:c['drawer']['rules'][0]['match'].update(packages=['com.'+'a'*253])),'invalid, B2','both','§17 Q1','')
 
+add(I,'git-conflict-markers.json',b'{\n  "schemaVersion": 1,\n<<<<<<< HEAD\n  "pages": [{"id": "home", "items": []}]\n=======\n  "pages": [{"id": "work", "items": []}]\n>>>>>>> origin/main\n}\n','parse error, B1; with PR #21: "git merge conflict markers (line 3); finish the merge in git", last-good kept, no write','parser','A§18.1 git primary, CM-21, MG-4','')
 RULES={'duplicate-id.json':'duplicate-ids','overlapping-cells.json':'overlapping-cells','cell-outside-grid.json':'cell-outside-grid','2016-items.json':'item-total','duplicate-key.json':'duplicate-keys','depth-9.json':'parser-depth','deep-nesting.json':'parser-depth','size-just-over-2mib.json':'byte-cap','nul-in-label.json':'nul-or-encoding','invalid-utf8.json':'nul-or-encoding','lone-surrogate.json':'nul-or-encoding','utf16.json':'nul-or-encoding'}
 for e in man:
     r=RULES.get(e['file'].split('/')[1])

@@ -134,6 +134,7 @@ Principle: nothing in the file ever builds an Intent. The launcher only launches
 | `invalid/hidden-257-chars.json` | invalid, B2 | both | §17 Q1 |
 | `invalid/package-prefix-257-chars.json` | invalid, B2 | both | §17 Q1 |
 | `invalid/match-packages-257-chars.json` | invalid, B2 | both | §17 Q1 |
+| `invalid/git-conflict-markers.json` | parse error, B1; with PR #21: "git merge conflict markers (line 3); finish the merge in git", last-good kept, no write | parser | A§18.1 git primary, CM-21, MG-4 |
 
 ## 3. Last-good fallback (A§4, A§15 OQ-13, OQ-14, OQ-15, OQ-16, AQ-7)
 
@@ -376,7 +377,7 @@ Implemented as `.github/workflows/emulator-smoke.yml` (PR #23): nightly, on dema
 | MG-1 | **git**, primary: a git client folder on the A53 (e.g. MGit, or Termux + git), cloned from a repo the PC agent pushes to. | Agent commits and pushes; pull on the phone; press Home. | Reload ≤ 1 s after the pull on Home, ≤ 3 s if home is showing. The file is replaced, so the docId may change and it's re-resolved by name. |
 | MG-2 | git | Drag on the phone, commit and push from the git client, pull on the PC. | A small canonical diff (2-space, schema order). `revision` + 1. |
 | MG-3 | git | Phone drag not yet committed, then pull a PC change to a different item. | Depends on the git client: it may refuse the pull (dirty tree). If it merges: auto-merge snackbar `Kept your 1 change.` (CM-7). Record the client's behaviour. |
-| MG-4 | git | Pull a conflicted merge (markers). | B1 with line/column, last-good kept, no write from us (CM-21). |
+| MG-4 | git | Pull a conflicted merge (markers; fixture `invalid/git-conflict-markers.json`). | B1 with line/column, last-good kept, no write from us (CM-21). |
 | MG-5 | git | Check `git status` after a week of use. | Only `launcher.json` (and backup/broken, by preference) changes. `.configlauncher/launcher.json.tmp` and `status.json` are gitignored per the README snippet (A§17 Q14). |
 | MG-6 | git | `git checkout` an old commit (file replaced while home is showing). | Reloads the old layout. Undo is possible with git, and the launcher's history has the previous one. |
 | MS-1 | Syncthing (second) | Edit on the PC, then drag on the phone, then edit on both at once. | As MG-1/MG-3. A Syncthing conflict copy shows the notice (CM-20). |
