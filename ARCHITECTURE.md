@@ -174,7 +174,7 @@ Root: `ConfigLauncherApp` (Application, holds `AppGraph`). Data flow: `store` em
 ## 12. MVP scope versus later
 **MVP (v0.1):**
 - Home role + onboarding (folder pick, set as Home).
-- Pages (pager), dock, drawer (A-Z, hidden list, rule groups), folders (one level), Unsorted modes.
+- Pages (pager), dock, drawer (A-Z, hidden list, rule groups), folders (one level); unplaced apps in the drawer only (§18.5).
 - App and pinned-shortcut items, personal + work profiles.
 - SAF folder store: poll + observer, validate, atomic model swap, last-good, history (10), status.json.
 - Write-back for move, add from drawer, remove, rename, create/merge folder; debounce; self-write guard; B6 conflict prompt with ID-based replay for `Keep mine`.
@@ -333,7 +333,7 @@ These override earlier sections where they differ.
 | §14 Q8 devices | Daily phone **Galaxy S25 Ultra**; tests first on a **Galaxy A53**; also A51, S8+, Galaxy Tab S2, OnePlus 2, and a modded OnePlus One as wall displays. | minSdk 23 (§18.3). QA order: A53 → S25 Ultra → old devices. |
 | §14 Q1 sync tool | **git is the primary sync target.** | Grace tests a git client folder first; Syncthing and Drive second. README leads with git. |
 | §14 Q2 / Q-C5 | **JSON only is OK.** | No change. |
-| §14 Q3 / Q-C3 | **Unsorted apps go in the drawer only.** | `unsorted.mode` default stays `drawer`. `page` stays in the schema but is not offered in Settings in v1. |
+| §14 Q3 / Q-C3 | **Unsorted apps go in the drawer only.** | Unplaced apps live only in the drawer; `unsorted` is accepted and ignored (§18.5 AF-2). |
 | §14 Q4 conflicts | **The file wins by default, except items the user just touched.** | §18.2: automatic ID-based replay, no prompt by default. Replaces the always-on B6 prompt from §6/§16 AQ-6. |
 | §14 Q5 | **status.json and backups in the folder: yes.** | No change (`.configlauncher/`). |
 | Q-C1 | **Add "Skip for now" with app-only storage.** | §18.2: app-private source. |
@@ -345,13 +345,7 @@ These override earlier sections where they differ.
 | §14 Q6 profiles | Not answered. | Keep the §15 OQ-29 defaults (work opt-in off, private never written). |
 
 ### 18.2 Store design changes
-**"Skip for now" (app-only storage).**
-- Onboarding step 2 gets a secondary button `Skip for now`. It selects the **app-private source**: `filesDir/config/source/launcher.json` (a real path, separate from `last-good.json` and `history/`). This is what Sprite's `LocalFileSource` and `ConfigStore.useAppStorage()` already implement.
-- Same pipeline as SAF (§4/§5), with these differences: change detection uses `FileObserver` on that directory (it is a real path we own, so inotify works; polling is unnecessary), writes are true atomic temp-then-`renameTo`, and the `.configlauncher/` artifacts (status.json, backup/, broken/) live under `filesDir/config/source/.configlauncher/` so code paths stay identical.
-- External editing isn't possible except via `adb` on debug builds; Settings shows `Layout stored on this phone only` with `Choose folder`.
-- **Moving to a folder later** (Settings → `Choose folder`): if the folder has no `launcher.json`, the current layout is written there (one write, then the folder becomes the source). If it has a valid one: dialog `This folder already has a launcher.json.` with `Use the folder's layout` (the app-private file is kept as a history entry) or `Replace it with mine` (the folder file is copied to `.configlauncher/backup/` first). Invalid: the same choices, plus `See problems`. The app-private file is not deleted; switching back via `Use phone storage` reloads it.
-- **Moving from a folder to the phone** (Settings → `Use phone storage`): copies the current layout into the app-private file and releases the persisted grant (already in `useAppStorage()`).
-- Banners B3/B4 never show in app-private mode; B5 can (disk full).
+**"Skip for now" (app-only storage).** Specified in full by §18.5 AF-1, which supersedes the earlier draft here. In short: an app-private `launcher.json` is the source of truth, written with a true temp-then-rename; no verify step, no polling, no `status.json` and no `.configlauncher/` folder; a persisted "no folder" state; and the connect-later flow from docs/ux.md §7 (#20).
 
 **Conflict default: the file wins, except items the user just touched.** Replaces the always-on B6 prompt.
 - On a hash mismatch at write time, or an incoming file with pending ops, the launcher **automatically** replays the pending ops by ID onto the file (the §6 replay rules, Q9 partial folders) and writes the result. No prompt.
@@ -408,3 +402,19 @@ At minSdk 24 we would lose the OnePlus 2 (and the One if it runs stock); at 26 w
   - One member left: `Folder "<Label>" wasn't recreated because its other apps were removed or moved in the file. "<App>" was placed on its own.`
   - None left: `Folder "<Label>" wasn't recreated because its apps were removed or moved in the file.`
   - Both with `[Undo]`. The trigger becomes "an automatic merge (or `Keep mine`) skipped a folder", per §18.2.
+
+### 18.5 AF-1 and AF-2 (from docs/ux.md #20), accepted
+**AF-1: app-only mode.**
+- With no folder connected, the source of truth is **`filesDir/config/source/launcher.json`** in app-private storage. It uses the same parser, validator, canonical serializer, last-good copy and history (10) as folder mode.
+- **Writes are truly atomic:** write `launcher.json.tmp` in the same directory, `fsync`, then `File.renameTo` over the target (same filesystem, so atomic on ext4/f2fs). There's **no temp-file read-back verify step**: that step exists only because SAF can't rename.
+- **No polling, no `status.json`, no `.configlauncher/` folder** (no backup/ or broken/ either; migration and restore backups go to app-private history). Nothing external writes there, so a **FileObserver is optional** (useful only for `adb` edits on debug builds); the store reloads after its own writes without one, through the in-memory model.
+- Banners B3, B4 and B6 can't occur; B1/B2 only if the file was corrupted (then last-good); B5 on disk-full; B8 on an older format.
+- **Persisted "no folder" state:** DataStore stores `source = APP_ONLY` (distinct from "never onboarded"), so onboarding doesn't show again, and the only reminder is ux.md's one-time hint chip.
+- **Connecting a folder later** follows ux.md §7 exactly (#20): with no file there, the current layout is written; with an existing file, the user chooses between the folder's layout and replacing it with a backup first. **History and last-good carry over unchanged** (they already live in `filesDir/config/`), and the app-private source file becomes the last-good copy. After connecting, folder mode applies in full (polling, banners, `status.json`, `.configlauncher/`).
+- This replaces the earlier §18.2 draft, which put `.configlauncher/` under the app-private directory.
+
+**AF-2: `unsorted` accepted and ignored in v1.**
+- `unsorted.mode` and `unsorted.pageTitle` stay in schema v1 with **no version bump**. "Ignored" means they're validated for type (enum and maxLength as today, so a typo is still an error) and then not acted on: unplaced apps always live in the drawer, whatever the mode. The launcher never writes `unsorted`, so a write-back drops it. That's acceptable because the field has no effect.
+- The schema description marks both fields **deprecated** (also `"deprecated": true`). Removing them is a **schema v2 change** with a `migrate1to2` that deletes the object (§3 rules).
+- Superseded: §3 Unsorted modes, §15 OQ-25 and Q11's mention of the Unsorted page, §12's "Unsorted modes" MVP item (now: drawer only), and the minimal example (which no longer includes `unsorted`).
+- Sprite: drop the Unsorted-page code path if one exists; the validator keeps type-checking `unsorted`; the codec doesn't write it.
