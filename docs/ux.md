@@ -8,7 +8,7 @@ This doc wins for wording. Aligned with ARCHITECTURE §16 (all 13 listed changes
 back to the file, and edits to the file show up on the phone.
 
 **MVP scope (ARCHITECTURE §12):** home pages with an app grid and a dock, the app drawer (A–Z, hidden list, rule
-groups), folders (one level), Unsorted modes, app and pinned-shortcut items (personal + work profiles), the file in a
+groups), folders (one level), unplaced apps in the drawer, app and pinned-shortcut items (personal + work profiles), the file in a
 user-picked SAF folder, live reload, write-back on move/add/remove/rename/folder create and merge, and validation with
 error banners.
 **Not in the MVP:** widgets, icon packs, AI/agent proposals (sketched in [Later](#11-later-reviewing-an-agents-proposed-change-not-in-the-mvp)),
@@ -37,8 +37,7 @@ The file: `launcher.json` at the root of the chosen folder, validated against
     ] }
   ],
   "dock": [ { "id": "a-dialer", "type": "app", "package": "com.google.android.dialer" } ],
-  "drawer": { "sort": "label", "hidden": ["com.example.bloat"], "rules": [] },
-  "unsorted": { "mode": "drawer" }
+  "drawer": { "sort": "label", "hidden": ["com.example.bloat"], "rules": [] }
 }
 ```
 
@@ -49,7 +48,7 @@ Shape notes (ARCHITECTURE §3, §16):
 - Folders use `label` and hold apps and shortcuts only, with no nested folders. Folder and dock children have no `x`/`y`; their order is the array order.
 - Pages need an `id`, and `title` is optional. Page items need `x`/`y`. Every item is 1 × 1.
 - `drawer.hidden[]` holds **package names** (hiding is per app). `drawer.sort` is `label` (default) or `installTime`. `drawer.rules[]` group apps in the drawer by `packages`, `packagePrefix`, `tag` or `category` (first match wins).
-- `unsorted.mode`: `drawer` (default), `page` (also show unplaced apps on a synthetic last page, which is never written) or `hidden`. The starter layout uses `drawer`.
+- Unplaced apps live **only in the drawer** (Christopher, Q-C3: no Unsorted home page). Don't write `unsorted`. Until the schema drops it (AF-2), a file that has it stays valid, and `page` and `hidden` are treated as `drawer`. The launcher never writes `unsorted`.
 - Unknown keys are allowed only with an `x-` prefix (preserved verbatim, e.g. `x-note`). Any other unknown key makes the file invalid. JSON has no comments.
 
 ---
@@ -84,6 +83,7 @@ Shape notes (ARCHITECTURE §3, §16):
 | Grid | `grid.columns` × `grid.rows`, default **4 × 5**. The file allows **2–12 × 2–12** (validation rule). The Settings picker offers a narrower 3–6 × 4–7 (UX choice only); a file outside the picker range still renders, and the picker then shows the file's value. Cells fill the space between the banner slot and the page indicator evenly |
 | Cell | Icon **56 dp** centred, label below. **Minimum cell 64 × 80 dp**. If the screen can't fit the configured rows at that size, labels are hidden first, then icons shrink to 48 dp; the layout is never clipped |
 | Label | 12 sp, 1 line, ellipsized at the end, centred, white with a soft shadow for wallpaper contrast (§12) |
+| Label backdrop (optional setting, default off, Q-C4) | When on: a pill behind each home-grid label, black at **60 % opacity**, fully rounded, 6 dp side and 2 dp top/bottom padding, hugging the text width (max = cell width). The shadow is dropped while it's on. White on that pill is **≥ 5.7:1 even over a pure white wallpaper** (worst case), so it passes 4.5:1 everywhere. Applies to page items and folder tiles on home, not the dock (no labels) or inside the folder card. **Optional for Sprite:** if it isn't easy, ship without it and hide the setting |
 | Pages | Horizontal pager. One page minimum. The page indicator shows only with ≥ 2 pages. Dots are 8 dp, current = filled |
 | Dock | `dock[]` (a plain array, left to right), **0–7 items** (schema max), same icon size, **no labels**, fixed on all pages. The starter layout fills 4. Above 5 items, icons shrink to fit the width (min 48 dp). A 1 dp divider (white 24 %) above it |
 | Wallpaper | System wallpaper, shown through (`windowShowWallpaper`) |
@@ -107,8 +107,8 @@ Gestures and taps (home):
   tiles (40 % opacity, `◌`) with their label override or package name. They are **never deleted automatically**.
 - An `app` with an `activity` that no longer exists falls back to the package's only launcher activity, if there is
   exactly one (the file is left unchanged), and is dimmed if there are several (ARCHITECTURE OQ-27).
-- Installed apps that are placed nowhere are **Unsorted**: per `unsorted.mode` they appear in the drawer (default), also
-  on a synthetic last page titled `unsorted.pageTitle` (default `Unsorted`). `hidden` only removes that page; the drawer still lists them (ARCHITECTURE §17 Q11). Unsorted apps are never written
+- Installed apps that are placed nowhere are **unplaced**. They appear in the drawer only, like every app. There's no
+  Unsorted home page (Q-C3). Unplaced apps are never written
   to the file. Only an explicit drag places them.
 - Work-profile apps show the system work badge. With **Include work apps in config** off (default) they appear only in
   the drawer and **can't be placed** on pages, the dock or folders (drag is refused, see §4.2). Work items **already in
@@ -116,7 +116,7 @@ Gestures and taps (home):
   `Turn on "Include work apps in config" to use this.` They aren't invalid and are never deleted. Turning the setting on
   makes them live without a write (§17 Q12).
 - Private-space apps appear only in the system-style private-space section at the bottom of the drawer while it's
-  unlocked. They're never placed, never written, never shown as Unsorted, and not affected by `drawer.hidden`. They
+  unlocked. They're never placed, never written, and not affected by `drawer.hidden`. They
   **can't be dragged** out of that section, and long-press offers only the system actions (§17 Q13).
 - Labels: bidi and zero-width control characters are stripped at render time (the file is left as written).
 
@@ -139,11 +139,14 @@ Gestures and taps (home):
 | Item | Spec |
 |---|---|
 | Open / close | Swipe up from home, or tap the handle. Close: swipe down at the top of the list, Back, or Home |
-| Search | Field at top, hint `Search apps`. **The keyboard does not open automatically** (Q-C2). Filters live on each keystroke: case- and accent-insensitive match on the label start or word start, then anywhere. Enter launches the first result. No results: `No apps match "xyz".` |
+| Search | Field at top, hint `Search apps`. **Opening the drawer focuses the field and shows the keyboard** (Q-C2, search-first). Scrolling the list hides the keyboard, and tapping the field brings it back. Back closes the drawer in one press, even with the keyboard up. A swipe up from home that's still in motion must not drop the first keystroke: focus is requested when the open animation starts. |
+| Search: accessibility | With TalkBack on, the field gets accessibility focus and is announced `Search apps, edit box`, but the **keyboard is not shown automatically**, because it would cover half the list during exploration. Double-tap the field to type. Results update a polite live region: `5 apps` / `No apps match "xyz".` With reduced motion, the keyboard appears without waiting for the drawer animation |
+| Search: hardware keyboard | With a physical keyboard attached, the field is focused, the on-screen keyboard stays hidden (system default), and typing filters immediately. `Enter` launches the first result. `↓`/`Tab` moves focus into the results, `↑` at the first result returns to the field. `Esc` clears a non-empty query, then closes the drawer. Arrow focus shows a 2 dp focus ring |
+| Search: filtering | Filters live on each keystroke: case- and accent-insensitive match on the label start or word start, then anywhere. Enter launches the first result. No results: `No apps match "xyz".` |
 | Sorting | `drawer.sort`: `label` (default, A–Z with locale-aware `Collator`, numbers first) or `installTime` (newest first). Not editable in the UI in the MVP |
 | Groups | `drawer.rules[]` create titled groups (the rule's `group`) at the top of the list, in rule order, each sorted as above. An app matching no rule is listed under `All apps`. Rules never affect home pages |
 | What's listed | **Every launchable app** in the personal profile (and the work profile, badged), **including apps already placed** on pages, the dock or in folders, minus `drawer.hidden` (§17 b). Private space has its own section (§1.2) |
-| Hidden apps | Package names in `drawer.hidden[]`. Not shown in the list, search or Unsorted. Long-press a drawer app → `Hide` (one write). Hidden apps are listed in **Settings → Hidden apps**, where `Unhide` is one write. A hidden app placed explicitly on a page still shows and launches there |
+| Hidden apps | Package names in `drawer.hidden[]`. Not shown in the list or search. Long-press a drawer app → `Hide` (one write). Hidden apps are listed in **Settings → Hidden apps**, where `Unhide` is one write. A hidden app placed explicitly on a page still shows and launches there |
 | Long-press app | `Add to home` (first free cell, page 1 onward, else a new page), `Hide`, `App info`. Dragging out of the drawer enters edit mode on home (§4). Work apps offer `Add to home` only when **Include work apps in config** is on |
 | Menu `⋮` | `Settings` |
 
@@ -327,12 +330,13 @@ Shown on first launch, before the home screen. Each step is one full screen with
    - Title: `Choose your config folder`
    - Body: `Pick a folder for launcher.json. A folder that a sync app (like Syncthing) or a git app keeps in sync lets you edit it from your computer, with history. Config Launcher also keeps a small .configlauncher folder there for status and backups.`
    - Button: `Choose folder` → system picker (`ACTION_OPEN_DOCUMENT_TREE`). Take a persistable read+write grant.
-   - Picker cancelled → stay on this screen, no message. (Whether to add a "skip" path is Q-C1.)
+   - Secondary text button under it: `Skip for now` (Q-C1). See **Skip for now** below.
+   - Picker cancelled → stay on this screen and show a line above the buttons: `No folder chosen. You can skip this and connect one later in Settings.` Both buttons stay.
    - **Cloud folder** (the picked folder's provider isn't local storage, `com.android.externalstorage.documents`): a soft warning before continuing: `Cloud folders can take a while to sync. A Syncthing or git folder works best.` Buttons: `Use anyway` · `Choose another folder`. Not blocked (§17 Q15).
 3. **Folder result**
    - **Contains a valid `launcher.json`:** `Found launcher.json with 3 pages and 24 items.` Buttons: `Use this layout` · `Start fresh` (the existing file is first saved to `.configlauncher/backup/`).
    - **Contains an invalid `launcher.json`:** `launcher.json in this folder has problems.` Buttons: `See problems` (§6.2) · `Start fresh` (backup first, as above) · `Choose another folder`.
-   - **No file:** `There's no launcher.json here yet. Create one from a starter layout?` Button: `Create from current layout`. The starter is the built-in default: one empty page, a dock with phone, messages, browser and camera when they can be found, every other app in the drawer (`unsorted.mode: "drawer"`).
+   - **No file:** `There's no launcher.json here yet. Create one from a starter layout?` Button: `Create from current layout`. The starter is the built-in default: one empty page, a dock with phone, messages, browser and camera when they can be found, every other app in the drawer (no `unsorted` key).
    - Shown under all three: `When you edit on your phone, launcher.json is rewritten in a standard format. Comments aren't supported; use "x-note" keys for notes.`
 4. **Make it your home app**
    - Title: `Set as home app`
@@ -340,6 +344,21 @@ Shown on first launch, before the home screen. Each step is one full screen with
    - Button: `Set as home app` → `RoleManager.createRequestRoleIntent(ROLE_HOME)` on Android 10+, or the system Home settings on Android 8–9. Secondary: `Not now`.
    - If declined: the app still works as a normal app, minus shortcuts, which show dimmed with `Set as Home to use shortcuts`. Settings shows `Not your home app` with a `Set as home app` button.
 5. Land on the home screen. One-time hint chip: `Long-press empty space to edit your layout.` (dismiss ×, never shown again).
+
+**Skip for now (app-only storage, Q-C1):**
+- `Skip for now` → a confirm sheet: title `Use without a folder?`, body `Your layout will be kept only on this phone. You can't edit it from your computer until you connect a folder in Settings.` Buttons: `Skip for now` · `Choose folder`.
+- Then go straight to step 4 with the starter layout (as in step 3, "No file").
+- In app-only mode the layout lives in app-private storage. Everything on the phone works the same: edits, one gesture = one write, validation, history (10), Restore previous layout. There's no `.configlauncher/`, no `status.json`, no reload polling, and B3/B4 never show. Sync-conflict notices don't apply.
+- **Reminder (unobtrusive):**
+  - Settings → `Config folder` shows `Not connected · Your layout is only on this phone` with `Connect folder`.
+  - The home menu (long-press empty space) gets an extra item: `Connect config folder`.
+  - One hint chip on home, **shown once**, 7 days after skipping (or on the 10th phone edit, whichever comes first): `Your layout is only on this phone. Connect a folder to edit it from your computer.` [`Connect`] [×]. Dismissed forever either way. No notifications, no banners, no repeat nags.
+- **Connecting later** (`Connect folder` → picker → cloud-folder warning as in step 2 → result):
+  - **Folder has no `launcher.json`:** `Save your current layout to this folder as launcher.json?` Buttons: `Save layout here` · `Choose another folder`. Saving is an explicit create (the "never auto-create" rule holds).
+  - **Folder has a valid `launcher.json`:** `This folder already has a launcher.json with 3 pages and 24 items.` Buttons: `Use the folder's file` (your current layout is kept in history first, so `Restore previous layout` can bring it back) · `Replace it with my layout` (the folder's file is saved to `.configlauncher/backup/` first) · `Cancel`.
+  - **Folder has an invalid `launcher.json`:** `launcher.json in this folder has problems.` Buttons: `See problems` · `Replace it with my layout` (the file is saved to `.configlauncher/broken/` first) · `Choose another folder`.
+  - After connecting: snackbar `Connected to <folder name>.` and normal folder mode from then on (polling, banners, `status.json`). The app-private copy becomes the usual last-good copy.
+- `Disconnect folder` isn't in the MVP (Change folder covers it). See AF-1.
 
 **Lost access or missing file (B3/B4):**
 - `Reconnect` reopens the picker. Picking a folder with a valid file loads it. Picking one without a file offers `Create from current layout`, which uses what's on screen now (not the starter).
@@ -351,10 +370,11 @@ Shown on first launch, before the home screen. Each step is one full screen with
 
 | Setting | Spec |
 |---|---|
-| `Config folder` | Folder name and last load time, `Change folder`, `Reload layout` |
-| `Restore previous layout` | Lists the app-private history (last 10, newest first, with time). Picking one writes it to `launcher.json` like any edit (hash check, safe write) |
+| `Config folder` | Folder name and last load time, `Change folder`, `Reload layout`. In app-only mode: `Not connected · Your layout is only on this phone` and `Connect folder` (§7) |
+| `Restore previous layout` | Lists the app-private history (last 10, confirmed by Christopher, Q-C6; newest first, with time). Picking one writes it to `launcher.json` (or the app-private layout in app-only mode) like any edit (hash check, safe write) |
 | `Include work apps in config` | Switch, default **off**. Off: work apps show in the drawer with the badge but can't be placed, and nothing new about them is written. Work items already in the file stay, greyed, with the hint in §1.2. Turning it on makes them live without a write (§17 Q12) |
 | `Hidden apps` | The packages in `drawer.hidden`, each with `Unhide` (one write) |
+| `Label backdrop` | Switch, default **off**. Dark pill behind home labels for busy wallpapers (§1.1). Optional for Sprite |
 | `Home app` | Status + `Set as home app` |
 | `Grid` | Columns/rows pickers (3–6 × 4–7). They write `grid` like any edit. Shrinking that would push items off-grid is refused with `Move apps out of the last column first.` |
 | `About` | Version and licenses. No Kvaesitso code is copied (ARCHITECTURE §13) |
@@ -420,7 +440,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | Banners | Polite live region, announced once. Buttons are focusable. The error detail view reads as a list of problems |
 | Touch targets | ≥ **48 × 48 dp** for everything (cells 64 × 80 dp, dock slots 64 dp, chip ≥ 48 dp hit area, banner buttons 48 dp tall) |
 | Font scaling | Labels and text use sp and follow the system font size up to 200 %. Grid labels stay 1 line and ellipsize; at ≥ 150 % labels may be hidden on the home grid (still spoken by TalkBack) if cells can't fit them. The drawer always shows labels (wrapping to 2 lines). Banners and settings wrap, never truncate |
-| Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (follow the system theme; Material 3 dynamic colour off for status colours). Home labels over wallpaper: white text with a 1 dp 50 % black shadow, plus possibly a `Label backdrop` scrim setting (Q-C4, not in the MVP settings) |
+| Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (follow the system theme; Material 3 dynamic colour off for status colours). Home labels over wallpaper: white text with a 1 dp 50 % black shadow, or, with the optional `Label backdrop` setting, white on a 60 % black pill (≥ 5.7:1 worst case, §1.1) |
 | Reduced motion | Respect `Settings.Global.ANIMATOR_DURATION_SCALE == 0` and "Remove animations": no page-slide spring, folder open as a fade, no shake (use a red outline), no jiggle ever |
 | Colour | Status is never colour-only: ▲ warning / ■ error glyphs, dimmed tiles also say "not installed" to TalkBack |
 
@@ -429,17 +449,17 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 ## 13. Build checklist (Sprite)
 
 - [ ] Home: pager + grid (`grid.columns/rows`, default 4 × 5, file allows 2–12) + dock (0–7), sizes from §1.1, wallpaper through.
-- [ ] Dimmed tiles and reconciliation (§1.2): not installed, unpublished shortcut, paused work apps, activity fallback, Unsorted modes (incl. the synthetic page), private space never placed. Never auto-delete.
+- [ ] Dimmed tiles and reconciliation (§1.2): not installed, unpublished shortcut, paused work apps, activity fallback, unplaced apps in the drawer only (no Unsorted page; ignore `unsorted`), private space never placed. Never auto-delete.
 - [ ] Item sheet shows the real app name and package. Strip bidi and zero-width characters from labels at render.
-- [ ] Drawer: search (§2 match rules, no auto keyboard), `drawer.sort` (label or installTime), `drawer.rules` groups, hidden apps section (package names), work tab.
+- [ ] Drawer: search (§2 match rules, focused with the keyboard up; TalkBack and hardware-keyboard rules), `drawer.sort` (label or installTime), `drawer.rules` groups, hidden apps section (package names), work tab.
 - [ ] Folders: `label`, create/rename/add/remove/delete rules (§3), open card, max 48.
 - [ ] Edit mode: entry/exit, outlines, drag targets (§4.2), no reflow, 30 s idle exit, **allowed while invalid** with the broken-copy snackbar, work-app refusal when the opt-in is off.
 - [ ] Write path (§4.3): ID-based ops → 750 ms debounce (never mid-drag) → hash check → canonical serialize (`x-` keys kept) → temp write + verify → `"wt"` write + verify → restore on failure → remember hash, history (10). B5 on failure.
 - [ ] Conflict (§4.4): hold during drag, B6 `Use file` / `Keep mine` (replay by ID, skipped-op snackbar with Undo, nearest free cell).
 - [ ] Reload (§5): 2 s poll while visible + immediate on resume, ContentObserver as a hint, 300 ms stability check, hash decides, no page jump, sync-conflict notice.
 - [ ] Banners B1–B8 (§6.1), collapse chip, live region, auto-clear. Detail view (§6.2) with 1-based line/column, paths and excerpts; Copy errors; Restore with confirmation (backup to `.configlauncher/backup/`).
-- [ ] First run (§7) with exact copy, persistable grant, three folder outcomes, format note, home role request (RoleManager on 10+, Home settings on 8–9), one-time hint.
-- [ ] Settings (§8): Config folder, Restore previous layout, Include work apps in config, Home app, Grid, About.
+- [ ] First run (§7) with exact copy, `Skip for now` (app-only storage, connect later, one-time reminder), persistable grant, three folder outcomes, format note, home role request (RoleManager on 10+, Home settings on 8–9), one-time hint.
+- [ ] Settings (§8): Config folder (incl. Connect folder), Restore previous layout, Include work apps in config, Hidden apps, Label backdrop (optional), Home app, Grid, About.
 - [ ] Snackbars (§9) with Undo where listed.
 - [ ] Accessibility (§12): labels, custom actions for every drag action, 48 dp targets, font scaling, reduced motion.
 - [ ] All copy in `strings.xml` with plurals.
@@ -449,14 +469,14 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 
 ## Open questions for Christopher
 
-The architecture proposes answers to some of these (noted). They stay here until you confirm.
 
-- **Q-C1** Onboarding requires picking a folder (architecture). Do you also want a "skip for now" path using app-only storage (no external editing)? Not in the architecture today.
-- **Q-C2** Should the drawer open with the keyboard up (search-first, like KISS) or without it (the spec's default)?
-- **Q-C3** Unplaced apps: the architecture defaults to the drawer (`unsorted.mode: "drawer"`), with an optional synthetic `Unsorted` page (`"page"`). Is the drawer the right default for you? (Same as ARCHITECTURE §14 Q3.)
-- **Q-C4** Home labels: plain white with a shadow (spec), or an optional dark backdrop behind labels for busy wallpapers?
-- **Q-C5** The architecture chose JSON only (no comments; use `x-note` keys). OK for you? (Same as ARCHITECTURE §14 Q2.)
-- **Q-C6** History: the architecture keeps the last 10 versions in app-private storage (not in your folder) and relies on git/Syncthing for the PC side. Enough?
+All answered by Christopher:
+- ~~Q-C1~~ Yes: `Skip for now` with app-only storage, connect a folder later in Settings (§7, §8). Architecture impact: AF-1.
+- ~~Q-C2~~ Search-first: the drawer opens with the field focused and the keyboard up, with TalkBack and hardware-keyboard rules (§2).
+- ~~Q-C3~~ Drawer only. No Unsorted home page ("let's not invent iOS"). Schema impact: AF-2.
+- ~~Q-C4~~ Optional `Label backdrop` setting, default off (§1.1, §8, §12). Optional for Sprite.
+- ~~Q-C5~~ JSON confirmed (no comments; `x-note` keys).
+- ~~Q-C6~~ 10 app-private history copies confirmed.
 - ~~Q-C7~~ Resolved by ARCHITECTURE §17 Q12: work items stay in the file, greyed with a hint, never deleted. They go live again when the setting is turned on.
 - Also open in ARCHITECTURE §14: sync tool, `.configlauncher/status.json` in your folder, work profile/private space use, distribution, your phone model, and widgets after the MVP.
 
@@ -486,4 +506,6 @@ All seven are answered in ARCHITECTURE §16 and applied above:
 | AQ-8 | ✅ §17: B3 (no access) = `Reconnect` only; B4 (readable, file missing) = `Create from current layout` + `Reconnect`. Never auto-created |
 | AQ-9 | ✅ §17: B8 is the lowest-priority notice, copy `…older format (v{N}). It will be upgraded on your next change.`, actions `Upgrade now` (backup first) and `✕` (per file hash) |
 
-No architecture questions are open.
+New flags from Christopher's answers:
+- **AF-1 (architecture, Q-C1)** App-only mode: onboarding and §4/§8 assume a picked folder. Needs: an app-private canonical `launcher.json` as the source of truth when no folder is set (same validator, serializer and history; no SAF temp/verify dance, no polling, no `status.json`), a persisted "no folder" state, and the connect-later flow in §7 (use the folder's file vs. replace it with a backup). Confirm the app-private copy may be the write target, and that history and last-good carry over on connect.
+- **AF-2 (schema, Q-C3)** `unsorted.mode: page` (and `unsorted.pageTitle`) should go. With no page, `hidden` equals `drawer`, so the whole `unsorted` object is redundant. Proposal: remove `unsorted` from the schema, `schema/examples/minimal.json` and ARCHITECTURE §3/§16 #25. Because the schema rejects unknown keys, decide whether existing files with `unsorted` become invalid (schemaVersion 2 plus migration) or the key stays accepted and ignored in v1 (the docs assume the latter for now). Also drop the Unsorted-page item from ARCHITECTURE §12 scope.
