@@ -48,7 +48,7 @@ Shape notes (ARCHITECTURE §3, §16):
 - Folders use `label` and hold apps and shortcuts only, with no nested folders. Folder and dock children have no `x`/`y`; their order is the array order.
 - Pages need an `id`, and `title` is optional. Page items need `x`/`y`. Every item is 1 × 1.
 - `drawer.hidden[]` holds **package names** (hiding is per app). `drawer.sort` is `label` (default) or `installTime`. `drawer.rules[]` group apps in the drawer by `packages`, `packagePrefix`, `tag` or `category` (first match wins).
-- Unplaced apps live **only in the drawer** (Q-C3, ARCHITECTURE §18.1). `unsorted.mode` defaults to `drawer`. `page` stays in the schema but isn't offered in Settings in v1, so agents shouldn't write it. The starter layout has no `unsorted` key.
+- Unplaced apps live **only in the drawer** (Q-C3, ARCHITECTURE §18.1). `unsorted.mode` defaults to `drawer`. `unsorted.mode` is never acted on: `page` (still valid in the schema, not offered in Settings) behaves exactly like `drawer`, per Christopher (AF-2). The starter layout has no `unsorted` key.
 - Unknown keys are allowed only with an `x-` prefix (preserved verbatim, e.g. `x-note`). Any other unknown key makes the file invalid. JSON has no comments.
 
 ---
@@ -83,7 +83,7 @@ Shape notes (ARCHITECTURE §3, §16):
 | Grid | `grid.columns` × `grid.rows`, default **4 × 5**. The file allows **2–12 × 2–12** (validation rule). The Settings picker offers a narrower 3–6 × 4–7 (UX choice only); a file outside the picker range still renders, and the picker then shows the file's value. Cells fill the space between the banner slot and the page indicator evenly |
 | Cell | Icon **56 dp** centred, label below. **Minimum cell 64 × 80 dp**. If the screen can't fit the configured rows at that size, labels are hidden first, then icons shrink to 48 dp; the layout is never clipped |
 | Label | 12 sp, 1 line, ellipsized at the end, centred, white with a soft shadow for wallpaper contrast (§12) |
-| Label backdrop (v1 setting, default off, Q-C4, §18.1) | When on: a rounded **40 % black** scrim behind each home-grid label (a background on the label, 6 dp side and 2 dp top/bottom padding, hugging the text width up to the cell width). The text shadow stays on. Applies to page items and folder tiles on home, not the dock (no labels) or inside the folder card. Stored in app settings (DataStore), not in `launcher.json` |
+| Label backdrop (v1 setting, default off, Q-C4, §18.1) | When on: a rounded **60 % black** scrim behind each home-grid label (a background on the label, 6 dp side and 2 dp top/bottom padding, hugging the text width up to the cell width). The text shadow stays on. Applies to page items and folder tiles on home, not the dock (no labels) or inside the folder card. Stored in app settings (DataStore), not in `launcher.json` |
 | Pages | Horizontal pager. One page minimum. The page indicator shows only with ≥ 2 pages. Dots are 8 dp, current = filled |
 | Dock | `dock[]` (a plain array, left to right), **0–7 items** (schema max), same icon size, **no labels**, fixed on all pages. The starter layout fills 4. Above 5 items, icons shrink to fit the width (min 48 dp). A 1 dp divider (white 24 %) above it |
 | Wallpaper | System wallpaper, shown through (`windowShowWallpaper`) |
@@ -378,7 +378,7 @@ Shown on first launch, before the home screen. Each step is one full screen with
 | `Restore previous layout` | Lists the app-private history (last 10, confirmed by Christopher, Q-C6; newest first, with time). Picking one writes it to `launcher.json` (or the app-private layout in app-only mode) like any edit (hash check, safe write) |
 | `Include work apps in config` | Switch, default **off**. Off: work apps show in the drawer with the badge but can't be placed, and nothing new about them is written. Work items already in the file stay, greyed, with the hint in §1.2. Turning it on makes them live without a write (§17 Q12) |
 | `Hidden apps` | The packages in `drawer.hidden`, each with `Unhide` (one write) |
-| `Label backdrop` | Switch, default **off**. A rounded 40 % black scrim behind home labels for busy wallpapers (§1.1). Stored in DataStore |
+| `Label backdrop` | Switch, default **off**. A rounded 60 % black scrim behind home labels for busy wallpapers (§1.1). Stored in DataStore |
 | `Home app` | Status + `Set as home app` |
 | `Grid` | Columns/rows pickers (3–6 × 4–7). They write `grid` like any edit. Shrinking that would push items off-grid is refused with `Move apps out of the last column first.` |
 | `About` | Version and licenses. No Kvaesitso code is copied (ARCHITECTURE §13) |
@@ -447,7 +447,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | Banners | Polite live region, announced once. Buttons are focusable. The error detail view reads as a list of problems |
 | Touch targets | ≥ **48 × 48 dp** for everything (cells 64 × 80 dp, dock slots 64 dp, chip ≥ 48 dp hit area, banner buttons 48 dp tall) |
 | Font scaling | Labels and text use sp and follow the system font size up to 200 %. Grid labels stay 1 line and ellipsize; at ≥ 150 % labels may be hidden on the home grid (still spoken by TalkBack) if cells can't fit them. The drawer always shows labels (wrapping to 2 lines). Banners and settings wrap, never truncate |
-| Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (follow the system theme; Material 3 dynamic colour off for status colours). Home labels over wallpaper: white text with a 1 dp 50 % black shadow. With `Label backdrop` on, the 40 % black scrim is added (§1.1). Over a pure white wallpaper, white text on that scrim alone measures about 2.9:1, so the shadow does the rest. See the open question for Archimedes |
+| Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (follow the system theme; Material 3 dynamic colour off for status colours). Home labels over wallpaper: white text with a 1 dp 50 % black shadow. With `Label backdrop` on, the 60 % black scrim is added (§1.1). Over a pure white wallpaper, white text on that scrim alone measures 5.7:1 (WCAG, worst case), so it meets 4.5:1 on any wallpaper |
 | Reduced motion | Respect `Settings.Global.ANIMATOR_DURATION_SCALE == 0` and "Remove animations": no page-slide spring, folder open as a fade, no shake (use a red outline), no jiggle ever |
 | Colour | Status is never colour-only: ▲ warning / ■ error glyphs, dimmed tiles also say "not installed" to TalkBack |
 
@@ -480,7 +480,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 All answered by Christopher:
 - ~~Q-C1~~ Yes: `Skip for now` with app-only storage, connect a folder later in Settings (§7, §8). Architecture: resolved by §18.2.
 - ~~Q-C2~~ Search-first: the drawer opens with the field focused and the keyboard up, with TalkBack and hardware-keyboard rules (§2).
-- ~~Q-C3~~ Drawer only. No Unsorted home page ("let's not invent iOS"). Schema: resolved by §18.1 (`page` stays in the schema, not offered in Settings).
+- ~~Q-C3~~ Drawer only. No Unsorted home page ("let's not invent iOS"). Schema: resolved by §18.1 (`unsorted.mode` is never acted on; `page` behaves as `drawer`).
 - ~~Q-C4~~ `Label backdrop` is a v1 setting, default off (§18.1; §1.1, §8, §12).
 - ~~Q-C5~~ JSON confirmed (no comments; `x-note` keys).
 - ~~Q-C6~~ 10 app-private history copies confirmed.
@@ -515,8 +515,7 @@ All seven are answered in ARCHITECTURE §16 and applied above:
 
 Flags from Christopher's answers, both resolved in ARCHITECTURE §18:
 - ~~AF-1~~ App-only mode: §18.2 (app-private `filesDir/config/source/launcher.json`, Choose folder later, Use phone storage).
-- ~~AF-2~~ `unsorted`: §18.1 keeps `page` in the schema but doesn't offer it in Settings in v1. No schema change.
+- ~~AF-2~~ `unsorted`: `page` stays valid in the schema but `unsorted.mode` is never acted on, so `page` behaves as the drawer. No schema change.
 
-Open:
-- **AQ-10** Label backdrop contrast: white text on the 40 % black scrim over a pure white wallpaper is about 2.9:1 before the shadow. Is 40 % plus the existing shadow acceptable, or should the scrim be 55–60 % (≥ 4.5:1 on its own)?
-- **AQ-11** If a file says `unsorted.mode: page`, does v1 still render the synthetic page (the schema allows it), or treat it as `drawer` as Christopher asked?
+- ~~AQ-10~~ Label backdrop: 60 % black scrim. White on it over a pure white wallpaper is 5.7:1, which meets 4.5:1.
+- ~~AQ-11~~ Settled by AF-2: `unsorted.mode` is never acted on, so `page` behaves as the drawer, per Christopher.

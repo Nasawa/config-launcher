@@ -103,8 +103,8 @@ Shape in brief:
 - `drawer.sort`: `label` or `installTime`. `drawer.hidden`: package names. `drawer.rules`: `{id, group, match}` where
   `match` uses `packages`, `packagePrefix`, `tag` or `category`. The first matching rule wins, and rules only group the
   drawer.
-- Apps you don't place live **only in the drawer**. There's no Unsorted home page, so don't write `unsorted.mode:
-  page` (it stays valid in the schema but isn't offered in v1). The drawer lists every app, including placed
+- Apps you don't place live **only in the drawer**. There's no Unsorted home page, and `unsorted.mode` is never
+  acted on: `page` stays valid in the schema but behaves exactly like `drawer`. The drawer lists every app, including placed
   ones, minus `drawer.hidden`. Installed apps that you don't place are never written to the file by the launcher.
 
 ### IDs and profiles
