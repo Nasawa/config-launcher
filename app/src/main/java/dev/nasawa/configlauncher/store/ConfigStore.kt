@@ -18,8 +18,9 @@ import java.io.File
  * for app storage and a ContentObserver hint for SAF (ARCHITECTURE.md §4).
  */
 class ConfigStore(private val context: Context, private val scope: CoroutineScope) {
-    private val prefs = Prefs(context)
-    val localDir: File = context.getExternalFilesDir(null) ?: context.filesDir
+    val prefs = Prefs(context)
+    /** §18.5 AF-1 app-only source: app-private, separate from last-good.json and history/. */
+    val localDir: File = File(context.filesDir, "config/source")
     val engine = ConfigEngine(currentSource(), LastGoodStore(File(context.filesDir, "config")), scope = scope)
     val state get() = engine.state
 
@@ -32,16 +33,18 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         // A picked folder stays the source even if its grant is gone, so B3 (Reconnect) shows
         // instead of silently switching to app storage.
         if (uri != null) return SafSource(context.contentResolver, uri)
-        return LocalFileSource(localDir)
+        return LocalFileSource(localDir, sidecars = false)
     }
 
     /** Call from onStart: poll now, then every 2 s until [stop]. */
     fun start() {
         if (pollJob?.isActive == true) return
         watch(engine.source)
+        val appOnly = prefs.folderUri == null
         pollJob = scope.launch(Dispatchers.IO) {
             runCatching { engine.poll(force = true) } // resume always hashes (§17 Q5)
-            while (isActive) { delay(2_000); runCatching { engine.poll() } }
+            // §18.5: app-only mode doesn't poll; nothing external writes there (debug adb edits use the FileObserver).
+            if (!appOnly) while (isActive) { delay(2_000); runCatching { engine.poll() } }
         }
     }
 
@@ -64,15 +67,63 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
 
     fun useFolder(uri: Uri) {
         context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        prefs.folderUri = uri
+        prefs.folderUri = uri; prefs.appOnly = false
         switch()
     }
 
-    fun useAppStorage() {
+    /** First run "Skip for now": app-only storage; a folder can be chosen later. */
+    fun skipOnboarding() {
+        prefs.appOnly = true; prefs.folderUri = null
+        val wasRunning = pollJob != null
+        stop()
+        // ux.md §7: start with the starter layout (written once if the phone file doesn't exist), so B4 never shows.
+        scope.launch(Dispatchers.IO) { engine.moveTo(currentSource(), useMine = false); if (wasRunning) withContext(Dispatchers.Main) { start() } }
+    }
+
+    fun inspectFolder(uri: Uri): ConfigEngine.Inspection? =
+        runCatching { engine.inspect(SafSource(context.contentResolver, uri)) }.getOrNull()
+
+    /** §18.2 move the current layout into a picked folder ([useMine]) or adopt the folder's file. */
+    private val rw = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+    private fun release(uri: Uri?) { uri?.let { runCatching { context.contentResolver.releasePersistableUriPermission(it, rw) } } }
+
+    /**
+     * §18.2 move the current layout into a picked folder ([useMine]) or adopt the folder's file.
+     * Settings are saved only after the move succeeds; on failure the new grant is released and the
+     * old source stays (Grace review). On success the old folder's grant is released.
+     */
+    fun moveToFolder(uri: Uri, useMine: Boolean) {
+        context.contentResolver.takePersistableUriPermission(uri, rw)
+        val old = prefs.folderUri
+        val wasRunning = pollJob != null
+        stop()
+        scope.launch(Dispatchers.IO) {
+            val ok = engine.moveTo(SafSource(context.contentResolver, uri), useMine)
+            if (ok) { prefs.folderUri = uri; prefs.appOnly = false; if (old != uri) release(old) }
+            else if (old != uri) release(uri)
+            if (wasRunning) withContext(Dispatchers.Main) { start() }
+        }
+    }
+
+    fun useAppStorage(moveLayout: Boolean = true) {
+        if (moveLayout) {
+            val old = prefs.folderUri
+            val wasRunning = pollJob != null
+            stop()
+            // §18.2: copy the current layout into the phone file; only then switch settings and drop the grant.
+            scope.launch(Dispatchers.IO) {
+                if (engine.moveTo(LocalFileSource(localDir, sidecars = false), useMine = true)) {
+                    prefs.folderUri = null; prefs.appOnly = true; release(old)
+                }
+                if (wasRunning) withContext(Dispatchers.Main) { start() }
+            }
+            return
+        }
+
         prefs.folderUri?.let { old ->
             runCatching { context.contentResolver.releasePersistableUriPermission(old, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
         }
-        prefs.folderUri = null
+        prefs.folderUri = null; prefs.appOnly = true
         switch()
     }
 
@@ -83,9 +134,12 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         if (wasRunning) start()
     }
 
+    private val isDebuggable = context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+
     private fun watch(src: ConfigSource) {
         when (src) {
             is LocalFileSource -> {
+                if (!isDebuggable) return // FileObserver is only for adb edits on debug builds (§18.5)
                 src.dir.mkdirs()
                 val mask = FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO or FileObserver.CREATE or FileObserver.DELETE
                 val onEvent = { path: String? -> if (path == LocalFileSource.FILE_NAME) pollNow() }

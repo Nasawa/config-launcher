@@ -210,3 +210,20 @@ versioning.
 - Expect your formatting to survive a phone edit.
 - Commit `.configlauncher/launcher.json.tmp` or `status.json`, commit conflict markers, or force-push.
 - Copy unplaced apps into the file just to "list" them. The drawer already shows everything.
+
+## Debug builds: pushing a config in app-only mode
+
+In app-only mode ("Skip for now"), launcher.json lives in app-private storage at
+`files/config/source/launcher.json` (ARCHITECTURE.md §18.5). Only **debug** builds can be reached
+from a computer, through `run-as`:
+
+```sh
+# push
+adb shell run-as dev.nasawa.configlauncher mkdir -p files/config/source
+adb shell run-as dev.nasawa.configlauncher sh -c "'cat > files/config/source/launcher.json.tmp && mv files/config/source/launcher.json.tmp files/config/source/launcher.json'" < launcher.json
+# pull
+adb exec-out run-as dev.nasawa.configlauncher cat files/config/source/launcher.json > launcher.json
+```
+
+Debug builds watch that directory with a FileObserver, so the home screen reloads straight away.
+Release builds don't poll or watch it; connect a folder to edit from a computer.
