@@ -22,6 +22,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("labelBackdrop", false)
         set(v) = sp.edit { putBoolean("labelBackdrop", v) }
 
+    /** §18.2: restore the B6 Use file / Keep mine prompt instead of the automatic merge (default off). */
+    var askBeforeMerging: Boolean
+        get() = sp.getBoolean("askBeforeMerging", false)
+        set(v) = sp.edit { putBoolean("askBeforeMerging", v) }
+
     /** First run finished (folder picked or "Skip for now", §18.2). */
     var onboarded: Boolean
         get() = sp.getBoolean("onboarded", false) || folderUri != null

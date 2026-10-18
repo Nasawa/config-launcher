@@ -42,6 +42,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }
     var backdrop by remember { mutableStateOf(vm.store.prefs.labelBackdrop) }
+    var askMerge by remember { mutableStateOf(vm.store.prefs.askBeforeMerging) }
     var keyboardOnOpen by remember { mutableStateOf(vm.store.prefs.drawerKeyboard) }
     var menuOpen by remember { mutableStateOf(false) }
     val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }) { vm.store.edit(it) } }
@@ -72,7 +73,8 @@ fun HomeScreen(vm: HomeViewModel) {
         moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it); onboarded = true }, { moveAsk = null }) }
         return
     }
-    LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
+    // Merge notices carry Undo, so they show in the in-app snackbar instead of a toast (§18.2).
+    LaunchedEffect(ui.load.notice) { if (!ui.load.mergeUndo) ui.load.notice?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
     val toast = { msg: String -> Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
     val launchApp = { app: InstalledApp -> if (!vm.apps.launch(app)) toast("Couldn't open ${Labels.clean(app.label)}") }
 
@@ -105,6 +107,9 @@ fun HomeScreen(vm: HomeViewModel) {
                             DropdownMenuItem({ Text("Label backdrop") }, {
                                 backdrop = !backdrop; vm.store.prefs.labelBackdrop = backdrop
                             }, trailingIcon = { Checkbox(backdrop, null) })
+                            DropdownMenuItem({ Text("Ask before merging") }, {
+                                askMerge = !askMerge; vm.store.setAskBeforeMerging(askMerge)
+                            }, trailingIcon = { Checkbox(askMerge, null) })
                             DropdownMenuItem({ Text("Open keyboard with drawer") }, {
                                 keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
                             }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
@@ -131,6 +136,8 @@ fun HomeScreen(vm: HomeViewModel) {
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.currentPage)
                 Dock(ui.layout.dock, vm.apps, drag, onOpen)
+                if (ui.load.mergeUndo) MergeSnackbar(ui.load.notice.orEmpty(),
+                    onUndo = { vm.store.undoMerge() }, onDismiss = { vm.store.engine.dismissMergeUndo(); vm.store.engine.consumeNotice() })
                 }
             }
         }
@@ -175,6 +182,12 @@ fun HomeScreen(vm: HomeViewModel) {
             }
         }
     }
+}
+
+@Composable
+private fun MergeSnackbar(text: String, onUndo: () -> Unit, onDismiss: () -> Unit) {
+    LaunchedEffect(text) { kotlinx.coroutines.delay(10_000); onDismiss() }
+    Snackbar(Modifier.padding(8.dp), action = { TextButton(onUndo) { Text("Undo") } }, dismissAction = { TextButton(onDismiss) { Text("✕") } }) { Text(text) }
 }
 
 @Composable

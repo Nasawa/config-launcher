@@ -58,6 +58,8 @@ data class LoadState(
     val notice: String? = null,
     /** Whether the source has a folder grant that "Reconnect" can re-pick (false for app storage). */
     val reconnectable: Boolean = true,
+    /** §18.2: an automatic merge just happened; the snackbar offers Undo ([ConfigEngine.undoMerge]). */
+    val mergeUndo: Boolean = false,
 ) {
     /** Problem lines for the detail view (kept for callers/tests that only need text). */
     val errors: List<String> get() = when (issue) { null, Issue.Missing -> emptyList(); else -> issue.details }
@@ -82,6 +84,11 @@ class ConfigEngine(
     private var invalidHash: String? = null
     /** Bytes of the file that last failed, kept only so the detail view can locate errors on demand. */
     @Volatile private var invalidBytes: ByteArray? = null
+    /** §18.2 `Ask before merging` (default off): when true, conflicts show the B6 prompt instead of auto-merging. */
+    @Volatile var askBeforeMerge = false
+    /** The file's bytes before the last automatic merge, for Undo ("Use file"). */
+    private var undoBytes: ByteArray? = null
+
     /** While true (drag in progress) inbound reloads are held until drop (OQ-24). */
     @Volatile var dragging = false
     private val mutex = Mutex()
@@ -229,6 +236,8 @@ class ConfigEngine(
         val base = _state.value.baseHash
         val stillBroken = curHash != null && curHash == invalidHash
         if (current != null && curHash != base && curHash !in selfWrites && !stillBroken) {
+            // §18.2: the file wins except the items targeted by pending ops; prompt only if asked to.
+            if (!askBeforeMerge && autoMergeLocked(current)) return true
             _state.update { it.copy(conflict = true) }
             return false
         }
@@ -249,6 +258,46 @@ class ConfigEngine(
         }) }
         true
     }
+
+    /**
+     * Replay pending ops by ID onto the file's version and write it. Both pre-merge versions go to
+     * history. Returns false (caller falls back to B6) if the file or the merged result is invalid.
+     */
+    private fun autoMergeLocked(fileBytes: ByteArray): Boolean {
+        val fileCfg = (ConfigCodec.decode(fileBytes) as? ParseResult.Ok)?.config ?: return false
+        val ops = pending.toList()
+        val (merged, skipped) = Edits.replay(fileCfg, ops)
+        val out = merged.copy(revision = maxOf(merged.revision ?: 0, _state.value.config.revision ?: 0) + 1)
+        if (ConfigCodec.decode(ConfigCodec.encodeBytes(out)) !is ParseResult.Ok) return false
+        runCatching { lastGood.snapshot(fileBytes) }
+        runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
+        try { writeLocked(out) } catch (e: Exception) { fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")); return true }
+        pending.clear(); undoBytes = fileBytes
+        val kept = ops.size - skipped
+        _state.update {
+            it.copy(pendingEdits = 0, issue = null, mergeUndo = true, notice = MergeCopy.notice(kept, skipped))
+        }
+        return true
+    }
+
+    /** Snackbar Undo after an automatic merge: write the file's pre-merge version back ("Use file"). */
+    suspend fun undoMerge(): Boolean = mutex.withLock {
+        val bytes = undoBytes ?: return false
+        undoBytes = null
+        val cfg = (ConfigCodec.decode(bytes) as? ParseResult.Ok)?.config ?: return false
+        runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
+        try {
+            val hash = ConfigCodec.sha256(bytes)
+            selfWrites.addLast(hash); while (selfWrites.size > 4) selfWrites.removeFirst()
+            source.write(bytes)
+            lastStamp = source.stamp()
+            _state.value = _state.value.copy(config = cfg, origin = Origin.FILE, baseHash = hash, mergeUndo = false, notice = null, issue = null)
+            saveLastGood(bytes)
+            true
+        } catch (e: Exception) { fail(Issue.SaveFailed("Couldn't undo: ${e.message}")) }
+    }
+
+    fun dismissMergeUndo() { undoBytes = null; _state.update { it.copy(mergeUndo = false) } }
 
     /** B6 "Use file": drop local edits (snapshotted to history) and load the file. */
     suspend fun resolveUseFile() {
