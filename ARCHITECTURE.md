@@ -117,7 +117,7 @@ Cases:
 - `Add` whose (package, activity, profile) already exists in the destination container → skip as duplicate.
 If the result fails validation (should not happen), nothing is written and the B6 banner stays with only `Use file`.
 
-Why `Keep mine` replays instead of overwriting (a small deviation from ux.md's "write my version"): an agent's bulk reorganization and the user's one drag usually touch different items, so replay keeps both; a whole-file overwrite would silently erase the agent's work, which `.history` could recover but the user wouldn't know to look for. **Departs from spike:** the spike's last-writer-wins plus counter is rejected for the same reason; `revision` is a hint, not the conflict key.
+Why `Keep mine` replays instead of overwriting (a small deviation from ux.md's "write my version"): an agent's bulk reorganization and the user's one drag usually touch different items, so replay keeps both; a whole-file overwrite would silently erase the agent's work, which history could recover but the user wouldn't know to look for. **Departs from spike:** the spike's last-writer-wins plus counter is rejected for the same reason; `revision` is a hint, not the conflict key.
 
 Every merge or discarded edit writes the pre-merge local model to `filesDir/config/history/` so a "Restore previous layout" action in Settings can recover anything.
 
@@ -177,7 +177,7 @@ Root: `ConfigLauncherApp` (Application, holds `AppGraph`). Data flow: `store` em
 - Pages (pager), dock, drawer (A-Z, hidden list, rule groups), folders (one level), Unsorted modes.
 - App and pinned-shortcut items, personal + work profiles.
 - SAF folder store: poll + observer, validate, atomic model swap, last-good, history (10), status.json.
-- Write-back for move, add from drawer, remove, rename, create/merge folder; debounce; self-write guard; op-replay merge.
+- Write-back for move, add from drawer, remove, rename, create/merge folder; debounce; self-write guard; B6 conflict prompt with ID-based replay for `Keep mine`.
 - Error banners and error sheet; Restore previous layout.
 - Schema v1 published; README with agent instructions.
 
