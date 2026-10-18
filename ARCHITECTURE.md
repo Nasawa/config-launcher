@@ -352,6 +352,14 @@ These override earlier sections where they differ.
 - On a hash mismatch at write time, or an incoming file with pending ops, the launcher **automatically** replays the pending ops by ID onto the file (the §6 replay rules, Q9 partial folders) and writes the result. No prompt.
 - "Just touched" means exactly the items targeted by pending ops (ops not yet written). Everything else comes from the file. Once an op is written it is no longer special.
 - Feedback: snackbar `Layout updated from launcher.json. Kept your 2 changes.` with `Undo` (Undo writes the file's version back, i.e. "Use file"). Skipped ops use the existing skip snackbar.
+- **Undo safety rule (2026-10-18, from Grace's Q-v3-6 / CM-6 and Sprite's #30).** Undo is a write like any other and goes through the normal write path: hash check first, never a blind write-back. At merge time the engine records three things: the pre-merge file bytes (`undoBytes`), the **hash it wrote** (`mergedHash`), and the **IDs the replay touched** with their file-side state (the items targeted by the replayed ops). On Undo:
+  1. Re-read `launcher.json` and hash it.
+  2. **Unchanged** (hash == `mergedHash`): write `undoBytes` back through `writeLocked` (self-write guard, read-back verify), i.e. a normal "Use file".
+  3. **Changed since the merge** (git pull, agent edit, sync): don't overwrite. Build the inverse ops for the touched IDs only (move back to the file-side cell or container, remove items the merge added, restore items it removed, restore labels) and replay them by ID onto the **new** file, with the §6 rules. Write the result through the normal path.
+  4. If any inverse op can't apply cleanly (the touched item was removed, moved or edited in the new file, or its target cell is now taken), **cancel the whole Undo**: write nothing, the new file stays, snackbar `File changed again, Undo cancelled.` Partial undos aren't allowed.
+  5. Always, before any Undo write: the current model and the pre-merge file go to history (the merge already snapshotted both, and that stays), so `Restore previous layout` can recover anything.
+  6. Undo is one-shot. It expires when the snackbar is dismissed or times out (10 s), or when a further local edit is written. An external reload during the snackbar doesn't expire it; it just takes the step 3 path.
+- The same rule applies to B6 `Use file` when it's tapped after the file changed again: re-check the hash, and load the newest file instead of an old copy.
 - Both pre-merge versions (the file's and our local model) go to history, as before.
 - Setting `Ask before merging` (off by default) restores the B6 `Use file` / `Keep mine` prompt for users who want it.
 - If replay fails validation (shouldn't happen), fall back to B6 regardless of the setting.
@@ -401,3 +409,13 @@ Christopher clarified that the old devices are for testing only, not targets. mi
 - The schema description marks both fields **deprecated** (also `"deprecated": true`). Removing them is a **schema v2 change** with a `migrate1to2` that deletes the object (§3 rules).
 - Superseded: §3 Unsorted modes, §15 OQ-25 and Q11's mention of the Unsorted page, §12's "Unsorted modes" MVP item (now: drawer only), and the minimal example (which no longer includes `unsorted`).
 - Sprite: drop the Unsorted-page code path if one exists; the validator keeps type-checking `unsorted`; the codec doesn't write it.
+
+### 18.6 Resolved: test plan v3 (#26) Q-v3
+| Q | Ruling |
+|---|---|
+| Q-v3-1 | `Use phone storage` **overwrites** the app-private source with the current on-screen layout (temp + rename), after snapshotting the previous app-private version to history. "Copies" in §18.2 meant this. Folder → phone → folder then follows the ux.md §7 connect-later flow, so nothing is lost on either side. |
+| Q-v3-2 | Always **focus** the search field. Request the on-screen keyboard only when there's no hardware keyboard: `resources.configuration.hardKeyboardHidden != HARDKEYBOARDHIDDEN_NO`. With a hardware keyboard or DeX, typing goes straight to search and no IME is forced. The `Open keyboard with drawer` setting then only controls focus. |
+| Q-v3-3 | Home-page grid labels only, including the label under a folder icon on the grid. Not inside the open folder sheet (it has its own opaque surface), not in the drawer, and not the dock (no labels). |
+| Q-v3-4 | Best effort, and the real work profile wins. When choosing the work profile, skip any managed profile whose launchable activities include Samsung's Secure Folder app (`com.samsung.knox.securefolder`). If more than one managed profile remains, take the first. A detected Secure Folder profile is treated like private space: never written, not in Unsorted, not draggable, and listed only if it shows up in our activity list at all. The package heuristic is *unverified*; Grace confirms it on the A51 (Android 13) and records what a S25/A53 on One UI 8 shows. If detection fails, the fallback is OQ-29's "first managed profile", and the "Include work apps in config" opt-in (default off) keeps it out of the file anyway. |
+| Q-v3-6 | Undo re-checks the hash. If the file changed, it reverts only the merged items by ID onto the new file, or cancels with `File changed again, Undo cancelled.` It never writes the old file blindly. See the Undo safety rule in §18.2. |
+| Q-v3-9 | Done: §18.3 says minSdk 29 (merged in #32), and the rest of §18 mentions 23 only in the superseded note and device table. Sprite's #31 (minSdk 23 with API checks) is superseded: close it or re-scope it to `minSdk = 29` plus the 35 private-space gate and the lint `NewApi` CI step. |

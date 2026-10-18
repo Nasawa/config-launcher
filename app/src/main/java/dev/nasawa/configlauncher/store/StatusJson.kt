@@ -27,10 +27,17 @@ object StatusJson {
     /** `launcher.<UTC timestamp>.json`, sortable and safe on every SAF provider. */
     fun brokenFileName(ms: Long): String = "launcher." + fmt("yyyyMMdd'T'HHmmss'Z'").format(Date(ms)) + ".json"
 
-    fun encode(result: String, errors: List<String>, hash: String?, ms: Long): ByteArray = buildJsonObject {
+    fun encode(
+        result: String, errors: List<String>, hash: String?, ms: Long,
+        backupError: String? = null, conflictFiles: List<String> = emptyList(),
+    ): ByteArray = buildJsonObject {
         put("result", result)
         put("errors", JsonArray(errors.map { JsonPrimitive(it) }))
         put("hash", hash)
         put("time", iso(ms))
+        // §17 Q4: null when the private backup copy is current.
+        put("backupError", backupError)
+        // OQ-21: never loaded, merged or deleted; listed so the agent/user can clean up.
+        put("conflictFiles", JsonArray(conflictFiles.map { JsonPrimitive(it) }))
     }.toString().plus("\n").toByteArray(Charsets.UTF_8)
 }
