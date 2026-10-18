@@ -22,14 +22,51 @@ class ConfigEngineTest {
 
     private fun File.put(s: String, mtime: Long) { writeText(s); setLastModified(mtime) }
 
-    @Test fun missingFileIsCreatedFromDefault() = runBlocking {
+    @Test fun missingFileShowsB4AndIsOnlyCreatedOnRequest() = runBlocking {
         val (e, src, _) = setup()
         assertEquals(Origin.DEFAULT, e.state.value.origin)
         e.poll()
-        assertTrue(src.file.isFile)
+        assertFalse(src.file.exists())
+        assertEquals(Issue.Missing, e.state.value.issue)
+        assertTrue(e.createFromCurrentLayout())
         assertEquals(DefaultLayout.config, (ConfigCodec.decode(src.file.readBytes()) as dev.nasawa.configlauncher.config.ParseResult.Ok).config)
-        // Our own write is not re-applied as an external edit.
-        assertFalse(e.poll(force = true))
+        assertFalse(e.poll(force = true)) // our own write is not re-applied
+        assertNull(e.state.value.issue)
+    }
+
+    @Test fun createNeverClobbersAFileThatAppeared() = runBlocking {
+        val (e, src, _) = setup()
+        e.poll()
+        src.file.put(cfg(4), 1000)
+        e.createFromCurrentLayout()
+        assertEquals(cfg(4), src.file.readText())
+        assertEquals(4L, e.state.value.config.revision)
+    }
+
+    @Test fun typedIssues() = runBlocking {
+        val (e, src, _) = setup()
+        src.file.put("{", 1000); e.poll()
+        assertTrue(e.state.value.issue is Issue.ParseError)
+        src.file.put("""{"schemaVersion":1,"pages":[]}""", 2000); e.poll()
+        assertTrue(e.state.value.issue is Issue.Invalid)
+        src.file.put("""{"schemaVersion":3,"pages":[]}""", 3000); e.poll()
+        assertTrue(e.state.value.issue is Issue.TooNew)
+    }
+
+    @Test fun everyFifthPollHashesEvenWithSameStamp() = runBlocking {
+        val (e, src, _) = setup()
+        src.file.put(cfg(1), 1000); e.poll()
+        src.file.put(cfg(2).replace("a.b", "a.c"), 1000) // same size? no: force same mtime only
+        src.file.setLastModified(1000)
+        var applied = false
+        repeat(5) { if (e.poll()) applied = true }
+        assertTrue(applied)
+    }
+
+    @Test fun writerRefusesOverCap() {
+        val (e, _, _) = setup()
+        val huge = DefaultLayout.config.copy(extras = mapOf("x-pad" to kotlinx.serialization.json.JsonPrimitive("a".repeat(dev.nasawa.configlauncher.config.Limits.MAX_BYTES))))
+        assertThrows(java.io.IOException::class.java) { e.writeLocked(huge) }
     }
 
     @Test fun loadsValidFileAndSavesLastGood() = runBlocking {
@@ -59,7 +96,8 @@ class ConfigEngineTest {
         src.file.delete()
         assertFalse(e.poll())
         assertFalse(src.file.exists())
-        assertTrue(e.state.value.errors.single().contains("missing"))
+        assertEquals(Issue.Missing, e.state.value.issue)
+        assertEquals(1L, e.state.value.config.revision)
         src.file.put(cfg(2), 2000)
         assertTrue(e.poll())
         assertEquals(2L, e.state.value.config.revision)
