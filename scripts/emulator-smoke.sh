@@ -7,6 +7,7 @@ mkdir -p smoke
 adb install -r app/build/outputs/apk/debug/*.apk | tee smoke/install.txt
 grep -q "^Success" smoke/install.txt || { echo "install failed"; exit 1; }
 adb logcat -c || true   # API 26 images: "failed to clear the main log"
+: > smoke/am-start.txt   # fresh per run; the loop appends
 for i in 1 2 3; do
   adb shell am force-stop "$PKG"
   adb shell am start -W -n "$PKG/.MainActivity" | tee -a smoke/am-start.txt
