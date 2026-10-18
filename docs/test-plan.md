@@ -1,175 +1,294 @@
 # Test plan: config-launcher
 
-Source of truth: [`docs/research-spike.md`](research-spike.md) ("spike"). References use spike section numbers, e.g. **§4 Inbound**. Where the spike does not decide something, the case is marked **[OQ-n]** and the question is listed in *Open questions*; expected results there are left blank on purpose rather than invented.
+Sources: [`ARCHITECTURE.md`](../ARCHITECTURE.md) (cited as **A§n**; the resolved questions as **A§15 OQ-n** and **A§16 AQ-n**), [`schema/launcher-config.v1.schema.json`](../schema/launcher-config.v1.schema.json), [`docs/ux.md`](ux.md) (banners B1-B6, **UX§n**), and [`docs/research-spike.md`](research-spike.md) (**spike §n**). A§15 overrides anything that conflicts with it. The open questions from v1 of this plan (OQ-1 to OQ-31) are now decided, and each case cites the decision. The questions still open are listed at the end.
 
-Test levels: **U** = JVM unit test, **R** = Robolectric (JVM, Android framework shims), **I** = instrumented (emulator/device), **M** = manual on a real phone.
+Levels: **U** = JVM unit test (`model`/`config`, no Android), **S** = store test against the fake `DocumentAccess` (A§11), **R** = Robolectric, **I** = instrumented (emulator API 26 and 35, test `DocumentsProvider`), **M** = manual on a real phone.
 
-There is no code yet. Class and function names are not assumed; cases describe behaviour.
+Fixtures are real files in [`test-fixtures/configs/`](../test-fixtures/configs/). Each one's expected outcome is in `manifest.json` (see §2 below). They move to `app/src/test/resources/configs/{valid,invalid}/` once the Gradle project exists (A§11).
 
-## 1. Schema validation (§3 Always, §4 Minimal architecture)
-
-| ID | Steps | Expected | Level | Ref |
-|---|---|---|---|---|
-| SV-1 | Load a minimal valid config: one page, one `app` item, empty dock, empty `drawer.rules`. | Parses into the model; the UI renders it; no banner. | U, R | §4 |
-| SV-2 | Validate every example config in the repo against the published JSON Schema. | All pass. Schema and parser agree (a schema-valid file never fails parsing, and vice versa). | U | §4 "Publish a JSON Schema" |
-| SV-3 | Config with each item `type` (app, shortcut, widget, folder, text). | All parse. MVP excludes widgets: what a `widget` item does in v1 is [OQ-1]. | U | §4, §4 MVP |
-| SV-4 | Unknown `type`, e.g. `"type": "intent"`. | Rejected by validation; old model kept; banner shown. | U, R | §3 Always |
-| SV-5 | Missing required field (no `id`, no `pages`). | Rejected; old model kept; banner names the path. | U | §4 Inbound |
-| SV-6 | Wrong types (`x: "1"`, `w: -1`, `pages: {}`). | Rejected. Whether negative/zero/overlapping x,y,w,h are errors or are clamped is [OQ-2]. | U | §4 |
-| SV-7 | Schema `version` missing, older, or newer than supported. | Behaviour [OQ-3] (migration vs refuse). Must never silently drop data. | U | §4 "versioned schema" |
-| SV-8 | Unknown extra keys. | [OQ-4] reject vs ignore vs preserve on write-back. If preserved, a round trip keeps them. | U | §4 Outbound |
-| SV-9 | Duplicate item ids on one page / same app in dock and page. | [OQ-5]. | U | §4 |
-| SV-10 | File format: JSON vs YAML vs JSON5. | Tests target whichever format is chosen [OQ-6]; if YAML, include comment/key-order round trip (§4 Risks). | U | §4, Risks |
-
-## 2. Malformed and hostile configs (§3 Always)
-
-Principle under test: **config content is data, never code.** The only thing a config may cause to launch is an installed app/shortcut via LauncherApps (§3).
+## 1. Schema validation (A§3, A§15)
 
 | ID | Steps | Expected | Level | Ref |
 |---|---|---|---|---|
-| HC-1 | Truncated JSON, trailing garbage, empty file, 0-byte file, binary/random bytes, BOM-prefixed file. | Parse error; last-good model kept; banner; no crash. BOM accept/reject [OQ-7]. | U, R | §4 Inbound |
-| HC-2 | Item `id` that is an intent URI (`intent:#Intent;action=android.intent.action.CALL;...`), `http://`, `content://`, `file://`, `javascript:`, `tel:`, `market://`. | Rejected at validation; tapping is impossible because it never reaches the model. Assert no `startActivity`/`Intent.parseUri` is called (Robolectric `ShadowApplication` shows no started activity). | U, R | §3 "no arbitrary intents" |
-| HC-3 | Fields named `action`, `extras`, `uri`, `script`, `cmd`, `exec` on any item. | Rejected or ignored (see OQ-4); never used to build an Intent. | U, R | §3 |
-| HC-4 | `id` with a non-existent but well-formed package (`com.example.doesnotexist/.Main`). | Not launched; item shown greyed out per reconciliation; tapping does nothing harmful. | R | §3 "refuse unknown package names", §4 Reconciliation |
-| HC-5 | Malformed package names: empty, `..`, spaces, `/`, `com..x`, 1000-char name, uppercase/unicode, activity in a different package than declared. | Rejected at validation; no lookup that could throw uncaught. Activity must belong to the declared package and be exported/launchable via LauncherApps. | U, R | §3 |
-| HC-6 | Shortcut item whose shortcut id is not published by that package. | Not launched; greyed out or rejected [OQ-8]. | R | §3, §4 |
-| HC-7 | File size limit: 1 MB, 10 MB, 100 MB file. | Files above the limit are refused before full read (no OOM); last-good kept; banner. Limit value [OQ-9]. | U, R | §3, Risks "large configs" |
-| HC-8 | Nesting depth: folders nested 10, 1 000, 100 000 deep; JSON arrays nested 100 000 deep. | No StackOverflowError; rejected above the depth limit [OQ-9]. Whether folders can nest at all [OQ-10]. | U | §4 |
-| HC-9 | Item count: 10 000 items on one page, 1 000 pages. | Refused above limit or rendered without ANR; load time measured. | U, I | Risks |
-| HC-10 | Huge strings: 1 MB `text` item, 1 MB label. | Refused above string limit or truncated on render; no layout freeze. | U, R | §3 |
-| HC-11 | Unicode: emoji, RTL override (U+202E), zero-width joiners, combining-mark stacks ("zalgo"), lone surrogates, NUL, NFC vs NFD duplicates of the same label. | Valid unicode renders without crash; invalid encoding (lone surrogate, invalid UTF-8) → parse error. RTL override in labels must not visually disguise a different app [OQ-11]. | U, R | §3 |
-| HC-12 | Numeric edge values: `1e309`, `-0`, `NaN` literal, 2^63 integers. | Rejected or clamped; no overflow in layout math. | U | §4 |
-| HC-13 | Duplicate JSON keys in one object. | Deterministic: reject [OQ-12]. | U | — |
-| HC-14 | Symlink / path traversal in any file reference (if config ever references files, e.g. icons). | Out of MVP (icon packs excluded); if added, confined to the SAF tree. | — | §4 MVP |
-| HC-15 | Fuzz: run the parser+validator over a corpus of mutated valid configs (e.g. 10 000 iterations). | Only "valid" or a typed validation error; never an uncaught exception or a launch. | U | §3 |
+| SV-1 | Load `valid/minimal.json`. | Model built and rendered, no banner. | U, R | A§3 |
+| SV-2 | Conformance: run every fixture through networknt and the Kotlin validator. | They agree on every `both` fixture. `kotlin` fixtures are accepted by the schema but rejected by Kotlin (see open question Q2). CI also runs `test-fixtures/check_schema.py` (Python `jsonschema`). | U | A§11 |
+| SV-3 | `widget`, `text`, `intent` item types. | Rejected, B2, last-good kept. No v1 type is ever silently dropped. | U | A§15 OQ-1 |
+| SV-4 | Grid out of 2-12, cell outside the grid, overlapping cells, non-integer x. | Errors that are never clamped: the whole file is rejected with B2 listing each problem. | U | A§15 OQ-2, AQ-3 |
+| SV-5 | `schemaVersion` missing, `"1"`, or `2`. | Missing or a string: invalid. 2: refused with the banner "This file needs a newer Config Launcher" and never downgrade-written. | U, R | A§3 rule 4, A§15 OQ-3 |
+| SV-6 | Migration (once v2 exists): load a v1 file. | Migrated in memory, with no write until a user edit or "Upgrade file". Then a backup goes to `.configlauncher/backup/launcher.v1.<ts>.json` first, `x-` keys and IDs are unchanged, and there are golden-file tests per step. | U, S | A§3 rules 2-5 |
+| SV-7 | `x-` keys at the root, on a page, and on an item (`valid/x-keys.json`), then make an edit. | Preserved verbatim, written after the known keys. Any other unknown key, typos included, is B2. | U | A§15 OQ-4 |
+| SV-8 | Duplicate `id` anywhere; same app in the dock and on a page; same app twice on one page. | Duplicate id: error. Dock plus page: valid. Twice on one page or in one folder: warning only. | U | A§15 OQ-5 |
+| SV-9 | File named `layout.yaml`, `launcher.json5`, or a JSON file with comments or trailing commas. | Only `launcher.json` at the folder root is read. Comments and trailing commas: B1. | U, S | A§15 OQ-6 |
+| SV-10 | Canonical write: make one edit and compare bytes. | 2-space indent, schema key order, `x-` keys last, LF, trailing newline, no BOM, `revision` = max seen + 1. | U | A§3 Canonical, A§15 OQ-20, AQ-2 |
+| SV-11 | Missing `revision`, or `revision` lower than the last seen. | Valid and accepted, because the hash decides. The next launcher write uses max + 1. | U, S | A§15 OQ-19, OQ-20 |
 
-## 3. Last-good fallback (§4 Inbound, §3 "keep the last N versions")
+## 2. Malformed and hostile configs (A§8 "data, never code", A§15 OQ-4, OQ-9, OQ-11, OQ-12)
+
+Principle: nothing in the file ever builds an Intent. The launcher only launches (package, activity) pairs resolved through `LauncherApps`, and shortcuts through `startShortcut`.
 
 | ID | Steps | Expected | Level | Ref |
 |---|---|---|---|---|
-| LG-1 | Running with valid config A; replace file with invalid content. | Model stays A; error banner with reason; file on disk **not** overwritten by the launcher. | R | §4 Inbound |
-| LG-2 | After LG-1, fix the file to valid config B. | Model becomes B; banner clears. | R | §4 |
-| LG-3 | Cold start (process death) with an invalid file on disk. | Launcher starts using last-good (persisted copy) rather than an empty screen. Where last-good is persisted [OQ-13]. | R, I | §4, Risks "Process death" |
-| LG-4 | Cold start, first ever run, invalid file, no last-good. | Usable fallback (e.g. drawer with all apps) plus banner; never a crash loop. [OQ-14]. | R, I | — |
-| LG-5 | While invalid, user drags an icon on the phone. | [OQ-15]: does write-back overwrite the user's broken file (losing agent work), get blocked, or write elsewhere? Must not silently discard the broken file without a snapshot. | R | §4 Outbound, Conflicts |
-| LG-6 | Write N+1 successive valid versions. | Only the last N snapshots kept in `.history/`; oldest pruned; each snapshot is valid. N [OQ-16]. | U, R | §3, §4 Conflicts |
-| LG-7 | SAF grant revoked or folder deleted. | Last-good kept; banner prompts to re-pick folder; no crash. | R, M | §3 option 1 |
+| HC-1 | For each fixture in `manifest.json`, load it as the folder file while a valid layout is showing. | Matches the `expect` column. Every invalid fixture leaves the current model unchanged and never crashes. | U, S, R | manifest |
+| HC-2 | `hostile-key-{action,uri,extras,script,cmd,exec}`, `intent-type`, `package-{intent-uri,tel-uri,http-url}`. | B2. A Robolectric assertion confirms no activity was started and `Intent.parseUri` was never called. | U, R | A§8, A§15 OQ-4 |
+| HC-3 | `valid/unknown-package.json`, then tap the item. | Greyed out. Tapping launches nothing and shows the hint "Not installed" plus "Remove from layout". | R | A§3, A§15 OQ-28 |
+| HC-4 | Shortcut whose `shortcutId` the package doesn't publish. | Valid file. Greyed out at runtime and never launched ("Shortcut no longer available"). | R | A§15 OQ-8 |
+| HC-5 | `oversize-257k.json`, served by a fake provider whose `COLUMN_SIZE` lies (reports 1 KiB). | Refused before a full read based on `COLUMN_SIZE`, and the streaming cap stops a lying size at 256 KiB. No OOM. | S | A§4 step 1, A§15 OQ-9 |
+| HC-6 | `deep-nesting.json` (100k levels), `depth-9.json`, `valid/max-depth-8.json`. | Depth 9 or more: parse error, fails fast, no StackOverflowError. Exactly 8: valid. | U | A§15 OQ-9 |
+| HC-7 | Totals: `2016-items.json`, `21-pages.json`, 145 items on one page, 8 dock items, 49 folder items. | All rejected (2000 items, 20 pages, 144 per page, 7 dock, 48 per folder). | U | A§15 OQ-9, schema |
+| HC-8 | String caps: label of 61 chars and of 200 KiB, id of 65 chars, package of 1000 chars, shortcutId of 257 chars. | All rejected. | U | A§15 OQ-9 |
+| HC-9 | Unicode: `valid/bidi-label.json`, `valid/emoji-label.json`, `invalid-utf8`, `lone-surrogate`, `nul-in-label`, `utf16`, `valid/bom.json`. | Bidi, zero-width and other Cf/Cc characters are stripped at render and the file is untouched. The real icon is shown, and long-press shows the real name and package. Invalid UTF-8, lone surrogates, NUL and UTF-16: B1. A BOM is accepted, and the next write has none. | U, R | A§15 OQ-7, OQ-11 |
+| HC-10 | `duplicate-key.json`. | B1 with a path. | U | A§15 OQ-12 |
+| HC-11 | Package names: empty, `..`, leading digit, `/`, space, no dot, non-ASCII. Activity with `/` or `;`. | B2 from schema patterns. Nothing reaches `LauncherApps`. | U | schema `packageName`, `className` |
+| HC-12 | Fuzz the parser and validator with 10k mutations of the valid fixtures. | Only "valid" or a typed error. Never an uncaught exception, and never a launch. | U | A§4 step 4 |
+| HC-13 | Error mirror: load any invalid fixture. | `.configlauncher/status.json` gets {result, errors with JSON paths, hash, time} and no private-space data. | S | A§9, A§15 OQ-31 |
 
-## 4. Self-write guard (§4 Outbound "content hash to suppress echo reloads")
+### Fixture index (`test-fixtures/configs/manifest.json`)
+
+| File | Expected | Layer | Ref |
+|---|---|---|---|
+| `valid/minimal.json` | valid | both | §3 |
+| `valid/bom.json` | valid (BOM stripped; next write has no BOM) | parser | §15 OQ-7 |
+| `valid/x-keys.json` | valid; x- keys round-trip verbatim | both | §15 OQ-4 |
+| `valid/no-revision.json` | valid | both | §15 OQ-20 |
+| `valid/same-app-dock-and-page.json` | valid | both | §15 OQ-5 |
+| `valid/same-app-twice-on-page.json` | valid with warning | kotlin | §3, §15 OQ-5 |
+| `valid/unknown-package.json` | valid; renders greyed, never launched | both | §3, §15 OQ-28 |
+| `valid/bidi-label.json` | valid; bidi/zero-width stripped at render, file untouched | both | §15 OQ-11 |
+| `valid/emoji-label.json` | valid | both | §15 OQ-11 |
+| `valid/grid-12x12-max.json` | valid | both | §15 OQ-2 |
+| `valid/work-profile.json` | valid; work item honoured only if "Include work apps" on | both | §15 OQ-29 |
+| `valid/revision-lower.json` | valid; accepted even if lower than last seen (hash decides) | both | §15 OQ-19 |
+| `valid/max-depth-8.json` | valid (exactly depth 8) | parser | §15 OQ-9 |
+| `invalid/empty.json` | parse error, B1, last-good kept | parser | §4, §15 OQ-14 |
+| `invalid/truncated.json` | parse error, B1 | parser | §4 step 4, §15 OQ-18 |
+| `invalid/trailing-garbage.json` | parse error, B1 | parser | §15 OQ-6 |
+| `invalid/comments.json` | parse error, B1 (no comments) | parser | §15 OQ-6 |
+| `invalid/json5-trailing-comma.json` | parse error, B1 | parser | §15 OQ-6 |
+| `invalid/utf16.json` | parse error, B1 | parser | §15 OQ-7 |
+| `invalid/invalid-utf8.json` | parse error, B1 | parser | §15 OQ-11 |
+| `invalid/lone-surrogate.json` | parse error, B1 | parser | §15 OQ-11 |
+| `invalid/nul-in-label.json` | parse error, B1 | parser | §15 OQ-11 |
+| `invalid/duplicate-key.json` | parse error with path, B1 | parser | §15 OQ-12 |
+| `invalid/deep-nesting.json` | parse error, depth > 8, no StackOverflowError | parser | §15 OQ-9 |
+| `invalid/depth-9.json` | parse error, depth 9 > 8 | parser | §15 OQ-9 |
+| `invalid/oversize-257k.json` | refused before full read (COLUMN_SIZE + stream cap), B2/B1, last-good kept | store | §4 step 1, §15 OQ-9 |
+| `invalid/missing-schemaVersion.json` | invalid, B2 | both | §15 OQ-3 |
+| `invalid/newer-schemaVersion.json` | refused, "needs a newer Config Launcher" banner, never downgrade-written | both | §3 rule 4, §15 OQ-3 |
+| `invalid/schemaVersion-string.json` | invalid, B2 | both | §15 OQ-3 |
+| `invalid/missing-pages.json` | invalid, B2 | both | §3 |
+| `invalid/zero-pages.json` | invalid, B2 | both | schema minItems |
+| `invalid/21-pages.json` | invalid, B2 | both | §15 OQ-9 |
+| `invalid/widget-type.json` | invalid, B2 | both | §15 OQ-1 |
+| `invalid/text-type.json` | invalid, B2 | both | §15 OQ-1 |
+| `invalid/intent-type.json` | invalid, B2; nothing launched | both | §8, §15 OQ-4 |
+| `invalid/hostile-key-action.json` | invalid, B2 (unknown key); no Intent built, nothing launched | both | §8, §15 OQ-4 |
+| `invalid/hostile-key-uri.json` | invalid, B2 (unknown key); no Intent built, nothing launched | both | §8, §15 OQ-4 |
+| `invalid/hostile-key-extras.json` | invalid, B2 (unknown key); no Intent built, nothing launched | both | §8, §15 OQ-4 |
+| `invalid/hostile-key-script.json` | invalid, B2 (unknown key); no Intent built, nothing launched | both | §8, §15 OQ-4 |
+| `invalid/hostile-key-cmd.json` | invalid, B2 (unknown key); no Intent built, nothing launched | both | §8, §15 OQ-4 |
+| `invalid/hostile-key-exec.json` | invalid, B2 (unknown key); no Intent built, nothing launched | both | §8, §15 OQ-4 |
+| `invalid/unknown-key-typo.json` | invalid, B2 | both | §3, §15 OQ-4 |
+| `invalid/package-intent-uri.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
+| `invalid/package-tel-uri.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
+| `invalid/package-http-url.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
+| `invalid/package-empty.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
+| `invalid/package-dotdot.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
+| `invalid/package-leading-digit.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
+| `invalid/package-slash.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
+| `invalid/package-space.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
+| `invalid/package-no-dot.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
+| `invalid/package-unicode.json` | invalid, B2; nothing launched | both | §3 schema packageName, spike §3 |
+| `invalid/package-1000-chars.json` | invalid: other strings are capped at 256 (schema has no maxLength on package) | kotlin | §15 OQ-9 |
+| `invalid/activity-injection.json` | invalid, B2 | both | schema className |
+| `invalid/id-uppercase.json` | invalid, B2 | both | §3 Stable IDs |
+| `invalid/id-65-chars.json` | invalid, B2 | both | §15 OQ-9 |
+| `invalid/duplicate-id.json` | invalid, B2 | kotlin | §3, §15 OQ-5 |
+| `invalid/overlapping-cells.json` | invalid, B2 | kotlin | §15 OQ-2, AQ-3 |
+| `invalid/cell-outside-grid.json` | invalid, B2 (grid is 4 wide) | kotlin | §15 OQ-2 |
+| `invalid/negative-x.json` | invalid, B2 | both | §15 OQ-2 |
+| `invalid/grid-13.json` | invalid, B2 | both | §15 OQ-2 |
+| `invalid/grid-1.json` | invalid, B2 | both | §15 OQ-2 |
+| `invalid/x-float.json` | invalid, B2 | both | §15 OQ-2 |
+| `invalid/x-huge.json` | invalid, B2/B1; no overflow | both | §15 OQ-2 |
+| `invalid/page-item-missing-xy.json` | invalid, B2 | both | §3 |
+| `invalid/dock-item-with-xy.json` | invalid, B2 | both | §3 |
+| `invalid/folder-child-with-xy.json` | invalid, B2 | both | §3 |
+| `invalid/nested-folder.json` | invalid, B2 | both | §15 OQ-10 |
+| `invalid/dock-8-items.json` | invalid, B2 | both | schema maxItems 7 |
+| `invalid/label-61-chars.json` | invalid, B2 | both | §15 OQ-9 |
+| `invalid/label-1mb.json` | invalid, B2 | both | §15 OQ-9 |
+| `invalid/profile-private.json` | invalid, B2 | both | §15 OQ-31 |
+| `invalid/profile-numeric.json` | invalid, B2 | both | §15 OQ-29 |
+| `invalid/revision-negative.json` | invalid, B2 | both | schema |
+| `invalid/unsorted-mode-bad.json` | invalid, B2 | both | §15 OQ-25 |
+| `invalid/2016-items.json` | invalid, B2 (>2000 items total) | kotlin | §15 OQ-9 |
+
+## 3. Last-good fallback (A§4, A§15 OQ-13, OQ-14, OQ-15, OQ-16, AQ-7)
 
 | ID | Steps | Expected | Level | Ref |
 |---|---|---|---|---|
-| SW-1 | Launcher writes the file after a drag; observer fires. | Hash matches the last self-written hash → no reload, no recomposition, no second write. Assert exactly one write and zero reloads. | R | §4 Outbound |
-| SW-2 | Repeat SW-1 for 100 rapid drags. | Writes ≤ 100 (debounced allowed); reloads triggered by own writes = 0; no ping-pong. | R | §4 |
-| SW-3 | External edit produces content byte-identical to the last self write. | No reload (harmless). | U | §4 |
-| SW-4 | External edit that differs only in whitespace/key order. | Reloads (hash differs) and the model is equal → no UI change, and **no** write-back triggered by the reload. Whether the launcher re-canonicalises the file is [OQ-17]. | R | §4, Risks "canonical formatter" |
-| SW-5 | Self write, then external edit arrives within the debounce window. | External edit is not suppressed by the guard (hash differs). | R | §4 |
-| SW-6 | Sync tool (Syncthing/git) rewrites the file with same content after the self write (touch/mtime change). | No reload. | R, M | §3 option 1 |
+| LG-1 | Valid A is showing, then the file becomes invalid. | A stays, B1 or B2 appears, the folder file is not touched, and `last-good.json` is not overwritten. | S, R | A§4 step 4 |
+| LG-2 | Fix the file to valid B. | B is swapped in atomically (one StateFlow assignment) and the banner clears. `last-good.json` = B, and A goes to history. | S, R | A§4 steps 6-7, A§9 |
+| LG-3 | Kill the process, put an invalid folder file in place, cold start. | `filesDir/config/last-good.json` renders in the first frame, then the banner appears. | R, I | A§4 Fallback, AQ-7 |
+| LG-4 | Fresh install: no last-good, invalid or missing file. | Built-in default (one empty page, dock from role queries, all apps in the drawer). Banner "No launcher.json yet: Create" or "N problems". No crash loop, and nothing written over the bad file. | R, I | A§15 OQ-14, UX§6.1 |
+| LG-5 | While the file is invalid, drag an icon. | The broken file is copied to `.configlauncher/broken/launcher.<ts>.json`. Then the edited last-good layout is written to `launcher.json`, with the snackbar "Your broken launcher.json was saved to .configlauncher/broken/". | S, R | A§15 OQ-15, A§16 item 12 |
+| LG-6 | Make 11 successful loads. | `filesDir/config/history/` holds 10. None are in the synced folder. | S | A§15 OQ-16 |
+| LG-7 | `last-good.json` is written via temp + `File.renameTo`; kill between the two steps. | The previous last-good is intact. | U, R | A§4 step 7 |
+| LG-8 | "Restore previous layout" (Settings) and "Restore last-good to file" (error sheet). | The restored version is written. The replaced folder file is first backed up to `.configlauncher/backup/`. | S, R | A§6, A§9, A§16 item 9 |
+| LG-9 | Android backup and restore (`adb shell bmgr`). | `last-good.json` and history are excluded (`dataExtractionRules`). | I | A§15 OQ-13 |
 
-## 5. Concurrent edits, conflicts, atomic writes (§4 Conflicts, §3 "write temp then rename", Risks "Write races")
-
-| ID | Steps | Expected | Level | Ref |
-|---|---|---|---|---|
-| CE-1 | Inspect every write path. | Write to temp in the same directory, then rename/replace. Kill the process (simulated exception) between temp write and rename → original file intact. | U, R | §3 |
-| CE-2 | SAF reality check: does the chosen provider support atomic rename (`DocumentsContract.renameDocument`)? | If not, the fallback strategy must still never leave a partially written primary file [OQ-18]. | I, M | §3, Risks "SAF quirks" |
-| CE-3 | Reader observes the file mid-write by an external writer (partial content). | Parse fails → last-good kept; when the write completes, reload succeeds. No partial apply. | R | §4 Inbound |
-| CE-4 | Version counter: agent writes version 7 while the phone holds version 6 and drags. | Last-writer-wins per spike; counter increments monotonically. Exact rule for who wins and whether the losing edit is snapshotted [OQ-19]. | U, R | §4 Conflicts |
-| CE-5 | Phone drag → write v7; agent's stale copy (based on v6) is synced over it. | Per LWW the agent's file wins; the phone's v7 must exist in `.history/` (or git) so it can be recovered. Whether a stale version (lower counter) is rejected instead [OQ-19]. | R | §4 Conflicts |
-| CE-6 | Agent omits or doesn't bump the counter. | [OQ-20]: auto-bump, accept, or reject. | U | §4 |
-| CE-7 | Syncthing conflict file (`layout.sync-conflict-*.json`) appears in the folder. | Ignored by the loader (only the configured filename is read); optionally surfaced [OQ-21]. | R, M | §3 option 1 |
-| CE-8 | Two rapid external writes within the debounce window. | Only the final content is applied. Debounce value [OQ-22]. | R | §4 "debounced file" |
-| CE-9 | Phone edit while a reload is in progress. | Edit is applied to the newest model, not a stale one, or rejected with a visible message; never a lost update without snapshot. | R | Risks |
-
-## 6. Live reload (§4 Inbound, §1 OhmLauncher hot reload, Risks "SAF observation latency")
+## 4. Self-write guard (A§5, A§15 OQ-17)
 
 | ID | Steps | Expected | Level | Ref |
 |---|---|---|---|---|
-| LR-1 | Edit the file externally (move an app to page 2). | UI updates without restarting the launcher. | R, I, M | §4 |
-| LR-2 | Measure edit→visible latency via ContentObserver and via polling fallback. | Within target [OQ-23]. Note: FileObserver doesn't work on SAF URIs; test the actual mechanism. | I, M | §3 option 1 |
-| LR-3 | Launcher backgrounded (another app in front) during the edit. | Change visible on return to home at the latest. | I, M | — |
-| LR-4 | Reload while user is mid-drag. | Drag not corrupted; [OQ-24] whether reload is deferred until drop. | I | Risks |
-| LR-5 | Device reboot / cold start after an external edit while off. | New content loaded on start. | I, M | — |
-| LR-6 | Config renamed, replaced by a new file (new document id) as git checkout does. | Still detected. | I, M | §3 option 1 |
+| SW-1 | Drag, write, then the next poll. | The hash is in the self-write set: zero reloads, zero recompositions from the reload, one write. | S | A§5 steps 4-5 |
+| SW-2 | 20 drags within 750 ms of each other. | One write after the last drop. Zero self-reloads. | S | A§5 step 2, A§15 OQ-22 |
+| SW-3 | Five writes in a row, then the oldest content is externally restored. | The self-write set holds 4, so the oldest hash is treated as external and reloaded. That's correct, because it is a real change. | S | A§5 step 4 |
+| SW-4 | An external rewrite that only changes whitespace or key order. | Reloads with an equal model. No write-back, and no re-canonicalisation. | S | A§15 OQ-17, AQ-2 |
+| SW-5 | Syncthing or git touches the mtime only, or rewrites identical bytes. | The hash equals the last applied hash: no-op. | S | A§4 "SHA-256" |
+| SW-6 | The provider changes the document ID on replace, with the same content. | Re-resolved by name, the hash is equal: no-op. | S, I | A§4, A§13 |
 
-## 7. New and uninstalled apps → Unsorted (§4 Reconciliation, §3 LauncherApps callbacks)
+## 5. Store fault injection (fake `DocumentAccess`, A§5 Atomic writes, A§11, A§15 OQ-18, AQ-4)
 
-| ID | Steps | Expected | Level | Ref |
-|---|---|---|---|---|
-| UN-1 | Install an app not in the config. | Appears on the Unsorted page or in the drawer (spike says either) [OQ-25]. | R (ShadowLauncherApps / callback), I, M | §4 |
-| UN-2 | Is the Unsorted placement written back to the file? | [OQ-26]. If written, it triggers no echo reload (SW-1). | R | §4 |
-| UN-3 | Uninstall an app that is on a page and in the dock. | Entries greyed out, **not** deleted; file unchanged. | R, M | §4 "greyed out, not deleted" |
-| UN-4 | Reinstall that app. | Entries become active again in their original positions. | R, M | §4 |
-| UN-5 | App update (package replaced), app disabled, app's launcher activity renamed. | Update: no change. Disabled: greyed. Activity renamed: [OQ-27]. | R | §3 |
-| UN-6 | App with multiple launcher activities. | Each launchable activity is a separate candidate for Unsorted. | R | §3 |
-| UN-7 | Package changes while launcher process is dead. | Reconciled on next start. | R, I | §3 callbacks |
-| UN-8 | Tap a greyed entry. | Nothing launches; optional hint [OQ-28]. | R | §3 refuse unknown |
+Write sequence under test: write `.configlauncher/launcher.json.tmp` and verify by reading back → `"wt"` write to `launcher.json` and verify → on failure, restore from tmp → on failure, B5 Retry. The in-memory model and `last-good.json` keep the edit.
 
-## 8. Work profiles and private space (§3 LauncherApps across profiles, Risks "Work profile and private space IDs")
+| ID | Fault injected | Expected | Level |
+|---|---|---|---|
+| FI-1 | `renameDocument`/`moveDocument` unsupported (throws or auto-renames to `launcher (1).json`). | Never called on the write path (assert zero calls), and the write succeeds. | S |
+| FI-2 | Tmp write fails halfway. | `launcher.json` untouched. B5. Edit kept in memory and in last-good. | S |
+| FI-3 | Tmp read-back hash mismatch (silent corruption). | `launcher.json` untouched. B5. | S |
+| FI-4 | `launcher.json` write fails halfway (partial bytes on disk). | Restored from tmp with `"wt"`. The read-back hash equals the pre-edit content, and B5 offers a retry. | S |
+| FI-5 | FI-4 and the restore also fails. | B5 "Couldn't save your change". Memory and last-good keep the edit, and Retry writes again. Nothing claims success. | S |
+| FI-6 | Provider ignores truncate (old `"w"` bug: longer old content leaves a tail). | Always opened with `"wt"`. The read-back detects a tail and goes to restore, then B5. | S |
+| FI-7 | Persisted permission revoked between reads (`SecurityException`). | B3 "Can't reach your layout folder", last-good rendered, edits queued in memory. No crash. On start, the `persistedUriPermissions` check shows B3. | S, R, I |
+| FI-8 | Provider unavailable: cloud offline, provider process dead, `query` returns null, `openInputStream` throws `FileNotFoundException`. | Poll fails quietly with last-good kept. Writes give B5. Recovers on the next successful poll. | S |
+| FI-9 | Disk full (`IOException: ENOSPC`) on the tmp write. | Caught before `launcher.json` is touched. B5. | S |
+| FI-10 | Disk full on app-private storage (last-good write). | The folder write still counts as success. Last-good failure is logged, and the previous last-good stays intact. Behaviour not specified, see Q4. | S |
+| FI-11 | `launcher.json` deleted externally. | B4 "launcher.json is missing", with Recreate and Choose folder. Never recreated automatically. | S, R |
+| FI-12 | Torn read: the reader sees half of an external write. | The 300 ms stability re-check restarts. If it still parses, it fails validation and is rejected, never applied. | S |
+| FI-13 | `.configlauncher/` can't be created (read-only provider). | B5 on write. Reads still work. | S |
+| FI-14 | `COLUMN_LAST_MODIFIED` is 0 or constant (some providers). | Change still detected through size or docId, and the hash catches same-size edits on resume. Same-size edits while the home screen is showing may be missed, see Q5. | S |
 
-| ID | Steps | Expected | Level | Ref |
-|---|---|---|---|---|
-| WP-1 | Same package in personal and work profile. | Two distinct items; config must say which profile. How profile is identified in config (stable across reboots/reprovisioning, since user serial numbers can change) [OQ-29]. | R, I | Risks |
-| WP-2 | Launch a work app from the config. | Launched via LauncherApps in the work profile, not personal. | I | §3 |
-| WP-3 | Work profile paused ("work apps off"). | Work items greyed/badged; tap shows system unpause flow or nothing [OQ-30]; not deleted. | I, M | §3 |
-| WP-4 | Work profile removed. | Entries greyed not deleted (consistent with UN-3) [OQ-30]. | I | §4 |
-| WP-5 | Private space (Android 15+) locked. | Private apps must not appear in Unsorted or be written into the agent-readable file while locked — privacy leak risk [OQ-31]. | I, M | §3, Risks |
-| WP-6 | New work-profile app installed. | Goes to Unsorted with profile badge. | R, I | §4 |
-| WP-7 | Config references a profile that doesn't exist on this device (config synced from another phone). | Greyed, not launched, no crash. | R | §3 |
+## 6. Concurrent edits: the conflict and drag matrix (A§5, A§6, A§15 OQ-19, OQ-22, OQ-24, AQ-6)
 
-## 9. Automation and CI
+"Agent edit" means the folder file's hash changes to something that is neither base nor ours. All cases: **S** for logic, **R** for B6 and snackbars, plus a Compose drag test at **I** for the rows marked †.
 
-- JVM unit tests: parser, validator, limits, fuzz, hash guard, version counter, reconciliation logic (pure Kotlin, no Android).
-- Robolectric: loader + observer wiring with a fake document store, LauncherApps shadows for package callbacks, intent-launch assertions for HC-2/3.
-- Instrumented (emulator, API 34+): SAF observation, atomic rename on the real provider, work profile (`adb shell pm create-user --profileOf 0 --managed`), private space on API 35.
-- CI: GitHub Actions job `./gradlew testDebugUnitTest` on every PR once a Gradle project exists. Emulator job (reactivecircus/android-emulator-runner) only for the SAF/profile subset, nightly or on label, because it is slow.
+| ID | Timing | Expected |
+|---|---|---|
+| CM-1 | Agent edit, no pending local edits. | Applied directly. No B6. The replaced version goes to history. |
+| CM-2 | Agent edit lands mid-drag. † | No model swap mid-gesture, and the file is parked as `incoming`. On drop the move becomes a pending edit, the hash check fails, and B6 appears. |
+| CM-3 | CM-2 but the drop is cancelled (dropped back where it started, no op). † | `incoming` applied on drag end with no B6, because nothing is pending. Not stated in the spec, see Q6. |
+| CM-4 | Agent edit within the 750 ms debounce after a drop. | Write-time hash check ≠ base, so B6. |
+| CM-5 | Agent edit arrives after our write but before our poll sees it. | Hash is neither ours nor base, so it counts as external and is applied (no pending edits). |
+| CM-6 | B6, then `Use file`. | Pending ops discarded, the file is loaded, and the local model is snapshotted to history. |
+| CM-7 | B6, then `Keep mine`, where the agent touched different items. | Ops are replayed by ID onto the file's model: both changes survive, the file version is snapshotted first, and `revision` = max + 1. |
+| CM-8 | `Keep mine`, where the agent deleted the item I moved. | Op dropped. Snackbar "1 change skipped because the item was removed in the file", with Undo. |
+| CM-9 | `Keep mine`, where the agent put something in my target cell. | Placed in the nearest free cell on the same page, else the first free cell on any page, else a new page. |
+| CM-10 | `Keep mine` with `Add` of an app the agent already added to that container. | Skipped as a duplicate. |
+| CM-11 | `Keep mine` replay result fails validation (inject it). | Nothing written. B6 stays with only `Use file`. |
+| CM-12 | The agent writes `revision` lower than, equal to, or missing compared with ours. | Ignored for conflicts: only the hash decides, and the content is accepted. Our next write = max seen + 1. |
+| CM-13 | Agent writes twice within 300 ms. | The stability re-check applies only the final content. |
+| CM-14 | Agent edit while the file was invalid and the phone made an edit (OQ-15 path). | The broken copy is saved first. Then the hash check against the base. Order not specified, see Q7. |
+| CM-15 | Two phone edits while B6 is showing. | Not specified, see Q8. |
+| CM-16 | Ops on IDs: rename vs agent rename of the same item; CreateFolder whose members the agent moved. | Rename: mine wins on `Keep mine`. CreateFolder: members that still exist are used, and skipped members get the snackbar. Partial-member rule not specified, see Q9. |
+| CM-17 | Syncthing conflict siblings `launcher.sync-conflict-*.json` or `launcher (1).json` appear. | Ignored by the loader. A dismissible notice names them and status.json lists them. Never merged or deleted. |
 
-## 10. Manual phone checklist (≈10 min, no app-killing)
+Unit-level table test for the replay engine: rows for {Move, Add, Remove, Rename, CreateFolder} × {target exists, removed, cell occupied, duplicate}.
 
-Prereqs: launcher installed and set as Home, config folder picked, a PC/agent able to edit the synced file. Have one small free app ready to install (e.g. from F-Droid/Play).
+## 7. Live reload and latency targets (A§4, A§15 OQ-22, OQ-23, A§11)
 
-1. **Starts clean (30 s).** Press Home. Pages, dock and drawer match the file. No banner.
-2. **Live reload (1 min).** On the PC, move one app to another page and save. Within the sync delay the phone updates without you doing anything. Note roughly how many seconds it took.
-3. **Write-back (1 min).** On the phone, drag one icon to a new spot. On the PC, the file shows the move once synced. The phone does not flicker or reload a second time.
-4. **Broken file (1 min).** On the PC, delete a closing brace and save. Phone keeps the old layout and shows an error banner. Fix it and save; the banner goes away.
-5. **Hostile entry (1 min).** Add an item whose id is `tel:911` or an `intent:` string and save. It is refused (banner) and nothing dials or opens. Remove it.
-6. **Unknown app (30 s).** Add `com.example.doesnotexist/.Main`. It shows greyed out; tapping does nothing.
-7. **New app (1.5 min).** Install the small app. It shows up in Unsorted (or the drawer).
-8. **Uninstall (1 min).** Uninstall that app. Its icon greys out and is not removed from the file. (Optionally reinstall: it comes back in place.)
-9. **Conflict (1.5 min).** Drag an icon on the phone and, before it syncs, edit a different item on the PC. After sync, check which version won and that the other is recoverable from `.history/` or git.
-10. **Work profile (1 min, only if you have one).** Work apps appear with a badge and launch in the work profile. Turn work apps off: they grey out, nothing disappears. Turn back on.
+| ID | Steps | Expected / target | Level |
+|---|---|---|---|
+| LR-1 | File lands, then the user presses Home (`onStart`/`onResume` poll). | Visible **≤ 1 s** after landing on the device. | I, M |
+| LR-2 | File lands while the home screen is already showing. | Visible **≤ 3 s** (2 s poll + 300 ms stability + parse). | S (fake clock), I, M |
+| LR-3 | ContentObserver callback fires. | Immediate poll. | S, R |
+| LR-4 | Launcher in the background. | Zero polls (assert with the fake clock and no wakeups). | S |
+| LR-5 | Cold start, 300-item config. | First frame **< 500 ms** on a mid device, from last-good. | I (macrobenchmark) |
+| LR-6 | Write-back debounce. | Write starts 750 ms after the last edit and never mid-drag. | S |
+| LR-7 | Poll cost. | One children-cursor query per 2 s. Measure the time per poll and report it (no target set, see Q10). | I |
+| LR-8 | The file is replaced via rename (new docId), as git or Syncthing do. | Re-found by name and reloaded. | S, I |
 
-Report anything that differs, with a screenshot.
+Sync transfer time is excluded from all targets (A§15 OQ-23).
 
-## Open questions (not decided by the spike)
+## 8. New and uninstalled apps, Unsorted (A§3 Unsorted, A§7, A§15 OQ-25 to OQ-28)
 
-1. OQ-1 What does a `widget` item do in v1 (widgets are out of MVP): rejected, ignored, or placeholder?
-2. OQ-2 Are invalid/overlapping grid coordinates errors or clamped? Grid dimensions?
-3. OQ-3 Schema version mismatch: migrate older, refuse newer?
-4. OQ-4 Unknown keys: reject, ignore, or preserve on write-back?
-5. OQ-5 Duplicate ids / same app in multiple places allowed?
-6. OQ-6 File format: JSON, JSON5 or YAML (spike leans to JSON)? Filename?
-7. OQ-7 Accept UTF-8 BOM?
-8. OQ-8 Unpublished shortcut ids: reject at validation or grey out at runtime?
-9. OQ-9 Concrete limits: max file size, nesting depth, item count, string length.
-10. OQ-10 Can folders nest?
-11. OQ-11 Labels: allow bidi control characters, or strip/reject?
-12. OQ-12 Duplicate JSON keys: reject?
-13. OQ-13 Where is last-good persisted (app-private storage?) and does it survive reinstall?
-14. OQ-14 First run with an invalid or missing file: what is shown?
-15. OQ-15 Phone edits while the file is invalid: block, overwrite (after snapshot), or write elsewhere?
-16. OQ-16 N for `.history/`; is `.history/` inside the synced folder (agent-visible) or private? Skip it when git is used?
-17. OQ-17 Does the launcher re-canonicalise externally written files?
-18. OQ-18 Atomic-write fallback when the SAF provider can't rename.
-19. OQ-19 Conflict rule detail: is a write with a lower/equal version counter rejected or does pure LWW apply? Is the loser snapshotted?
-20. OQ-20 Who increments the version counter; what if an agent doesn't?
-21. OQ-21 Handling of sync-conflict files.
-22. OQ-22 Debounce interval; polling interval if ContentObserver doesn't fire.
-23. OQ-23 Target edit→visible latency.
-24. OQ-24 Reload during a drag: defer or apply?
-25. OQ-25 Unsorted page vs drawer for new apps (spike allows either).
-26. OQ-26 Is Unsorted placement written back to the file?
-27. OQ-27 App whose launcher activity changes: re-map by package or grey out?
-28. OQ-28 Tap on a greyed entry: nothing, hint, or offer to reinstall?
-29. OQ-29 Stable profile identifier in config.
-30. OQ-30 Paused/removed work profile behaviour.
-31. OQ-31 Private space: may its apps ever be written to the shared file?
+| ID | Steps | Expected | Level |
+|---|---|---|---|
+| UN-1 | Install an unplaced app, `unsorted.mode: drawer` (default). | In the drawer only. Home pages untouched, file untouched. | R, M |
+| UN-2 | Same with `mode: page`. | Also shown on a synthetic last page titled `pageTitle`. Not written. | R |
+| UN-3 | Same with `mode: hidden`. | Not shown in Unsorted. The drawer still lists all apps. Whether "hidden" also hides it from the drawer list: see Q11. | R |
+| UN-4 | App in `drawer.hidden`. | Never in the drawer or Unsorted, but launches if placed. | R |
+| UN-5 | Drag an Unsorted app onto a page. | The only path that writes it. Explicit edit. | R |
+| UN-6 | Uninstall a placed app. | Greyed, kept in the file. Tap shows "Not installed" plus "Remove from layout". | R, M |
+| UN-7 | Reinstall it. | Active again in place. | R, M |
+| UN-8 | Item without `activity`, and the package changes its default activity. | Follows the new default. | R |
+| UN-9 | Item with `activity` that disappears: (a) the package has one launcher activity, (b) several. | (a) Falls back, file untouched until the next edit. (b) Greyed. | R |
+| UN-10 | Package changes while the process is dead. | Reconciled on start. | R, I |
+| UN-11 | Drawer rules: first match wins, and rules never move home items. | | U |
+
+## 9. Work profiles and private space (A§7, A§15 OQ-29 to OQ-31)
+
+| ID | Steps | Expected | Level |
+|---|---|---|---|
+| WP-1 | "Include work apps in config" **off** (default). | Work apps in the drawer with the badge. They can't be placed on pages, and nothing about them reaches the file or status.json. | R, I |
+| WP-2 | Toggle **on**, drag a work app to a page. | Written with `"profile": "work"`. Launches in the work profile through LauncherApps. | I |
+| WP-3 | File contains `profile: work` while the toggle is off. | Not specified (render, grey, or ignore?), see Q12. | R |
+| WP-4 | Same package in personal and work. | Two distinct items keyed by (package, activity, profile). | R |
+| WP-5 | Work profile paused. | Items greyed with the badge. Tap calls `requestQuietModeEnabled(false)` (system prompt). Not deleted. | I, M |
+| WP-6 | Work profile removed, or the file synced from a phone without one. | Greyed, kept in the file, "Remove from layout" offered. | R |
+| WP-7 | Two work profiles. | First one wins. | R |
+| WP-8 | Numeric user IDs or serials. | Never written: grep the written file and status.json. `profile-numeric.json` and `profile-private.json` are rejected. | U |
+| PS-1 | Private space (API 35) unlocked. | Private apps appear only in the system private-space section of the drawer. Not in Unsorted. Not draggable to pages (implied, see Q13). | I, M |
+| PS-2 | Private space locked. | Its apps appear nowhere. | I, M |
+| PS-3 | Any write or status.json update while private space is unlocked. | Contains no private-space package. | I |
+
+## 10. Manual QA matrix (A§11), for later
+
+Run on Christopher's phone plus a Pixel emulator. A Samsung device if one is available.
+
+| ID | Setup | Steps | Expected |
+|---|---|---|---|
+| MS-1 | **Syncthing** folder shared with the PC. | Edit on the PC and save, then press Home. Drag on the phone and watch the PC. Edit on both at once. | Reload within sync time + 1 s on Home (+3 s while visible). The phone's write shows on the PC. B6 on a simultaneous edit. A `.sync-conflict` copy, if Syncthing makes one, produces the notice. |
+| MS-2 | Syncthing with "ignore delete" and versioning on. | Drag 5 times quickly. | One file version (debounce). No deletes are ever propagated. |
+| MG-1 | **git** client folder (e.g. MGit). | Commit and push from the PC, pull on the phone, press Home. Drag on the phone, commit, pull on the PC. | Reloads after the pull (the file is replaced, so the docId may change). The phone's write gives a canonical, small diff. `.configlauncher/` should be in `.gitignore` or committed deliberately (see Q14). |
+| MG-2 | git, with the agent's checkout leaving conflict markers. | Pull a merge conflict. | B1 with line/column, last-good kept. |
+| GD-1 | **Google Drive** folder via SAF. | Edit on the PC, wait, press Home. Drag on the phone. Turn on airplane mode and drag. | Best effort (A§13): document the observed latency. Airplane mode gives B5 or a delayed write, and the edit is never lost. Record the actual behaviour, since Drive SAF support for tree pick and `"wt"` varies. |
+| WP-M | Work profile (Test DPC on an emulator if the phone has none). | WP-1, WP-2, WP-5. | As in §9. |
+| PS-M | Private space on Android 15+. | PS-1, PS-2. | As in §9. |
+
+## 11. Manual phone checklist (≈10 min, no app-killing)
+
+Needs: the launcher set as Home, the folder picked, and the PC able to edit the synced `launcher.json`. One small app to install.
+
+1. Press Home: the layout matches the file, with no banner.
+2. On the PC, move one app and save. Press Home on the phone: it updates within about a second. Try again with the home screen already showing: within about 3 s.
+3. Drag one icon on the phone. The PC file updates after sync, and the phone doesn't flicker.
+4. On the PC, delete a `}` and save. The phone keeps the layout and shows "Can't read launcher.json…". Undo the change and the banner clears.
+5. On the PC, add `"uri": "tel:911"` to an item. You get the "has 1 problem" banner and nothing dials. Remove it.
+6. Install the small app: it appears in the drawer, not on a home page. Uninstall it from a home icon if you placed it: it greys out and stays.
+7. Drag an icon on the phone, then within a second save a PC edit to a different icon. If "launcher.json changed while you were editing" appears, tap **Keep mine**: both changes stay.
+8. Only if you have one: work apps show a badge in the drawer. Pause work apps and any placed work icons grey out.
+
+## 12. Automation and CI
+
+- When `:app` exists: a GitHub Actions job running `./gradlew testDebugUnitTest` (JVM + Robolectric + store fakes) on every PR, plus `python3 test-fixtures/check_schema.py`.
+- Emulator job (API 26 and 35) for the instrumented SAF, profile and drag tests: nightly or on a label.
+- A test that fails on `android.*` imports in `model` and `config` (A§10).
+
+## Open questions (still open)
+
+1. Q1: The schema has no `maxLength` on `package`, `activity`, `packagePrefix` and `drawer.hidden` entries, though A§15 OQ-9 caps "other strings" at 256. Should the schema add `maxLength: 256`? Currently those are Kotlin-only.
+2. Q2: A§11 says the networknt and Kotlin validators "agree" on every file in `configs/invalid/`. But duplicate IDs, overlapping cells, cells outside the grid, the 2000-item total and duplicate keys can't be expressed in JSON Schema. Should the conformance test assert "Kotlin rejects ⊇ schema rejects", with a list of Kotlin-only rules?
+3. Q3: Is NUL inside a JSON string (`\u0000`, legal JSON) a parse error (A§15 OQ-11 says so) or a validation error? This affects whether it's B1 or B2.
+4. Q4: If writing `last-good.json` fails (app storage full) after a verified folder write, what should happen: banner, or silent?
+5. Q5: Providers that report a constant `COLUMN_LAST_MODIFIED`: should a same-size external edit while the home screen is showing be caught (hash every N polls)?
+6. Q6: Agent edit mid-drag, then the drag is cancelled: apply `incoming` silently?
+7. Q7: OQ-15 broken-copy path combined with a conflicting agent edit: which comes first, the broken-copy snapshot or the B6 hash check?
+8. Q8: Do further phone edits while B6 is showing join the pending queue, or are they blocked until the user picks?
+9. Q9: `Keep mine` replay of `CreateFolder` when some members were removed or moved by the agent: build a partial folder, or skip?
+10. Q10: Is there a budget for poll cost or battery while the home screen is showing?
+11. Q11: `unsorted.mode: hidden`: does the drawer still list those apps? (A§3 says the drawer "always lists all apps".)
+12. Q12: File has `profile: work` items but "Include work apps in config" is off: render them, grey them out, or treat them as invalid?
+13. Q13: Can private-space apps be dragged anywhere at all (folders, dock), or is it blocked in the UI?
+14. Q14: Should `.configlauncher/` be committed or gitignored in a git-synced folder? Should the README say?
+15. Q15: Google Drive: is "best effort" shipped, or is Drive warned against in onboarding?
