@@ -40,7 +40,7 @@ class AutoMergeTest {
         assertEquals(listOf("c"), c.dock!!.map { it.id })
         assertEquals(10L, c.revision)
         assertTrue(e.state.value.mergeUndo)
-        assertEquals("Layout updated from launcher.json. Kept your change.", e.state.value.notice)
+        assertEquals(MergeNotice(kept = 1, skipped = 0, folder = null, undo = true), e.state.value.merge)
         assertTrue("both pre-merge versions in history", lg.historyFiles().size >= before + 2 && lg.historyFiles().any { it.readText() == agent })
         assertFalse(e.poll(force = true)) // our merged write is an echo
     }
@@ -120,13 +120,23 @@ class AutoMergeTest {
         assertTrue(e.state.value.conflict)
     }
 
-    @Test fun copy() {
-        assertEquals("Layout updated from launcher.json. Kept your 2 changes.", MergeCopy.notice(2, 0))
-        assertEquals("Kept your change.", MergeCopy.notice(1, 0).removePrefix("Layout updated from launcher.json. "))
-        // ux.md §4.4 skipped row, exact copy (CM-8).
-        assertEquals("1 change skipped because the item was removed in the file.", MergeCopy.notice(0, 1))
-        assertEquals("3 changes skipped because the item was removed in the file.", MergeCopy.notice(0, 3))
-        assertEquals("Layout updated from launcher.json. Kept your change. 2 changes skipped because the item was removed in the file.", MergeCopy.notice(1, 2))
-        assertEquals("1 change skipped because the item was removed in the file.", MergeCopy.skipped(1))
+    @Test fun allSkippedHasNoUndo() = runBlocking {   // §9.1
+        val (e, src) = setup()
+        e.edit(Edit.MoveToCell("b", "home", 2, 2))
+        src.file.writeText(agent.replace(",{\"id\":\"b\",\"type\":\"app\",\"package\":\"p.b\",\"label\":\"Bee\",\"x\":1,\"y\":0}", ""))
+        assertFalse(src.file.readText().contains("p.b"))
+        assertTrue(e.flush())
+        assertFalse(e.state.value.mergeUndo)
+        assertEquals(MergeNotice(kept = 0, skipped = 1, folder = null, undo = false), e.state.value.merge)
+        assertFalse("no Undo to run", e.undoMerge())
+    }
+
+    @Test fun mixedKeepsUndo() = runBlocking {
+        val (e, src) = setup()
+        e.edit(Edit.MoveToCell("a", "home", 2, 2)); e.edit(Edit.MoveToCell("b", "home", 3, 3))
+        src.file.writeText(agent.replace(",{\"id\":\"b\",\"type\":\"app\",\"package\":\"p.b\",\"label\":\"Bee\",\"x\":1,\"y\":0}", ""))
+        assertTrue(e.flush())
+        assertTrue(e.state.value.mergeUndo)
+        assertEquals(MergeNotice(kept = 1, skipped = 1, folder = null, undo = true), e.state.value.merge)
     }
 }

@@ -13,7 +13,18 @@ sealed interface Edit {
     data class Add(val item: Item, val pageId: String?, val x: Int = 0, val y: Int = 0, val index: Int = Int.MAX_VALUE) : Edit
 }
 
-data class ApplyResult(val config: LauncherConfig, val applied: Boolean)
+data class ApplyResult(val config: LauncherConfig, val applied: Boolean, val folder: FolderSkip? = null)
+
+/** A folder that wasn't recreated on replay (§17 Q9, ux.md §9.1). [placed] = the one member placed on its own. */
+data class FolderSkip(val label: String, val placed: String?)
+
+/** One skipped op; [folder] is set when the op was a folder that wasn't recreated. */
+data class Skip(val edit: Edit, val folder: FolderSkip? = null)
+
+data class Replay(val config: LauncherConfig, val kept: Int, val skipped: List<Skip>) {
+    /** ux.md §9.1: the folder message is shown only when a skipped folder is the only change. */
+    val onlyFolder: FolderSkip? get() = if (kept == 0 && skipped.size == 1) skipped[0].folder else null
+}
 
 object Edits {
     /** UI cap for drags into the dock (Q-S6: 5 for the MVP); the file itself may hold up to 7. */
@@ -25,11 +36,21 @@ object Edits {
         is Edit.Add -> add(c, e)
     }
 
-    /** Replay ops in order; returns the result and how many ops were skipped (target gone, no room, duplicate). */
-    fun replay(c: LauncherConfig, ops: List<Edit>): Pair<LauncherConfig, Int> {
-        var cur = c; var skipped = 0
-        for (op in ops) { val r = apply(cur, op); if (r.applied) cur = r.config else skipped++ }
-        return cur to skipped
+    /** Replay ops in order; skipped ops (target gone, no room, duplicate, folder not recreated) are listed. */
+    fun replay(c: LauncherConfig, ops: List<Edit>): Replay {
+        var cur = c; val skipped = mutableListOf<Skip>()
+        for (op in ops) {
+            val r = apply(cur, op)
+            cur = r.config   // a skipped folder may still have placed its last member
+            if (!r.applied) skipped += Skip(op, r.folder)
+        }
+        return Replay(cur, ops.size - skipped.size, skipped)
+    }
+
+    private fun Item.displayName(): String = label ?: when (this) {
+        is AppItem -> packageName
+        is ShortcutItem -> shortcutId
+        is FolderItem -> id
     }
 
     private sealed interface Loc { data class OnPage(val page: Int, val index: Int) : Loc; data class InDock(val index: Int) : Loc }
@@ -103,6 +124,18 @@ object Edits {
     private fun add(c: LauncherConfig, e: Edit.Add): ApplyResult {
         val item = e.item
         if (c.allItems().any { it.id == item.id }) return ApplyResult(c, false)
+        if (item is FolderItem) {
+            // §17 Q9: members the file already has elsewhere were moved there; the folder is built from the rest.
+            val inFile = c.allItems().map { it.id }.toSet()
+            val left = item.items.filter { it.id !in inFile }
+            if (left.size < item.items.size && left.size < 2) {
+                val name = item.displayName()
+                val one = left.singleOrNull() ?: return ApplyResult(c, false, FolderSkip(name, null))
+                val placed = add(c, e.copy(item = one))
+                return ApplyResult(placed.config, false, FolderSkip(name, if (placed.applied) one.displayName() else null))
+            }
+            if (left.size < item.items.size) return add(c, e.copy(item = item.copy(items = left)))
+        }
         fun same(i: Item) = i is AppItem && item is AppItem && i.packageName == item.packageName &&
             (i.activity ?: item.activity) == (item.activity ?: i.activity) && (i.profile ?: Profile.PERSONAL) == (item.profile ?: Profile.PERSONAL)
         if (e.pageId == null) {

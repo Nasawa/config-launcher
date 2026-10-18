@@ -60,6 +60,8 @@ data class LoadState(
     val reconnectable: Boolean = true,
     /** §18.2: an automatic merge just happened; the snackbar offers Undo ([ConfigEngine.undoMerge]). */
     val mergeUndo: Boolean = false,
+    /** ux.md §9.1 merge snackbar (formatted by the UI from strings.xml); cleared by [ConfigEngine.consumeMerge]. */
+    val merge: MergeNotice? = null,
 ) {
     /** Problem lines for the detail view (kept for callers/tests that only need text). */
     val errors: List<String> get() = when (issue) { null, Issue.Missing -> emptyList(); else -> issue.details }
@@ -228,7 +230,7 @@ class ConfigEngine(
                 writeStatus("ok", emptyList(), hash)
                 // An external reload doesn't expire Undo (§18.2); it takes the "changed" path.
                 _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash, reconnectable = src.reconnectable,
-                    mergeUndo = undoBytes != null, notice = _state.value.notice.takeIf { undoBytes != null })
+                    mergeUndo = undoBytes != null, merge = _state.value.merge.takeIf { undoBytes != null })
                 saveLastGood(bytes)
                 true
             }
@@ -302,17 +304,21 @@ class ConfigEngine(
     private fun autoMergeLocked(fileBytes: ByteArray): Boolean {
         val fileCfg = (ConfigCodec.decode(fileBytes) as? ParseResult.Ok)?.config ?: return false
         val ops = pending.toList()
-        val (merged, skipped) = Edits.replay(fileCfg, ops)
+        val rep = Edits.replay(fileCfg, ops)
+        val merged = rep.config
         val out = merged.copy(revision = maxOf(merged.revision ?: 0, _state.value.config.revision ?: 0) + 1)
         if (ConfigCodec.decode(ConfigCodec.encodeBytes(out)) !is ParseResult.Ok) return false
         runCatching { lastGood.snapshot(fileBytes) }
         runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
         val written = try { writeLocked(out) } catch (e: Exception) { fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")); return true }
-        pending.clear(); undoBytes = fileBytes; mergedHash = written
-        undoTouched = dev.nasawa.configlauncher.model.UndoMerge.record(fileCfg, out)
-        val kept = ops.size - skipped
+        pending.clear()
+        // §9.1: all-skipped merges have no Undo (nothing of ours was written).
+        val undo = rep.kept > 0
+        if (undo) { undoBytes = fileBytes; mergedHash = written; undoTouched = dev.nasawa.configlauncher.model.UndoMerge.record(fileCfg, out) }
+        else clearUndo()
         _state.update {
-            it.copy(pendingEdits = 0, issue = null, mergeUndo = true, notice = MergeCopy.notice(kept, skipped))
+            it.copy(pendingEdits = 0, issue = null, mergeUndo = undo,
+                merge = MergeNotice(rep.kept, rep.skipped.size, rep.onlyFolder, undo))
         }
         return true
     }
@@ -326,7 +332,7 @@ class ConfigEngine(
         val before = undoBytes ?: return false
         val touched = undoTouched
         clearUndo()
-        val cancel = { msg: String -> _state.update { it.copy(mergeUndo = false, notice = msg) }; false }
+        val cancel = { msg: String -> _state.update { it.copy(mergeUndo = false, merge = null, notice = msg) }; false }
         val now = try { source.read(Limits.MAX_BYTES) } catch (_: Exception) { null } ?: return cancel(CANCELLED)
         val target: LauncherConfig = if (ConfigCodec.sha256(now) == mergedHash) {
             (ConfigCodec.decode(before) as? ParseResult.Ok)?.config ?: return cancel(CANCELLED)
@@ -339,13 +345,13 @@ class ConfigEngine(
         runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
         runCatching { lastGood.snapshot(before) }
         if (ConfigCodec.sha256(now) != mergedHash) runCatching { lastGood.snapshot(now) }
-        try { writeLocked(target); _state.update { it.copy(mergeUndo = false, notice = null) }; true }
+        try { writeLocked(target); _state.update { it.copy(mergeUndo = false, merge = null) }; true }
         catch (e: Exception) { fail(Issue.SaveFailed("Couldn't undo: ${e.message}")) }
     }
 
     private fun clearUndo() { undoBytes = null; mergedHash = null; undoTouched = emptyList() }
 
-    fun dismissMergeUndo() { clearUndo(); _state.update { it.copy(mergeUndo = false) } }
+    fun dismissMergeUndo() { clearUndo(); _state.update { it.copy(mergeUndo = false, merge = null) } }
 
     /** B6 "Use file": drop local edits (snapshotted to history) and load the file. */
     suspend fun resolveUseFile() {
@@ -361,14 +367,17 @@ class ConfigEngine(
     suspend fun resolveKeepMine(): Boolean = mutex.withLock {
         val bytes = try { source.read(Limits.MAX_BYTES) } catch (e: Exception) { return fail(Issue.SaveFailed(e.message ?: "read failed")) }
         val fileCfg = bytes?.let { (ConfigCodec.decode(it) as? ParseResult.Ok)?.config }
-        val (merged, skipped) = if (fileCfg == null) _state.value.config to 0 else Edits.replay(fileCfg, pending.toList())
+        val ops = pending.toList()
+        val rep = if (fileCfg == null) dev.nasawa.configlauncher.model.Replay(_state.value.config, ops.size, emptyList()) else Edits.replay(fileCfg, ops)
+        val merged = rep.config
         bytes?.let { runCatching { lastGood.snapshot(it) } }
         val out = merged.copy(revision = maxOf(merged.revision ?: 0, _state.value.config.revision ?: 0) + 1)
         try { writeLocked(out) } catch (e: Exception) { return fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")) }
         pending.clear()
         _state.update {
             it.copy(conflict = false, pendingEdits = 0, issue = null,
-                notice = if (skipped > 0) MergeCopy.skipped(skipped) else null)
+                // §9.1: Keep mine uses the same copy, without Undo; all kept shows nothing extra.
+                merge = MergeNotice(rep.kept, rep.skipped.size, rep.onlyFolder, undo = false).takeUnless { n -> n.silent })
         }
         true
     }
@@ -444,6 +453,7 @@ class ConfigEngine(
     }
 
     fun consumeNotice() = _state.update { it.copy(notice = null) }
+    fun consumeMerge() = _state.update { it.copy(merge = null) }
 
     private fun classify(e: Exception, src: ConfigSource): Issue = when (e) {
         is AccessLostException -> Issue.AccessLost(e.message ?: "folder not accessible")

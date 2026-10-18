@@ -1,1 +1,33 @@
-<resources><string name="app_name">Config Launcher</string></resources>
+<resources>
+    <string name="app_name">Config Launcher</string>
+
+    <!-- Merge snackbar, docs/ux.md §9.1 (automatic merge and Keep mine). -->
+    <string name="merge_updated">Layout updated from launcher.json.</string>
+    <plurals name="merge_kept_all">
+        <item quantity="one">Kept your change.</item>
+        <item quantity="other">Kept your %d changes.</item>
+    </plurals>
+    <!-- Mixed: %1$s = merge_updated, %2$s = merge_kept_part, %3$s = merge_skipped_part -->
+    <string name="merge_mixed">%1$s %2$s, %3$s.</string>
+    <plurals name="merge_kept_part">
+        <item quantity="one">Kept %d change</item>
+        <item quantity="other">Kept %d changes</item>
+    </plurals>
+    <plurals name="merge_skipped_part">
+        <item quantity="one">skipped %d</item>
+        <item quantity="other">skipped %d</item>
+    </plurals>
+    <plurals name="merge_skipped_all">
+        <item quantity="one">%d change skipped because the item was removed in the file.</item>
+        <item quantity="other">%d changes skipped because the items were removed in the file.</item>
+    </plurals>
+    <plurals name="merge_skipped_a11y">
+        <item quantity="one">Skipped %d change because its item was removed or moved in the file.</item>
+        <item quantity="other">Skipped %d changes because their items were removed or moved in the file.</item>
+    </plurals>
+    <string name="merge_folder_one_left">Folder \"%1$s\" wasn\'t recreated because its other apps were removed or moved in the file. \"%2$s\" was placed on its own.</string>
+    <string name="merge_folder_none_left">Folder \"%1$s\" wasn\'t recreated because its apps were removed or moved in the file.</string>
+    <!-- Mixed TalkBack long form: %1$s = merge_updated, %2$s = merge_kept_part, %3$s = merge_skipped_a11y -->
+    <string name="merge_mixed_a11y">%1$s %2$s. %3$s</string>
+    <string name="merge_undo">Undo</string>
+</resources>
