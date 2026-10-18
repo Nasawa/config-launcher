@@ -95,7 +95,7 @@ Gestures and taps (home):
 |---|---|
 | Tap app | Launch via `LauncherApps.startMainActivity` |
 | Tap folder | Open folder (§3) |
-| Tap dimmed item | Nothing launches. A hint sheet says why: `Not installed`, `Shortcut no longer available`, `Work apps are paused`, `Shortcuts need Android 8 or later.` (API 23–25, never launches, §18.3), `Turn on "Include work apps in config" to use this.` (tap → system unpause prompt) or `Set as Home to use shortcuts`, with **`Remove from layout`** (one write). `Open store page` comes later |
+| Tap dimmed item | Nothing launches. A hint sheet says why: `Not installed`, `Shortcut no longer available`, `Work apps are paused`, `Turn on "Include work apps in config" to use this.` (tap → system unpause prompt) or `Set as Home to use shortcuts`, with **`Remove from layout`** (one write). `Open store page` comes later |
 | Long-press app, shortcut or folder | Item sheet showing the **real app name and package** (so a label override can't disguise an app), plus `Edit layout`, `App info`, `Remove from home` |
 | Long-press empty space | Home menu: `Edit layout`, `Reload layout`, `Settings` |
 | Swipe up anywhere / tap ⌃ handle | Open the drawer (§2) |
@@ -333,7 +333,6 @@ Shown on first launch, before the home screen. Each step is one full screen with
    - Button: `Choose folder` → system picker (`ACTION_OPEN_DOCUMENT_TREE`). Take a persistable read+write grant.
    - Secondary text button under it: `Skip for now` (Q-C1). See **Skip for now** below.
    - Picker cancelled → stay on this screen and show a line above the buttons: `No folder chosen. You can skip this and connect one later in Settings.` Both buttons stay.
-   - **Android 6–7 (API 23–25):** the picker hides internal storage until the user taps ⋮ → `Show internal storage`. Add under the body: `Don't see your phone's storage? In the next screen, tap ⋮ and then Show internal storage.` (§18.3)
    - **Cloud folder** (the picked folder's provider isn't local storage, `com.android.externalstorage.documents`): a soft warning before continuing: `Cloud folders can take a while to sync. A Syncthing or git folder works best.` Buttons: `Use anyway` · `Choose another folder`. Not blocked (§17 Q15). `Choose another folder` (reopens the picker) is approved as written (§18.4).
 3. **Folder result**
    - **Contains a valid `launcher.json`:** `Found launcher.json with 3 pages and 24 items.` Buttons: `Use this layout` · `Start fresh` (the existing file is first saved to `.configlauncher/backup/`).
@@ -343,7 +342,7 @@ Shown on first launch, before the home screen. Each step is one full screen with
 4. **Make it your home app**
    - Title: `Set as home app`
    - Body: `To use Config Launcher when you press Home, set it as your default home app. Shortcuts only work once it's your home app.`
-   - Button: `Set as home app` → `RoleManager.createRequestRoleIntent(ROLE_HOME)` on Android 10+, or the system Home settings on Android 6–9. If an old ROM lacks that screen, open system Settings with the hint `Open Apps → Default apps → Home app` (§18.3). Secondary: `Not now`.
+   - Button: `Set as home app` → `RoleManager.createRequestRoleIntent(ROLE_HOME)`. Secondary: `Not now`.
    - If declined: the app still works as a normal app, minus shortcuts, which show dimmed with `Set as Home to use shortcuts`. Settings shows `Not your home app` with a `Set as home app` button.
 5. Land on the home screen. One-time hint chip: `Long-press empty space to edit your layout.` (dismiss ×, never shown again).
 
@@ -394,7 +393,7 @@ Shown on first launch, before the home screen. Each step is one full screen with
 | Backup copy couldn't be updated (app storage full; the folder write succeeded). One time, retried on the next load or write (§17 Q4) | `Couldn't update the backup copy (phone storage full).` |
 | Work item tap while the opt-in is off | `Turn on "Include work apps in config" to use this.` |
 | Problem fixed | `Layout loaded.` |
-| Dimmed item tap | Hint sheet (§1.1): `Not installed` / `Shortcut no longer available` / `Work apps are paused` / `Shortcuts need Android 8 or later.` / `Set as Home to use shortcuts`, with [`Remove from layout`] |
+| Dimmed item tap | Hint sheet (§1.1): `Not installed` / `Shortcut no longer available` / `Work apps are paused` / `Set as Home to use shortcuts`, with [`Remove from layout`] |
 | First edit while the file is invalid | `Your broken launcher.json was saved to .configlauncher/broken/.` |
 | A merge (automatic or `Keep mine`) skipped an edit | `1 change skipped because the item was removed in the file.` [`Undo`] (plural: `3 changes skipped…`) |
 | A merge (automatic or `Keep mine`) skipped a folder, one member left (placed alone, §17 Q9) | `Folder "<Label>" wasn't recreated because its other apps were removed or moved in the file. "<App>" was placed on its own.` [`Undo`] |
@@ -465,7 +464,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 - [ ] Conflict (§4.4): hold during drag, automatic merge with `Kept your N changes` + Undo by default, B6 `Use file` / `Keep mine` only with `Ask before merging` or a failed merge (replay by ID, skipped-op snackbar with Undo, nearest free cell).
 - [ ] Reload (§5): 2 s poll while visible + immediate on resume, ContentObserver as a hint, 300 ms stability check, hash decides, no page jump, sync-conflict notice.
 - [ ] Banners B1–B8 (§6.1), collapse chip, live region, auto-clear. Detail view (§6.2) with 1-based line/column, paths and excerpts; Copy errors; Restore with confirmation (backup to `.configlauncher/backup/`).
-- [ ] First run (§7) with exact copy, `Skip for now` (app-private source, Choose folder later, Use phone storage, one-time reminder), API 23–25 `Show internal storage` hint, persistable grant, three folder outcomes, format note, home role request (RoleManager on 10+, Home settings on 8–9), one-time hint.
+- [ ] First run (§7) with exact copy, `Skip for now` (app-private source, Choose folder later, Use phone storage, one-time reminder), persistable grant, three folder outcomes, format note, home role request (RoleManager), one-time hint.
 - [ ] Settings (§8): Config folder (incl. Choose folder / Use phone storage), Ask before merging, Restore previous layout, Include work apps in config, Hidden apps, Label backdrop, Open keyboard with drawer, Home app, Grid, About.
 - [ ] Snackbars (§9) with Undo where listed.
 - [ ] Accessibility (§12): labels, custom actions for every drag action, 48 dp targets, font scaling, reduced motion.

@@ -3,7 +3,7 @@
 An Android home screen whose whole layout lives in one file, `launcher.json`, in a folder you choose. Rearrange apps
 on your phone and the file updates. Edit the file on your computer (or let an agent edit it) and the phone updates.
 
-- Kotlin + Jetpack Compose, Android 6.0+ (minSdk 23). Pinned shortcuts need Android 8.0+.
+- Kotlin + Jetpack Compose, Android 10+ (minSdk 29).
 - No risky permissions: no storage, `QUERY_ALL_PACKAGES`, Accessibility or network access. You grant access to one
   folder through Android's system folder picker, and you can revoke it.
 - Status: architecture and UX specs are done. See [ARCHITECTURE.md](ARCHITECTURE.md) and [docs/ux.md](docs/ux.md).
