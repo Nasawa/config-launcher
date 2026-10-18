@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "grid": {
+    "columns": 4,
+    "rows": 5
+  },
+  "pages": [
+    {
+      "id": "home",
+      "title": "Home",
+      "items": [
+        {
+          "id": "a-settings",
+          "type": "app",
+          "package": "settings",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": "s-chrome-incognito",
+          "type": "shortcut",
+          "package": "com.android.chrome",
+          "shortcutId": "incognito-tab",
+          "label": "Incognito",
+          "x": 1,
+          "y": 0
+        },
+        {
+          "id": "f-tools",
+          "type": "folder",
+          "label": "Tools",
+          "items": [
+            {
+              "id": "a-calc",
+              "type": "app",
+              "package": "com.google.android.calculator"
+            },
+            {
+              "id": "a-clock",
+              "type": "app",
+              "package": "com.google.android.deskclock",
+              "activity": "com.android.deskclock.DeskClock"
+            }
+          ],
+          "x": 2,
+          "y": 0
+        }
+      ]
+    }
+  ],
+  "dock": [
+    {
+      "id": "a-dialer",
+      "type": "app",
+      "package": "com.google.android.dialer"
+    },
+    {
+      "id": "a-camera",
+      "type": "app",
+      "package": "com.android.camera2"
+    }
+  ],
+  "drawer": {
+    "sort": "label",
+    "hidden": [],
+    "rules": [
+      {
+        "id": "r-games",
+        "group": "Games",
+        "match": {
+          "category": "game"
+        }
+      }
+    ]
+  },
+  "unsorted": {
+    "mode": "drawer"
+  }
+}
