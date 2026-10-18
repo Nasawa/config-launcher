@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-/** Whether home-screen labels get the backdrop scrim; provided around the pager and dock only. */
+/** Whether home-screen labels get the backdrop scrim; provided around the home-grid pager only (not the dock or drawer). */
 val LocalLabelBackdrop = compositionLocalOf { false }
 
 object LabelBackdrop {
