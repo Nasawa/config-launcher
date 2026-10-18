@@ -32,6 +32,9 @@ class LocalFileSource(val dir: File, val sidecars: Boolean = true) : ConfigSourc
         if (!temp.renameTo(file)) throw IOException("could not replace ${file.name}")
     }
 
+    // App-only mode: sync-conflict notices don't apply (§18.5).
+    override fun siblingNames(): List<String> = if (sidecars) dir.list()?.toList().orEmpty() else emptyList()
+
     override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
         if (!sidecars) throw UnsupportedOperationException("app-only mode has no .configlauncher folder (§18.5)")
         val d = File(File(dir, ".configlauncher"), subdir)
