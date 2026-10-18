@@ -35,23 +35,29 @@ class FixtureConformanceTest {
 }
 
 /**
- * A§15 OQ-9 allows 2000 items, but the launcher reads at most 256 KiB. A legal near-max config,
- * once written back in canonical (pretty) form, must still be readable by the launcher itself.
+ * §17 Q16: 2 MiB read cap. A legal 2000-item config with long strings (100-char package,
+ * 152-char activity, 60-emoji labels, 64-char IDs, profile written; ~1.46 MiB canonical)
+ * must fit, so the launcher can always read its own write-back.
  */
 class CanonicalSizeTest {
-    @Test fun canonicalWriteOfMaxLegalConfigFitsReadCap() {
+    @Test fun canonicalWriteOfLongStringMaxConfigFitsReadCap() {
+        val pkg = "com." + "a".repeat(96)
+        val act = pkg + "." + "B".repeat(151 - pkg.length)
+        val label = "\uD83D\uDE00".repeat(60)
         val pages = (0 until 14).joinToString(",") { p ->
             val n = if (p < 13) 144 else 2000 - 13 * 144
             val items = (0 until n).joinToString(",") { i ->
-                """{"id":"a-$p-$i","type":"app","package":"com.example.app$i","x":${i % 12},"y":${i / 12}}"""
+                val id = ("a-$p-$i-" + "x".repeat(64)).take(64)
+                """{"id":"$id","type":"app","package":"$pkg","activity":"$act","profile":"personal","label":"$label","x":${i % 12},"y":${i / 12}}"""
             }
             """{"id":"p$p","items":[$items]}"""
         }
         val compact = """{"schemaVersion":1,"grid":{"columns":12,"rows":12},"pages":[$pages]}"""
         val parsed = ConfigCodec.decode(compact.toByteArray())
-        if (parsed !is ParseResult.Ok) fail("near-max config should be valid: ${(parsed as ParseResult.Invalid).errors.take(3)}")
+        if (parsed !is ParseResult.Ok) fail("long-string max config should be valid: ${(parsed as ParseResult.Invalid).errors.take(3)}")
         val written = ConfigCodec.encodeBytes((parsed as ParseResult.Ok).config)
         if (written.size > ConfigCodec.MAX_BYTES)
-            fail("canonical write is ${written.size} bytes, over the ${ConfigCodec.MAX_BYTES}-byte read cap: the launcher would reject its own file")
+            fail("canonical write is ${written.size} bytes, over the ${ConfigCodec.MAX_BYTES}-byte cap")
+        if (written.size < 1_000_000) fail("fixture should be near the long-string worst case, got ${written.size}")
     }
 }

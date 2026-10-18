@@ -57,6 +57,7 @@ class ConfigCodecTest {
 
     @Test fun rejectsOversize() {
         assertTrue(ConfigCodec.decode(ByteArray(ConfigCodec.MAX_BYTES + 1)) is ParseResult.Invalid)
+        assertEquals(2 * 1024 * 1024, ConfigCodec.MAX_BYTES)
     }
 
     @Test fun newerSchemaVersionIsReported() {

@@ -175,11 +175,11 @@
     "note": "x- keys still count toward depth"
   },
   {
-    "file": "invalid/oversize-257k.json",
-    "expect": "refused before full read (COLUMN_SIZE + stream cap), B2/B1, last-good kept",
+    "file": "valid/size-257k.json",
+    "expect": "valid (under the 2 MiB cap)",
     "layer": "store",
-    "ref": "§4 step 1, §15 OQ-9",
-    "note": ">256 KiB"
+    "ref": "§17 Q16",
+    "note": "was invalid under the old 256 KiB cap; over-cap rejection is covered by ConfigCodecTest.rejectsOversize"
   },
   {
     "file": "invalid/missing-schemaVersion.json",
