@@ -91,7 +91,7 @@ class AutoMergeTest {
         val before = lg.historyFiles().size
         assertFalse(e.undoMerge())
         assertEquals(pulled, src.file.readText())   // never overwrites the pull
-        assertEquals("File changed again, Undo cancelled.", e.state.value.notice)
+        assertEquals(Msg(dev.nasawa.configlauncher.R.string.undo_cancelled), e.state.value.notice)
         assertFalse(e.state.value.mergeUndo)
         assertEquals("no write, no new snapshots", before, lg.historyFiles().size)
     }

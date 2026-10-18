@@ -30,4 +30,83 @@
     <!-- Mixed TalkBack long form: %1$s = merge_updated, %2$s = merge_kept_part, %3$s = merge_skipped_a11y -->
     <string name="merge_mixed_a11y">%1$s %2$s. %3$s</string>
     <string name="merge_undo">Undo</string>
+    <!-- One-shot notices (toasts) -->
+    <string name="undo_cancelled">File changed again, Undo cancelled.</string>
+    <string name="folder_read_failed">Couldn\'t read that folder: %1$s</string>
+    <string name="folder_invalid">launcher.json in that folder has problems, so it wasn\'t used.</string>
+    <string name="folder_backup_failed">Couldn\'t back up the folder\'s launcher.json: %1$s</string>
+    <string name="move_failed">Couldn\'t move your layout: %1$s</string>
+    <string name="broken_saved_folder">Your broken launcher.json was saved to .configlauncher/broken/.</string>
+    <string name="broken_saved_history">Your broken launcher.json was saved to history.</string>
+    <string name="backup_failed">Couldn\'t update the backup copy (phone storage full).</string>
+    <string name="open_failed">Couldn\'t open %1$s</string>
+    <string name="work_disabled">Turn on \"Include work apps in config\" to use this.</string>
+    <string name="shortcut_gone">Shortcut no longer available</string>
+    <string name="not_installed">Not installed</string>
+
+    <!-- Banners (ux.md §6.1) -->
+    <string name="b1_cant_read">Can\'t read launcher.json. Showing the last working layout.</string>
+    <plurals name="b2_invalid">
+        <item quantity="one">launcher.json has %d problem. Showing the last working layout.</item>
+        <item quantity="other">launcher.json has %d problems. Showing the last working layout.</item>
+    </plurals>
+    <string name="b3_access_lost">Can\'t reach your config folder. Showing the last working layout.</string>
+    <string name="b4_missing">No launcher.json yet.</string>
+    <string name="b5_save_failed">Couldn\'t save your change.</string>
+    <string name="b5_too_large">Couldn\'t save your change: launcher.json would be over %1$d MB.</string>
+    <string name="b5_undo_failed">Couldn\'t undo.</string>
+    <string name="b5_create_failed">Couldn\'t create launcher.json.</string>
+    <string name="b7_too_new">This file needs a newer Config Launcher.</string>
+    <plurals name="b6_conflict">
+        <item quantity="one">launcher.json changed while you were editing (%d change).</item>
+        <item quantity="other">launcher.json changed while you were editing (%d changes).</item>
+    </plurals>
+    <string name="action_create">Create from current layout</string>
+    <string name="action_reconnect">Reconnect</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_use_file">Use file</string>
+    <string name="action_keep_mine">Keep mine</string>
+    <string name="error_at">Line %1$d, column %2$d: %3$s</string>
+    <string name="tap_to_see_all">Tap to see all</string>
+
+    <!-- Home, menu, drawer -->
+    <string name="source_app_storage">App storage</string>
+    <string name="source_folder">Folder: %1$s</string>
+    <string name="menu_pick_folder">Pick config folder…</string>
+    <string name="menu_use_phone_storage">Use phone storage</string>
+    <string name="menu_label_backdrop">Label backdrop</string>
+    <string name="menu_ask_before_merging">Ask before merging</string>
+    <string name="menu_open_keyboard">Open keyboard with drawer</string>
+    <string name="menu_reload">Reload launcher.json</string>
+    <string name="search_hint">Search apps</string>
+    <string name="search_no_match">No apps match \"%1$s\".</string>
+    <string name="dock_empty">Dock: long-press an app and drop it here</string>
+    <string name="close">Close</string>
+    <string name="apps">Apps</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- First run (ux.md §7, §18.2) -->
+    <string name="first_run_title">Choose your config folder</string>
+    <string name="first_run_body">Pick a folder for launcher.json. A folder that a sync app (like Syncthing) or a git app keeps in sync lets you edit it from your computer, with history. Config Launcher also keeps a small .configlauncher folder there for status and backups.</string>
+    <string name="first_run_cancelled">No folder chosen. You can skip this and connect one later in Settings.</string>
+    <string name="choose_folder">Choose folder</string>
+    <string name="skip_for_now">Skip for now</string>
+    <string name="skip_confirm_title">Use without a folder?</string>
+    <string name="skip_confirm_body">Your layout will be kept only on this phone. You can\'t edit it from your computer until you choose a folder in Settings.</string>
+    <string name="cloud_use_anyway">Use anyway</string>
+    <string name="cloud_choose_another">Choose another folder</string>
+    <string name="cloud_body">Cloud folders can take a while to sync. A Syncthing or git folder works best.</string>
+    <string name="move_title">This folder already has a launcher.json.</string>
+    <plurals name="move_pages">
+        <item quantity="one">%d page</item>
+        <item quantity="other">%d pages</item>
+    </plurals>
+    <plurals name="move_items">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <string name="move_valid">It has %1$s and %2$s. If you replace it, the folder\'s file is first copied to .configlauncher/backup/.</string>
+    <string name="move_invalid">It has problems:\n%1$s\nIf you replace it, it is first copied to .configlauncher/backup/.</string>
+    <string name="move_replace">Replace it with mine</string>
+    <string name="move_use_folder">Use the folder\'s layout</string>
 </resources>

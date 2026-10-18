@@ -32,8 +32,14 @@ sealed interface Issue {
     data class AccessLost(val message: String) : Issue { override val details get() = listOf(message) }
     /** B4: folder fine, launcher.json missing. Actions: Create from current layout, Reconnect. Never auto-created. */
     data object Missing : Issue { override val details get() = emptyList<String>() }
-    /** B5: our write failed (or would exceed the cap); the edit stays in memory. */
-    data class SaveFailed(val message: String) : Issue { override val details get() = listOf(message) }
+    /** B5: our write failed (or would exceed the cap); the edit stays in memory. [title] is the banner text; [message] the technical detail. */
+    data class SaveFailed(val message: String, val title: Msg = Msg(dev.nasawa.configlauncher.R.string.b5_save_failed)) : Issue {
+        override val details get() = listOf(message)
+        companion object {
+            fun of(e: Exception, title: Int = dev.nasawa.configlauncher.R.string.b5_save_failed) = SaveFailed(e.reason(),
+                if (e is TooLargeException) Msg(dev.nasawa.configlauncher.R.string.b5_too_large, e.limitMb) else Msg(title))
+        }
+    }
     /** B7: schemaVersion newer than supported. */
     data class TooNew(val message: String) : Issue { override val details get() = listOf(message) }
     /** Transient read failure (provider unavailable); shown as B1-style "can't read". */
@@ -55,7 +61,7 @@ data class LoadState(
     /** launcher.json changed under pending edits (banner B6: Use file / Keep mine). */
     val conflict: Boolean = false,
     /** One-shot snackbar text, cleared by [ConfigEngine.consumeNotice]. */
-    val notice: String? = null,
+    val notice: Msg? = null,
     /** Whether the source has a folder grant that "Reconnect" can re-pick (false for app storage). */
     val reconnectable: Boolean = true,
     /** §18.2: an automatic merge just happened; the snackbar offers Undo ([ConfigEngine.undoMerge]). */
@@ -72,7 +78,7 @@ data class LoadState(
  * §17 Q5) → capped read → hash guard → 300 ms stability re-check → parse/migrate/validate →
  * atomic swap into [state] → last-good. Pure Kotlin; Android wiring lives in ConfigStore.
  */
-private const val CANCELLED = "File changed again, Undo cancelled."
+private val CANCELLED = Msg(dev.nasawa.configlauncher.R.string.undo_cancelled)
 
 class ConfigEngine(
     @Volatile var source: ConfigSource,
@@ -144,19 +150,19 @@ class ConfigEngine(
      */
     suspend fun moveTo(target: ConfigSource, useMine: Boolean): Boolean = mutex.withLock {
         val existing = try { target.read(Limits.MAX_BYTES) } catch (e: Exception) {
-            _state.update { it.copy(notice = "Couldn't read that folder: ${e.message}") }; return false
+            _state.update { it.copy(notice = Msg(dev.nasawa.configlauncher.R.string.folder_read_failed, e.reason())) }; return false
         }
         val mine = existing == null || useMine
         val adopted = if (mine) null else when (val r = ConfigCodec.decode(existing!!)) {
             is ParseResult.Ok -> r.config
             // Grace review: never adopt an invalid folder file. Nothing changes; the user can replace it or fix it.
-            is ParseResult.Invalid -> { _state.update { it.copy(notice = "launcher.json in that folder has problems, so it wasn't used.") }; return false }
+            is ParseResult.Invalid -> { _state.update { it.copy(notice = Msg(dev.nasawa.configlauncher.R.string.folder_invalid)) }; return false }
         }
         if (existing != null && useMine) {
             // Folder: agent-visible backup first; if that fails, don't overwrite. App-only (§18.5): private history.
             try { target.writeSidecar("backup", StatusJson.brokenFileName(clock()), existing) }
             catch (_: UnsupportedOperationException) { runCatching { lastGood.snapshot(existing) } }
-            catch (e: Exception) { _state.update { it.copy(notice = "Couldn't back up the folder's launcher.json: ${e.message}") }; return false }
+            catch (e: Exception) { _state.update { it.copy(notice = Msg(dev.nasawa.configlauncher.R.string.folder_backup_failed, e.reason())) }; return false }
         }
         val oldSource = source; val oldState = _state.value; val oldStamp = lastStamp
         if (adopted != null) runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
@@ -172,7 +178,7 @@ class ConfigEngine(
         } catch (e: Exception) {
             // Roll back: the old source stays in charge and nothing is reported as moved.
             source = oldSource; lastStamp = oldStamp
-            _state.value = oldState.copy(notice = "Couldn't move your layout: ${e.message}")
+            _state.value = oldState.copy(notice = Msg(dev.nasawa.configlauncher.R.string.move_failed, e.reason()))
             false
         }
     }
@@ -268,7 +274,7 @@ class ConfigEngine(
      */
     suspend fun flush(): Boolean = mutex.withLock {
         if (pending.isEmpty() || _state.value.conflict) return false
-        val current = try { source.read(Limits.MAX_BYTES) } catch (e: Exception) { return fail(Issue.SaveFailed(e.message ?: "read failed")) }
+        val current = try { source.read(Limits.MAX_BYTES) } catch (e: Exception) { return fail(Issue.SaveFailed.of(e)) }
         val curHash = current?.let { ConfigCodec.sha256(it) }
         val base = _state.value.baseHash
         val stillBroken = curHash != null && curHash == invalidHash
@@ -287,11 +293,11 @@ class ConfigEngine(
             if (runCatching { source.writeSidecar("broken", name, b) }.isSuccess) brokenName = name
         }
         val cfg = _state.value.config.let { it.copy(revision = (it.revision ?: 0) + 1) }
-        try { writeLocked(cfg) } catch (e: Exception) { return fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")) }
+        try { writeLocked(cfg) } catch (e: Exception) { return fail(Issue.SaveFailed.of(e)) }
         pending.clear(); invalidHash = null; clearUndo()
         _state.update { it.copy(pendingEdits = 0, issue = null, notice = when {
-            brokenName != null -> "Your broken launcher.json was saved to .configlauncher/broken/."
-            stillBroken -> "Your broken launcher.json was saved to history."
+            brokenName != null -> Msg(dev.nasawa.configlauncher.R.string.broken_saved_folder)
+            stillBroken -> Msg(dev.nasawa.configlauncher.R.string.broken_saved_history)
             else -> it.notice
         }) }
         true
@@ -310,7 +316,7 @@ class ConfigEngine(
         if (ConfigCodec.decode(ConfigCodec.encodeBytes(out)) !is ParseResult.Ok) return false
         runCatching { lastGood.snapshot(fileBytes) }
         runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
-        val written = try { writeLocked(out) } catch (e: Exception) { fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")); return true }
+        val written = try { writeLocked(out) } catch (e: Exception) { fail(Issue.SaveFailed.of(e)); return true }
         pending.clear()
         // §9.1: all-skipped merges have no Undo (nothing of ours was written).
         val undo = rep.kept > 0
@@ -332,7 +338,7 @@ class ConfigEngine(
         val before = undoBytes ?: return false
         val touched = undoTouched
         clearUndo()
-        val cancel = { msg: String -> _state.update { it.copy(mergeUndo = false, merge = null, notice = msg) }; false }
+        val cancel = { msg: Msg -> _state.update { it.copy(mergeUndo = false, merge = null, notice = msg) }; false }
         val now = try { source.read(Limits.MAX_BYTES) } catch (_: Exception) { null } ?: return cancel(CANCELLED)
         val target: LauncherConfig = if (ConfigCodec.sha256(now) == mergedHash) {
             (ConfigCodec.decode(before) as? ParseResult.Ok)?.config ?: return cancel(CANCELLED)
@@ -346,7 +352,7 @@ class ConfigEngine(
         runCatching { lastGood.snapshot(before) }
         if (ConfigCodec.sha256(now) != mergedHash) runCatching { lastGood.snapshot(now) }
         try { writeLocked(target); _state.update { it.copy(mergeUndo = false, merge = null) }; true }
-        catch (e: Exception) { fail(Issue.SaveFailed("Couldn't undo: ${e.message}")) }
+        catch (e: Exception) { fail(Issue.SaveFailed.of(e, dev.nasawa.configlauncher.R.string.b5_undo_failed)) }
     }
 
     private fun clearUndo() { undoBytes = null; mergedHash = null; undoTouched = emptyList() }
@@ -365,14 +371,14 @@ class ConfigEngine(
 
     /** B6 "Keep mine": replay local ops by ID onto the file's version (snapshotted first) and write. */
     suspend fun resolveKeepMine(): Boolean = mutex.withLock {
-        val bytes = try { source.read(Limits.MAX_BYTES) } catch (e: Exception) { return fail(Issue.SaveFailed(e.message ?: "read failed")) }
+        val bytes = try { source.read(Limits.MAX_BYTES) } catch (e: Exception) { return fail(Issue.SaveFailed.of(e)) }
         val fileCfg = bytes?.let { (ConfigCodec.decode(it) as? ParseResult.Ok)?.config }
         val ops = pending.toList()
         val rep = if (fileCfg == null) dev.nasawa.configlauncher.model.Replay(_state.value.config, ops.size, emptyList()) else Edits.replay(fileCfg, ops)
         val merged = rep.config
         bytes?.let { runCatching { lastGood.snapshot(it) } }
         val out = merged.copy(revision = maxOf(merged.revision ?: 0, _state.value.config.revision ?: 0) + 1)
-        try { writeLocked(out) } catch (e: Exception) { return fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")) }
+        try { writeLocked(out) } catch (e: Exception) { return fail(Issue.SaveFailed.of(e)) }
         pending.clear()
         _state.update {
             it.copy(conflict = false, pendingEdits = 0, issue = null,
@@ -388,7 +394,7 @@ class ConfigEngine(
             if (source.stamp() != null) return pollLocked(force = true) // appeared meanwhile: never clobber
             writeLocked(_state.value.config)
             true
-        } catch (e: Exception) { fail(Issue.SaveFailed("Couldn't create launcher.json: ${e.message}")) }
+        } catch (e: Exception) { fail(Issue.SaveFailed.of(e, dev.nasawa.configlauncher.R.string.b5_create_failed)) }
     }
 
     /**
@@ -397,7 +403,7 @@ class ConfigEngine(
      */
     internal fun writeLocked(config: LauncherConfig): String {
         val bytes = ConfigCodec.encodeBytes(config)
-        if (bytes.size > Limits.MAX_BYTES) throw IOException("launcher.json would be over ${Limits.MAX_BYTES / 1024 / 1024} MB")
+        if (bytes.size > Limits.MAX_BYTES) throw TooLargeException(Limits.MAX_BYTES / 1024 / 1024)
         val hash = ConfigCodec.sha256(bytes)
         selfWrites.addLast(hash); while (selfWrites.size > 4) selfWrites.removeFirst()
         source.write(bytes)
@@ -416,7 +422,7 @@ class ConfigEngine(
         } catch (e: Exception) {
             backupError = "Couldn't update the backup copy: ${e.message ?: e.javaClass.simpleName}"
             emitStatus()
-            _state.update { it.copy(notice = "Couldn't update the backup copy (phone storage full).") }
+            _state.update { it.copy(notice = Msg(dev.nasawa.configlauncher.R.string.backup_failed)) }
         }
     }
 

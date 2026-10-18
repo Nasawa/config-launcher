@@ -121,7 +121,8 @@ class MoveLayoutTest {
         assertFalse(e.moveTo(broken, useMine = true))
         assertSame(phone, e.source)
         assertNull(e.state.value.issue)
-        assertTrue(e.state.value.notice!!.contains("read-only"))
+        assertEquals(dev.nasawa.configlauncher.R.string.move_failed, e.state.value.notice!!.id)
+        assertTrue(e.state.value.notice!!.args.single().toString().contains("read-only"))
         assertFalse(e.poll(force = true)) // still bound to the phone file
     }
 

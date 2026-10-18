@@ -74,7 +74,7 @@ class FolderSidecarTest {
         val copy = File(src.dir, ".configlauncher/broken/launcher.20260921T141320Z.json")
         assertEquals("{ broken", copy.readText())
         assertTrue(lg.historyFiles().size > historyBefore)
-        assertEquals("Your broken launcher.json was saved to .configlauncher/broken/.", e.state.value.notice)
+        assertEquals(Msg(dev.nasawa.configlauncher.R.string.broken_saved_folder), e.state.value.notice)
         assertEquals("ok", status(src)["result"]!!.jsonPrimitive.content)
         assertFalse(e.poll(force = true)) // our own write + sidecars: no reload
     }
@@ -87,6 +87,6 @@ class FolderSidecarTest {
         File(src.dir, ".configlauncher/broken").writeText("blocker") // a file where the dir should be
         e.edit(Edit.MoveToCell("a", "home", 1, 1))
         assertTrue(e.flush())
-        assertEquals("Your broken launcher.json was saved to history.", e.state.value.notice)
+        assertEquals(Msg(dev.nasawa.configlauncher.R.string.broken_saved_history), e.state.value.notice)
     }
 }

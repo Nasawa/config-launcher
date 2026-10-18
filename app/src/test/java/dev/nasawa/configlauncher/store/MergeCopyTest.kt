@@ -55,8 +55,8 @@ class MergeCopyTest {
     }
 
     @Test fun durationAndSilence() {
-        assertEquals(6_000L, MergeCopy.durationMs(MergeNotice(1, 0, null, true)))
-        assertEquals(4_000L, MergeCopy.durationMs(MergeNotice(0, 1, null, false)))
+        assertEquals("Undo window is 10 s (§18.2)", 10_000L, MergeCopy.durationMs(MergeNotice(1, 0, null, true)))
+        assertEquals(6_000L, MergeCopy.durationMs(MergeNotice(0, 1, null, false)))
         assertTrue("Keep mine, all kept", MergeNotice(2, 0, null, undo = false).silent)
         assertFalse(MergeNotice(1, 1, null, undo = false).silent)
     }
