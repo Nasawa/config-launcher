@@ -92,4 +92,40 @@ class WriteBackTest {
         e.dragging = false
         assertTrue(e.poll())
     }
+
+    @Test fun editsDuringConflictJoinQueueAndKeepMineReplaysAll() = runBlocking {
+        val (e, src) = setup()
+        e.edit(Edit.MoveToCell("a", "home", 2, 2))
+        src.file.writeText(file1.replace("\"revision\":1", "\"revision\":9"))
+        e.flush()
+        assertTrue(e.state.value.conflict)
+        assertTrue(e.edit(Edit.MoveToDock("b", 0)))
+        assertEquals(2, e.state.value.pendingEdits)
+        assertFalse(e.flush())
+        assertTrue(e.resolveKeepMine())
+        val c = onDisk(src)
+        assertEquals(listOf("b"), c.dock!!.map { it.id })
+        assertEquals(2 to 2, c.pages[0].items.first { it.id == "a" }.let { it.x to it.y })
+    }
+
+    @Test fun editWhileFileStillBrokenOverwritesAfterSnapshot() = runBlocking {
+        val (e, src) = setup()
+        src.file.writeText("{ broken"); src.file.setLastModified(5000)
+        e.poll()
+        assertNotNull(e.state.value.issue)
+        assertTrue(e.edit(Edit.MoveToCell("a", "home", 1, 1)))
+        assertTrue(e.flush())
+        assertFalse(e.state.value.conflict)
+        assertEquals(1 to 1, onDisk(src).pages[0].items.first { it.id == "a" }.let { it.x to it.y })
+    }
+
+    @Test fun brokenFileChangedAgainBeforeWriteIsAConflict() = runBlocking {
+        val (e, src) = setup()
+        src.file.writeText("{ broken"); src.file.setLastModified(5000)
+        e.poll()
+        e.edit(Edit.MoveToCell("a", "home", 1, 1))
+        src.file.writeText(file1.replace("\"revision\":1", "\"revision\":7"))
+        assertFalse(e.flush())
+        assertTrue(e.state.value.conflict)
+    }
 }

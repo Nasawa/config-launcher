@@ -40,17 +40,27 @@ fun HomeScreen(vm: HomeViewModel) {
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
-    val drag = remember { DragController({ vm.store.engine }) { vm.store.edit(it) } }
-    LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
+    val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }) { vm.store.edit(it) } }
+    var cloudUri by remember { mutableStateOf<android.net.Uri?>(null) }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) vm.store.useFolder(uri)
+        if (uri != null) { if (vm.store.isCloudFolder(uri)) cloudUri = uri else vm.store.useFolder(uri) }
     }
+    LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
+    val toast = { msg: String -> Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
+    val launchApp = { app: InstalledApp -> if (!vm.apps.launch(app)) toast("Couldn't open ${Labels.clean(app.label)}") }
 
     val onOpen: (ResolvedItem) -> Unit = { r ->
         when (val item = r.item) {
             is FolderItem -> openFolder = r
-            is ShortcutItem -> if (!vm.apps.launch(item)) Toast.makeText(ctx, "Shortcut unavailable (set as default launcher?)", Toast.LENGTH_SHORT).show()
-            is AppItem -> r.app?.let(vm.apps::launch) ?: Toast.makeText(ctx, "${item.packageName} is not installed", Toast.LENGTH_SHORT).show()
+            is ShortcutItem -> when {
+                r.workDisabled -> toast("Turn on \"Include work apps in config\" to use this.")
+                !vm.apps.launch(item) -> toast("Shortcut no longer available")
+            }
+            is AppItem -> when {
+                r.workDisabled -> toast("Turn on \"Include work apps in config\" to use this.")
+                r.app == null -> toast("Not installed")
+                else -> launchApp(r.app)
+            }
         }
     }
 
@@ -59,7 +69,7 @@ fun HomeScreen(vm: HomeViewModel) {
             Column(Modifier.fillMaxSize().systemBarsPadding()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(ui.load.sourceName, style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
-                    if (ui.layout.mode == UnsortedMode.DRAWER) TextButton({ drawerOpen = true }) { Text("Apps (${ui.layout.unsorted.size})") }
+                    TextButton({ drawerOpen = true }) { Text("Apps") }
                     Box {
                         TextButton({ menuOpen = true }) { Text("⋮") }
                         DropdownMenu(menuOpen, { menuOpen = false }) {
@@ -69,8 +79,8 @@ fun HomeScreen(vm: HomeViewModel) {
                         }
                     }
                 }
-                if (ui.load.conflict) ConflictBanner(onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
-                if (ui.load.errors.isNotEmpty()) ErrorBanner(ui.load.errors)
+                if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
+                ui.load.issue?.let { IssueBanner(it, onReconnect = { pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = vm.store::useAppStorage) }
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
                 pages.getOrNull(pager.currentPage).let { p ->
@@ -90,6 +100,15 @@ fun HomeScreen(vm: HomeViewModel) {
             }
         }
 
+        cloudUri?.let { uri ->
+            AlertDialog(
+                onDismissRequest = { cloudUri = null },
+                confirmButton = { TextButton({ cloudUri = null; vm.store.useFolder(uri) }) { Text("Use anyway") } },
+                dismissButton = { TextButton({ cloudUri = null }) { Text("Cancel") } },
+                text = { Text("Cloud folders can take a while to sync. A Syncthing or git folder works best.") },
+            )
+        }
+
         openFolder?.let { folder ->
             AlertDialog(
                 onDismissRequest = { openFolder = null },
@@ -106,9 +125,9 @@ fun HomeScreen(vm: HomeViewModel) {
         if (drawerOpen) {
             ModalBottomSheet({ drawerOpen = false }) {
                 LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxHeight(0.85f).padding(8.dp)) {
-                    items(ui.layout.unsorted, key = { it.key }) { app ->
+                    items(ui.layout.drawer, key = { it.key }) { app ->
                         Tile(ResolvedItem(AppItem("drawer", app.packageName, app.activityName), app), vm.apps) {
-                            drawerOpen = false; vm.apps.launch(app)
+                            drawerOpen = false; launchApp(app)
                         }
                     }
                 }
@@ -118,25 +137,44 @@ fun HomeScreen(vm: HomeViewModel) {
 }
 
 @Composable
-private fun ConflictBanner(onUseFile: () -> Unit, onKeepMine: () -> Unit) {
+private fun ConflictBanner(count: Int, onUseFile: () -> Unit, onKeepMine: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(8.dp).background(Color(0xFF4A3B00), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("launcher.json changed while you were editing.", color = Color.White, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        Text("launcher.json changed while you were editing ($count change${if (count == 1) "" else "s"}).", color = Color.White, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
         TextButton(onUseFile) { Text("Use file") }
         TextButton(onKeepMine) { Text("Keep mine") }
     }
 }
 
 @Composable
-private fun ErrorBanner(errors: List<String>) {
-    var expanded by remember(errors) { mutableStateOf(false) }
+private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, onReconnect: () -> Unit, onCreate: () -> Unit, onUseAppStorage: () -> Unit) {
+    val errors = issue.details
+    var expanded by remember(issue) { mutableStateOf(false) }
+    val title = when (issue) {
+        is dev.nasawa.configlauncher.store.Issue.ParseError, is dev.nasawa.configlauncher.store.Issue.ReadFailed -> "Can't read launcher.json. Showing the last working layout."
+        is dev.nasawa.configlauncher.store.Issue.Invalid -> "launcher.json has ${errors.size} problem${if (errors.size == 1) "" else "s"}. Showing the last working layout."
+        is dev.nasawa.configlauncher.store.Issue.AccessLost -> "Can't reach your config folder. Showing the last working layout."
+        dev.nasawa.configlauncher.store.Issue.Missing -> "No launcher.json yet."
+        is dev.nasawa.configlauncher.store.Issue.SaveFailed -> "Couldn't save your change."
+        is dev.nasawa.configlauncher.store.Issue.TooNew -> "This file needs a newer Config Launcher."
+    }
     Column(
         Modifier.fillMaxWidth().padding(8.dp).background(Color(0xFF5C1F1F), RoundedCornerShape(8.dp))
             .clickable { expanded = !expanded }.padding(10.dp),
     ) {
-        Text("launcher.json has ${errors.size} problem(s). Showing the last working layout.", color = Color.White)
+        Text(title, color = Color.White)
+        Row {
+            when (issue) {
+                is dev.nasawa.configlauncher.store.Issue.AccessLost -> TextButton(onReconnect) { Text("Reconnect") }
+                dev.nasawa.configlauncher.store.Issue.Missing -> {
+                    TextButton(onCreate) { Text("Create from current layout") }
+                    TextButton(onReconnect) { Text("Reconnect") }
+                }
+                else -> {}
+            }
+        }
         val shown = if (expanded) errors else errors.take(1)
         shown.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFCDD2)) }
         if (!expanded && errors.size > 1) Text("Tap to see all", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
@@ -192,12 +230,12 @@ private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragContr
 @Composable
 fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onClick: () -> Unit) {
     Column(
-        modifier.clickable(onClick = onClick).padding(4.dp).alpha(if (r.missing) 0.4f else 1f),
+        modifier.clickable(onClick = onClick).padding(4.dp).alpha(if (r.missing || r.app?.paused == true) 0.4f else 1f),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (r.item is FolderItem) FolderIcon(r, apps) else AppIconImage(r.app, apps, 48)
         if (showLabel) Text(
-            r.title, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+            Labels.clean(r.title), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
             style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.widthIn(max = 76.dp),
         )
     }

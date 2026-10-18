@@ -22,7 +22,7 @@ import dev.nasawa.configlauncher.store.ConfigEngine
  * Long-press drag to reorder. Tracks the dragged tile in root coordinates and on drop turns the
  * pointer position into an [Edit]: a page cell (MoveToCell / Add for Unsorted apps) or a dock slot.
  */
-class DragController(private val engine: () -> ConfigEngine, private val submit: (Edit) -> Unit) {
+class DragController(private val engine: () -> ConfigEngine, private val onCancel: () -> Unit = {}, private val submit: (Edit) -> Unit) {
     var dragged by mutableStateOf<ResolvedItem?>(null); private set
     var offset by mutableStateOf(Offset.Zero); private set
     private var startRect = Rect.Zero
@@ -44,7 +44,10 @@ class DragController(private val engine: () -> ConfigEngine, private val submit:
 
     fun move(delta: Offset) { offset += delta }
 
-    fun cancel() { dragged = null; offset = Offset.Zero; engine().dragging = false }
+    private fun end() { dragged = null; offset = Offset.Zero; engine().dragging = false }
+
+    /** §17 Q6: a cancelled drag has no pending op, so a held incoming file is applied right away. */
+    fun cancel() { end(); onCancel() }
 
     fun drop() {
         val item = dragged ?: return
@@ -66,8 +69,8 @@ class DragController(private val engine: () -> ConfigEngine, private val submit:
             fromSynthetic && firstPageId != null -> Edit.Add(item.item.withNewId(), firstPageId)
             else -> null
         }
-        cancel()
-        e?.let(submit)
+        end()
+        if (e != null) submit(e) else onCancel()
     }
 
     private fun dev.nasawa.configlauncher.model.Item.withNewId() =

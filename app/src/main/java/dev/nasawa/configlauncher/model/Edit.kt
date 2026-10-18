@@ -16,7 +16,8 @@ sealed interface Edit {
 data class ApplyResult(val config: LauncherConfig, val applied: Boolean)
 
 object Edits {
-    const val MAX_DOCK = 7
+    /** UI cap for drags into the dock (Q-S6: 5 for the MVP); the file itself may hold up to 7. */
+    const val MAX_DOCK = 5
 
     fun apply(c: LauncherConfig, e: Edit): ApplyResult = when (e) {
         is Edit.MoveToCell -> moveToCell(c, e)

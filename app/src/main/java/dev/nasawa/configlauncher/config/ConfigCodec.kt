@@ -18,16 +18,17 @@ object ConfigCodec {
     @OptIn(ExperimentalSerializationApi::class)
     private val pretty = Json { prettyPrint = true; prettyPrintIndent = "  " }
 
-    const val MAX_BYTES = 256 * 1024
+    const val MAX_BYTES = Limits.MAX_BYTES
 
     fun decode(bytes: ByteArray): ParseResult {
-        if (bytes.size > MAX_BYTES) return ParseResult.Invalid(listOf("file is larger than 256 KiB"))
-        var text = bytes.toString(Charsets.UTF_8)
+        if (bytes.size > MAX_BYTES) return ParseResult.Invalid(listOf("file is larger than ${MAX_BYTES / 1024 / 1024} MiB"))
+        var text = JsonPreScan.decodeUtf8(bytes) ?: return ParseResult.Invalid(listOf("not valid UTF-8"))
         if (text.startsWith("\uFEFF")) text = text.substring(1)
         return decode(text)
     }
 
     fun decode(text: String): ParseResult {
+        JsonPreScan.check(text)?.let { return ParseResult.Invalid(listOf("not valid JSON: $it")) }
         val tree = try { Json.parseToJsonElement(text) } catch (e: Exception) {
             return ParseResult.Invalid(listOf("not valid JSON: ${e.message?.lineSequence()?.firstOrNull()}"))
         }

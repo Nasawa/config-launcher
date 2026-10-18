@@ -47,8 +47,9 @@ class InstalledApps(context: Context) {
         val out = mutableListOf<InstalledApp>()
         for ((profile, user) in profiles()) {
             users[profile] = user
+            val paused = profile == Profile.WORK && runCatching { userManager.isQuietModeEnabled(user) }.getOrDefault(false)
             for (info in launcherApps.getActivityList(null, user)) {
-                val app = InstalledApp(info.componentName.packageName, info.componentName.className, info.label.toString(), profile)
+                val app = InstalledApp(info.componentName.packageName, info.componentName.className, info.label.toString(), profile, paused)
                 infos[app.key] = info
                 out += app
             }
@@ -66,8 +67,13 @@ class InstalledApps(context: Context) {
         return bmp
     }
 
-    fun launch(app: InstalledApp) {
-        launcherApps.startMainActivity(ComponentName(app.packageName, app.activityName), users[app.profile] ?: Process.myUserHandle(), null, null)
+    /** Launch in the app's own profile. Returns false (never throws) if it can't start. */
+    fun launch(app: InstalledApp): Boolean {
+        val user = users[app.profile] ?: return false
+        if (app.paused) { runCatching { userManager.requestQuietModeEnabled(false, user) }; return true }
+        return try {
+            launcherApps.startMainActivity(ComponentName(app.packageName, app.activityName), user, null, null); true
+        } catch (_: Exception) { false }
     }
 
     /** Pinned/dynamic shortcut; needs the default-launcher role (shortcut host access). */
@@ -83,6 +89,8 @@ class InstalledApps(context: Context) {
             override fun onPackageChanged(p: String?, u: UserHandle?) { icons.evictAll(); trySend(Unit) }
             override fun onPackagesAvailable(p: Array<out String>?, u: UserHandle?, r: Boolean) { trySend(Unit) }
             override fun onPackagesUnavailable(p: Array<out String>?, u: UserHandle?, r: Boolean) { trySend(Unit) }
+            override fun onPackagesSuspended(p: Array<out String>?, u: UserHandle?) { trySend(Unit) }
+            override fun onPackagesUnsuspended(p: Array<out String>?, u: UserHandle?) { trySend(Unit) }
         }
         launcherApps.registerCallback(cb, android.os.Handler(android.os.Looper.getMainLooper()))
         awaitClose { launcherApps.unregisterCallback(cb) }
