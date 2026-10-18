@@ -103,6 +103,12 @@ class ConfigEngine(
 
     /** Key of the last status.json written; identical results are not rewritten (no churn, no loop). */
     private var lastStatusKey: String? = null
+    /** Last load result reported in status.json, so backup/conflict changes can re-emit it. */
+    private var statusResult: Triple<String, List<String>, String>? = null
+    /** §17 Q4: last backup-copy failure (null once a later save succeeds). */
+    private var backupError: String? = null
+    /** OQ-21: sync/merge leftovers next to launcher.json. */
+    private var conflictFiles: List<String> = emptyList()
 
     private val _state = MutableStateFlow(initial().copy(reconnectable = source.reconnectable))
     val state: StateFlow<LoadState> = _state.asStateFlow()
@@ -152,7 +158,7 @@ class ConfigEngine(
         }
         val oldSource = source; val oldState = _state.value; val oldStamp = lastStamp
         if (adopted != null) runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
-        source = target; lastStamp = null; lastStatusKey = null
+        source = target; lastStamp = null; lastStatusKey = null; statusResult = null; conflictFiles = emptyList()
         try {
             if (adopted != null) {
                 val hash = ConfigCodec.sha256(existing!!)
@@ -173,7 +179,7 @@ class ConfigEngine(
         mutex.withLock {
             source = newSource
             lastStamp = null
-            lastStatusKey = null
+            lastStatusKey = null; statusResult = null; conflictFiles = emptyList()
             _state.update { it.copy(sourceName = newSource.displayName, issue = null, reconnectable = newSource.reconnectable) }
         }
         poll(force = true)
@@ -194,6 +200,7 @@ class ConfigEngine(
             lastStamp = null
             return fail(Issue.Missing)
         }
+        if (hashAnyway) refreshConflicts(src)
         if (!hashAnyway && stamp == lastStamp) return false
         val bytes = try { src.read(Limits.MAX_BYTES) } catch (e: Exception) { return fail(classify(e, src)) }
             ?: return fail(Issue.Missing)
@@ -390,17 +397,34 @@ class ConfigEngine(
 
     /** §17 Q4: a failed backup copy is non-blocking: one snackbar, retried on the next load/write. */
     private fun saveLastGood(bytes: ByteArray) {
-        try { lastGood.save(bytes) } catch (e: Exception) {
+        try {
+            lastGood.save(bytes)
+            if (backupError != null) { backupError = null; emitStatus() }
+        } catch (e: Exception) {
+            backupError = "Couldn't update the backup copy: ${e.message ?: e.javaClass.simpleName}"
+            emitStatus()
             _state.update { it.copy(notice = "Couldn't update the backup copy (phone storage full).") }
         }
     }
 
+    /** Re-list sync/merge leftovers (cheap: one directory listing, only on hash-anyway polls). */
+    private fun refreshConflicts(src: ConfigSource) {
+        val found = runCatching { SyncConflicts.find(src.siblingNames()) }.getOrNull() ?: return
+        if (found != conflictFiles) { conflictFiles = found; emitStatus() }
+    }
+
     /** §16/§17: `.configlauncher/status.json` so an agent can see why an edit was rejected. Best effort. */
     private fun writeStatus(result: String, errors: List<String>, hash: String) {
-        val key = "$result|$hash|${errors.hashCode()}"
+        statusResult = Triple(result, errors, hash)
+        emitStatus()
+    }
+
+    private fun emitStatus() {
+        val (result, errors, hash) = statusResult ?: return
+        val key = "$result|$hash|${errors.hashCode()}|$backupError|$conflictFiles"
         if (key == lastStatusKey) return
         try {
-            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock()))
+            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles))
             lastStatusKey = key
         } catch (_: Exception) { /* folder may be read-only or gone; the banner already says so */ }
     }

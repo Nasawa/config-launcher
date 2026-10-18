@@ -79,6 +79,8 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
         }
     }
 
+    override fun siblingNames(): List<String> = children(rootDocId).keys.toList()
+
     override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
         var dir = ensure(rootDocId, ".configlauncher", Document.MIME_TYPE_DIR)
         if (subdir.isNotEmpty()) dir = ensure(dir, subdir, Document.MIME_TYPE_DIR)
