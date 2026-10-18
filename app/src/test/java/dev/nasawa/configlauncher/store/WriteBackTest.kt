@@ -71,6 +71,21 @@ class WriteBackTest {
         assertEquals(listOf("c"), c.dock!!.map { it.id })
         assertEquals(10L, c.revision)
         assertFalse(e.state.value.conflict)
+        assertNull("§9.1: Keep mine with everything kept shows nothing extra", e.state.value.merge)
+        assertFalse(e.state.value.mergeUndo)
+    }
+
+    @Test fun keepMineSkippedUsesSameCopyWithoutUndo() = runBlocking {   // §9.1, CM-8
+        val (e, src) = setup()
+        e.edit(Edit.MoveToCell("a", "home", 2, 2)); e.edit(Edit.MoveToCell("b", "home", 3, 3))
+        src.file.writeText(file1.replace("\"revision\":1", "\"revision\":9").replace(Regex(",\\{\"id\":\"b\"[^}]*\\}"), ""))
+        assertFalse(src.file.readText().contains("p.b"))
+        e.askBeforeMerge = true
+        e.flush()
+        assertTrue(e.state.value.conflict)
+        assertTrue(e.resolveKeepMine())
+        assertEquals(MergeNotice(kept = 1, skipped = 1, folder = null, undo = false), e.state.value.merge)
+        assertFalse(e.state.value.mergeUndo)
     }
 
     @Test fun useFileDiscardsMine() = runBlocking {

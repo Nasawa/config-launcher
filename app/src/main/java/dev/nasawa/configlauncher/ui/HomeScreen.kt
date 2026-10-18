@@ -1,5 +1,9 @@
 package dev.nasawa.configlauncher.ui
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -76,8 +80,8 @@ fun HomeScreen(vm: HomeViewModel) {
         moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it); onboarded = true }, { moveAsk = null }) }
         return
     }
-    // Merge notices carry Undo, so they show in the in-app snackbar instead of a toast (§18.2).
-    LaunchedEffect(ui.load.notice) { if (!ui.load.mergeUndo) ui.load.notice?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
+    // Merge results use the in-app snackbar (ux.md §9.1); other one-shot notices are toasts.
+    LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
     val toast = { msg: String -> Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
     val launchApp = { app: InstalledApp -> if (!vm.apps.launch(app)) toast("Couldn't open ${Labels.clean(app.label)}") }
 
@@ -139,8 +143,10 @@ fun HomeScreen(vm: HomeViewModel) {
                 if (pages.size > 1) PageDots(pages.size, pager.currentPage)
                 }
                 Dock(ui.layout.dock, vm.apps, drag, onOpen)
-                if (ui.load.mergeUndo) MergeSnackbar(ui.load.notice.orEmpty(),
-                    onUndo = { vm.store.undoMerge() }, onDismiss = { vm.store.engine.dismissMergeUndo(); vm.store.engine.consumeNotice() })
+                ui.load.merge?.let { m ->
+                    MergeSnackbar(m, onUndo = { vm.store.undoMerge() }.takeIf { m.undo && ui.load.mergeUndo },
+                        onDismiss = { vm.store.engine.dismissMergeUndo() })
+                }
             }
         }
 
@@ -196,9 +202,17 @@ fun HomeScreen(vm: HomeViewModel) {
 }
 
 @Composable
-private fun MergeSnackbar(text: String, onUndo: () -> Unit, onDismiss: () -> Unit) {
-    LaunchedEffect(text) { kotlinx.coroutines.delay(10_000); onDismiss() }
-    Snackbar(Modifier.padding(8.dp), action = { TextButton(onUndo) { Text("Undo") } }, dismissAction = { TextButton(onDismiss) { Text("✕") } }) { Text(text) }
+private fun MergeSnackbar(n: dev.nasawa.configlauncher.store.MergeNotice, onUndo: (() -> Unit)?, onDismiss: () -> Unit) {
+    val res = androidx.compose.ui.platform.LocalContext.current.resources
+    val copy = remember(res) { dev.nasawa.configlauncher.store.MergeCopy(res) }
+    val text = copy.text(n); val spoken = copy.spoken(n)
+    LaunchedEffect(n) { kotlinx.coroutines.delay(dev.nasawa.configlauncher.store.MergeCopy.durationMs(n)); onDismiss() }
+    Snackbar(
+        // TalkBack reads the long form (§9.1); Undo stays a separate action button.
+        Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite },
+        action = onUndo?.let { u -> { TextButton(u) { Text(androidx.compose.ui.res.stringResource(dev.nasawa.configlauncher.R.string.merge_undo)) } } },
+        dismissAction = { TextButton(onDismiss) { Text("✕") } },
+    ) { Text(text, Modifier.semantics { contentDescription = spoken }) }
 }
 
 @Composable
