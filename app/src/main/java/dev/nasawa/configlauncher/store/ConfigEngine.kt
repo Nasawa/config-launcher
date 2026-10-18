@@ -123,24 +123,39 @@ class ConfigEngine(
      * target file is copied to `.configlauncher/backup/` first). Otherwise the target's file is used
      * and our current layout is kept as a history entry. An empty target always gets our layout.
      */
-    suspend fun moveTo(target: ConfigSource, useMine: Boolean): Boolean {
-        mutex.withLock {
-            val existing = target.read(Limits.MAX_BYTES)
-            val mine = existing == null || useMine
-            if (existing != null && useMine) {
-                // Folder: agent-visible backup. App-only (§18.5): no .configlauncher, so private history.
-                try { target.writeSidecar("backup", StatusJson.brokenFileName(clock()), existing) }
-                catch (_: UnsupportedOperationException) { runCatching { lastGood.snapshot(existing) } }
-            }
-            if (!mine) runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
-            source = target; lastStamp = null; lastStatusKey = null
-            _state.update { it.copy(sourceName = target.displayName, issue = null, reconnectable = target.reconnectable) }
-            if (mine) {
-                try { writeLocked(_state.value.config) } catch (e: Exception) { return fail(Issue.SaveFailed("Couldn't move your layout: ${e.message}")) }
-                return true
-            }
+    suspend fun moveTo(target: ConfigSource, useMine: Boolean): Boolean = mutex.withLock {
+        val existing = try { target.read(Limits.MAX_BYTES) } catch (e: Exception) {
+            _state.update { it.copy(notice = "Couldn't read that folder: ${e.message}") }; return false
         }
-        return poll(force = true) || _state.value.issue == null
+        val mine = existing == null || useMine
+        val adopted = if (mine) null else when (val r = ConfigCodec.decode(existing!!)) {
+            is ParseResult.Ok -> r.config
+            // Grace review: never adopt an invalid folder file. Nothing changes; the user can replace it or fix it.
+            is ParseResult.Invalid -> { _state.update { it.copy(notice = "launcher.json in that folder has problems, so it wasn't used.") }; return false }
+        }
+        if (existing != null && useMine) {
+            // Folder: agent-visible backup first; if that fails, don't overwrite. App-only (§18.5): private history.
+            try { target.writeSidecar("backup", StatusJson.brokenFileName(clock()), existing) }
+            catch (_: UnsupportedOperationException) { runCatching { lastGood.snapshot(existing) } }
+            catch (e: Exception) { _state.update { it.copy(notice = "Couldn't back up the folder's launcher.json: ${e.message}") }; return false }
+        }
+        val oldSource = source; val oldState = _state.value; val oldStamp = lastStamp
+        if (adopted != null) runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
+        source = target; lastStamp = null; lastStatusKey = null
+        try {
+            if (adopted != null) {
+                val hash = ConfigCodec.sha256(existing!!)
+                lastStamp = target.stamp()
+                _state.value = LoadState(adopted, Origin.FILE, target.displayName, hash, reconnectable = target.reconnectable)
+                saveLastGood(existing)
+            } else writeLocked(oldState.config)
+            true
+        } catch (e: Exception) {
+            // Roll back: the old source stays in charge and nothing is reported as moved.
+            source = oldSource; lastStamp = oldStamp
+            _state.value = oldState.copy(notice = "Couldn't move your layout: ${e.message}")
+            false
+        }
     }
 
     suspend fun switchSource(newSource: ConfigSource) {

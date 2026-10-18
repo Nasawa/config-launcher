@@ -1,9 +1,13 @@
 # Test fixtures
 
-`configs/valid/` and `configs/invalid/` hold real `launcher.json` fixtures; `configs/manifest.json` gives each file's expected outcome, the layer that must catch it, and the ARCHITECTURE.md reference.
+`configs/valid/` and `configs/invalid/` hold real `launcher.json` fixtures. `configs/manifest.json` gives each file's expected outcome, the layer that must catch it, and the ARCHITECTURE.md reference.
 
-Layers: `both` = the JSON Schema and the Kotlin validator must both reject (or accept); `parser` = the JSON reader (encoding, BOM, depth, duplicate keys, NUL); `kotlin` = Kotlin-only rules the schema can't express (unique IDs, overlapping cells, cells inside grid, totals, string caps); `store` = enforced by `ConfigStore` before parsing (size cap).
+Layers:
+- `both`: the JSON Schema and the Kotlin validator must both reject (or, in `valid/`, both accept).
+- `kotlin-only`: tagged with a `kotlinOnly` rule from the ARCHITECTURE §17 Q2 list (duplicate-ids, overlapping-cells, cell-outside-grid, item-total, duplicate-keys, parser-depth, byte-cap, nul-or-encoding). The schema **must accept** these, and Kotlin must reject them.
+- `parser`: plain syntax errors that no JSON parser accepts (B1).
+- `store`: size-cap cases enforced before parsing.
 
-**Move:** there is no Gradle project yet. When `:app` lands, move `configs/valid` and `configs/invalid` to `app/src/test/resources/configs/{valid,invalid}/` (ARCHITECTURE.md §11) and keep `manifest.json` beside them.
+Regenerate with `python3 test-fixtures/gen_fixtures.py` (deterministic, run from the repo root), then copy `configs/` to `app/src/test/resources/configs/` for the JVM tests (`FixtureConformanceTest`, `KotlinOnlyConformanceTest`, `WriterRefusalTest`).
 
-`python3 test-fixtures/check_schema.py` (needs `pip install jsonschema`) checks the schema against every `valid/` and `both` fixture. Only Python's standard `json` parser is used, so `parser` fixtures are skipped.
+Check: `python3 test-fixtures/check_schema.py` (needs `pip install jsonschema`). It must report 0 mismatches. `deep-nesting.json` is reported as unchecked because Python's parser hits its recursion limit; the JVM test covers it.
