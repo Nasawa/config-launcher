@@ -133,8 +133,9 @@ fun HomeScreen(vm: HomeViewModel) {
                     pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, onOpen) }
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.currentPage)
-                Dock(ui.layout.dock, vm.apps, drag, onOpen)
                 }
+                // ux.md §1.1: the backdrop is for home-grid labels only, not the dock.
+                Dock(ui.layout.dock, vm.apps, drag, onOpen)
             }
         }
 
