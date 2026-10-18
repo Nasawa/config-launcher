@@ -66,7 +66,7 @@ object ErrorLocator {
                     while (true) {
                         ws(); val keyAt = i; val k = string()
                         val p = if (path.isEmpty()) k else "$path/$k"
-                        out.putIfAbsent(p, keyAt)
+                        if (p !in out) out[p] = keyAt
                         ws(); if (s.getOrNull(i) != ':') error("colon"); i++
                         value(p, depth + 1); ws()
                         when (s.getOrNull(i)) { ',' -> i++; '}' -> { i++; return }; else -> error("obj") }
@@ -77,7 +77,7 @@ object ErrorLocator {
                     var n = 0
                     while (true) {
                         ws(); val p = if (path.isEmpty()) "$n" else "$path/$n"
-                        out.putIfAbsent(p, i); value(p, depth + 1); n++; ws()
+                        if (p !in out) out[p] = i; value(p, depth + 1); n++; ws()
                         when (s.getOrNull(i)) { ',' -> i++; ']' -> { i++; return }; else -> error("arr") }
                     }
                 }

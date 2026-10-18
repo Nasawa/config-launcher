@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.database.ContentObserver
 import android.net.Uri
-import android.os.Build
 import android.os.FileObserver
 import android.os.Handler
 import android.os.Looper
@@ -149,11 +148,9 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
                 src.dir.mkdirs()
                 val mask = FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO or FileObserver.CREATE or FileObserver.DELETE
                 val onEvent = { path: String? -> if (path == LocalFileSource.FILE_NAME) pollNow() }
-                fileObserver = (if (Build.VERSION.SDK_INT >= 29) object : FileObserver(src.dir, mask) {
+                fileObserver = object : FileObserver(src.dir, mask) {
                     override fun onEvent(event: Int, path: String?) = onEvent(path)
-                } else @Suppress("DEPRECATION") object : FileObserver(src.dir.path, mask) {
-                    override fun onEvent(event: Int, path: String?) = onEvent(path)
-                }).also { it.startWatching() }
+                }.also { it.startWatching() }
             }
             is SafSource -> {
                 contentObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {

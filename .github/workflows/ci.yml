@@ -18,7 +18,7 @@ jobs:
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
       - name: Assemble debug APK
-        run: ./gradlew --no-daemon assembleDebug
+        run: ./gradlew --no-daemon assembleDebug lintDebug
       - uses: actions/upload-artifact@v7
         with:
           name: config-launcher-debug-apk
