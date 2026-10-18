@@ -13,7 +13,7 @@ on your phone and the file updates. Edit the file on your computer (or let an ag
 ### Where the file lives
 - `launcher.json` sits at the **root of the folder picked on first run** (Settings → *Config folder* changes it). A
   folder kept in sync with a computer (Syncthing, a git client) is the intended setup. Cloud providers such as Google
-  Drive work on a best-effort basis.
+  Drive work on a best-effort basis, and first run warns when you pick one.
 - Only the file named exactly `launcher.json` is read.
 - The launcher also creates `.configlauncher/` in that folder (see [Files the launcher writes](#files-the-launcher-writes-in-your-folder)).
 
@@ -52,8 +52,9 @@ Shape in brief:
 - `drawer.sort`: `label` or `installTime`. `drawer.hidden`: package names. `drawer.rules`: `{id, group, match}` where
   `match` uses `packages`, `packagePrefix`, `tag` or `category`. The first matching rule wins, and rules only group the
   drawer.
-- `unsorted.mode`: `drawer` (default), `page` (also shown on a synthetic last page, never written) or `hidden`.
-  Installed apps that you don't place are never written to the file by the launcher.
+- `unsorted.mode`: `drawer` (default), `page` (also shown on a synthetic last page, never written) or `hidden`
+  (removes only that page; the drawer still lists them). The drawer lists every app, including placed ones, minus
+  `drawer.hidden`. Installed apps that you don't place are never written to the file by the launcher.
 
 ### IDs and profiles
 - Every page, item and drawer rule has an `id` matching `^[a-z0-9][a-z0-9_-]{0,63}$`, **unique across the whole
@@ -72,7 +73,7 @@ Shape in brief:
   only a warning.
 
 ### Rules the launcher follows (and expects)
-- **Canonical formatting.** When the launcher writes (only after an edit on the phone, or *Upgrade file*), it
+- **Canonical formatting.** When the launcher writes (only after an edit on the phone, or *Upgrade now*), it
   reformats the whole file: 2-space indent, keys in schema order, `x-` keys after known keys, LF line endings, a trailing
   newline, UTF-8 without BOM. Your formatting and key order are not preserved. Emitting the same format yourself keeps
   git diffs small (encouraged, not required). A reload never triggers a write.
@@ -95,7 +96,7 @@ Shape in brief:
   (the phone keeps the last working layout).
 - **What makes the file invalid:**
   - parse errors (bad syntax, duplicate keys in one object, non-UTF-8, NUL or lone surrogates)
-  - a file over 256 KiB, or nested more than 8 levels
+  - a file over 2 MiB, or nested more than 8 levels
   - a missing or unsupported `schemaVersion` (a newer version is refused, never downgraded)
   - schema violations, including unsupported types such as `widget` or `text`
   - unknown non-`x-` keys
@@ -103,10 +104,11 @@ Shape in brief:
   - `x`/`y` outside the grid, or two page items in the same cell
   - a grid outside 2–12
   - exceeding the limits: 20 pages, 144 items per page, 2000 items, 48 per folder, 7 in the dock, labels 60
-    characters, IDs 64, other strings 256
+    characters, IDs 64, other strings 256, 16 `tags` per item. `x-` values count toward the
+    2 MiB budget. The phone also refuses to save a layout that would be over 2 MiB (the edit stays on screen)
 - **Not errors:** apps that aren't installed or shortcuts that aren't published. They show dimmed and are never deleted
   automatically. An older `schemaVersion` is migrated in memory and only written back on the next edit or *Upgrade
-  file* (with a backup first).
+  now* (with a backup first).
 - **How the app reacts to an invalid file:** the home screen keeps showing the last working layout. A banner says what's
   wrong, for example `launcher.json has 2 problems. Showing the last working layout.`, and the details list each
   problem with its JSON path (plus line and column for parse errors). If the user edits on the phone while the file is
@@ -121,7 +123,19 @@ Shape in brief:
   noticed. **Read this to find out why your edit was rejected** without picking up the phone.
 - `launcher.json.tmp`: the write-verify copy (above).
 - `broken/`: copies of invalid files saved before a phone edit replaced them.
-- `backup/`: originals saved before an *Upgrade file*, *Restore last working version* or *Start fresh*.
+- `backup/`: originals saved before an *Upgrade now* (as `launcher.v{N}.{timestamp}.json`), *Restore last working version* or *Start fresh*.
+
+If the folder is a git repo, ignore the files that change on every phone write:
+
+```gitignore
+.configlauncher/launcher.json.tmp
+.configlauncher/status.json
+```
+
+`backup/` and `broken/` are yours to commit or ignore.
+
+`launcher.json` is never created automatically. If it's missing, the phone shows `No launcher.json yet.` with
+*Create from current layout* and *Reconnect*.
 
 Sync conflict copies such as `launcher.sync-conflict-*.json` or `launcher (1).json` are never read, merged or deleted.
 The phone shows a notice naming them, and they're listed in `status.json`.
