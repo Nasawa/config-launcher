@@ -1,6 +1,6 @@
 # Test plan: config-launcher
 
-Sources: [`ARCHITECTURE.md`](../ARCHITECTURE.md) (cited as **A§n**; resolved questions as **A§15 OQ-n**, **A§16 AQ-n**, **A§17 Qn** and **A§18.n**), [`schema/launcher-config.v1.schema.json`](../schema/launcher-config.v1.schema.json), [`docs/ux.md`](ux.md) (banners B1-B8, **UX§n**), and [`docs/research-spike.md`](research-spike.md) (**spike §n**). Later sections override earlier ones: A§18 > A§17 > A§15/§16. **v3** (this revision) replaces Q1-Q16 of v2 with the A§17 rulings and adds the A§18 changes: **minSdk 29** (coordinator ruling of 2026-10-18 15:27 MDT, superseding A§18.3's 23, which the repo hasn't been updated to yet; see Q-v3-9), automatic merge, Skip for now, the keyboard-up drawer, the label backdrop, the device matrix and performance budgets. Each case cites its ruling. The questions still open are listed at the end.
+Sources: [`ARCHITECTURE.md`](../ARCHITECTURE.md) (cited as **A§n**; resolved questions as **A§15 OQ-n**, **A§16 AQ-n**, **A§17 Qn** and **A§18.n**), [`schema/launcher-config.v1.schema.json`](../schema/launcher-config.v1.schema.json), [`docs/ux.md`](ux.md) (banners B1-B8, **UX§n**), and [`docs/research-spike.md`](research-spike.md) (**spike §n**). Later sections override earlier ones: A§18 > A§17 > A§15/§16. **v3** (this revision) replaces Q1-Q16 of v2 with the A§17 rulings and adds the A§18 changes: **minSdk 29** (coordinator ruling of 2026-10-18 15:27 MDT, now in A§18.3 via #32; A§18.6 resolves the v3 questions), automatic merge, Skip for now, the keyboard-up drawer, the label backdrop, the device matrix and performance budgets. Each case cites its ruling. The questions still open are listed at the end.
 
 Levels: **U** = JVM unit test (`model`/`config`, no Android), **S** = store test against the fake `DocumentAccess` (A§11), **R** = Robolectric, **I** = instrumented (emulator matrix API 29, 35, 36, test `DocumentsProvider`), **M** = manual on a real phone.
 
@@ -196,7 +196,7 @@ Write sequence under test: write `.configlauncher/launcher.json.tmp` and verify 
 | CM-3 | CM-2, but the drop is cancelled (no op). † | `incoming` applied as a normal reload with `Layout updated from launcher.json.` No merge, no B6 (Q6). | Same (nothing is pending). |
 | CM-4 | Agent edit within the 750 ms debounce after a drop. | Write-time hash ≠ base, so auto replay and write. Snackbar + Undo. | B6. |
 | CM-5 | Agent edit arrives after our write but before our poll sees it. | External, applied (nothing pending). | Same. |
-| CM-6 | **Undo** on the merge snackbar. | Writes the file's pre-merge version back through the normal write path (hash check). My ops are discarded and my pre-merge model is in history. | n/a |
+| CM-6 | **Undo** on the merge snackbar. | **Undo safety rule (A§18.2, A§18.6 Q-v3-6):** Undo re-reads and hashes the file. Unchanged since the merge: the pre-merge file content is restored through the normal write path. Undo must **never** overwrite an external change. The pre-merge file is always in history. See CM-22–CM-26. Tests: `AutoMergeTest`, `UndoSafetyTest` (#37). | n/a |
 | CM-7 | Agent touched different items from mine. | Both changes survive. `revision` = max + 1. Only my ops' targets ("just touched") come from me; everything else comes from the file. | `Keep mine` gives the same result. `Use file` discards mine (snapshotted). |
 | CM-8 | Agent deleted the item I moved. | Op dropped. Skip snackbar `1 change skipped because the item was removed in the file` + Undo. | Same after `Keep mine`. |
 | CM-9 | Agent put something in my target cell. | Placed in the nearest free cell on the same page, else the first free cell on any page, else a new page. | Same after `Keep mine`. |
@@ -211,6 +211,11 @@ Write sequence under test: write `.configlauncher/launcher.json.tmp` and verify 
 | CM-18 | Rename vs an agent rename of the same item. | Mine wins (the item is "just touched"). | Same after `Keep mine`. |
 | CM-19 | Toggle `Ask before merging` on and off with ops pending. | The next conflict follows the new value. The setting is in DataStore, not launcher.json, so toggling it doesn't write the file. | — |
 | CM-20 | Syncthing conflict siblings `launcher.sync-conflict-*.json`, or `launcher (1).json`. | Ignored by the loader. A dismissible notice names them, and status.json lists them. Never merged or deleted. | Same. |
+| CM-22 | Undo, file unchanged since the merge. | Pre-merge content restored (compare by ID; item order isn't semantic). Snapshots: pre-merge file + my merged model in history. Undo is one-shot. | n/a |
+| CM-23 | Undo after an external change that doesn't touch the merged items (git pull via rename, **before** the next poll). | Only merged items are reverted by ID onto the new file; the external change is kept. The pulled file, pre-merge file and merged model are all in history. | n/a |
+| CM-24 | Undo after an external change that moved/edited a merged item, or occupies the cell Undo would restore. | Cancelled, no write. Exact copy: `File changed again, Undo cancelled.` File bytes unchanged. Pre-merge file still in history (from the merge). | n/a |
+| CM-25 | Undo when the file is now invalid or deleted. | Cancelled with the same message. Invalid bytes untouched; a deleted file isn't recreated. | n/a |
+| CM-26 | git pull during the 10 s snackbar, polled (model reloads). | Undo stays offered (an external reload doesn't expire it) and then follows CM-23/CM-24. A local edit written after the merge, or ✕, expires Undo. Residual risk: an external write between Undo's hash read and its write (milliseconds) isn't detectable through SAF. | n/a |
 | CM-21 | git: the pull brings a merge-conflicted file (`<<<<<<<` markers). | B1 with line and column, last-good kept. My pending ops stay queued until a valid file arrives, then merge as above. | Same (B6 once it's valid). |
 
 Unit-level table test for the replay engine: rows for {Move, Add, Remove, Rename, CreateFolder} × {target exists, removed, cell occupied, duplicate, moved to another folder}.
@@ -286,7 +291,7 @@ Sync transfer time is excluded from all targets (A§15 OQ-23).
 | SK-5 | Phone → folder, folder **with a valid** `launcher.json`. | Dialog `This folder already has a launcher.json.` (a) `Use the folder's layout`: the folder file is loaded and the app-private file is kept as a history entry. (b) `Replace it with mine`: the folder file is copied to `.configlauncher/backup/` first, then mine is written. | S, R, M |
 | SK-6 | Phone → folder, folder with an **invalid** `launcher.json`. | Same dialog plus `See problems`, which opens the error detail. Neither choice loses either file. | R |
 | SK-7 | **Folder → phone** (Settings → `Use phone storage`). | The current layout is copied into the app-private file, and the persisted grant is released (it's gone from `persistedUriPermissions`). No B3 afterwards. | R, I |
-| SK-8 | Round trip: phone → folder → phone. | The second switch reloads/overwrites the app-private file with the current layout. Nothing is lost: the earlier app-private version is in history. See Q-v3-1 on whether it's overwritten or reloaded. | R |
+| SK-8 | Round trip: phone → folder → phone. | `Use phone storage` **overwrites** the app-private file with the on-screen layout (temp + rename) after snapshotting the previous app-private version to history (A§18.6 Q-v3-1). Folder → phone → folder then follows the ux.md §7 connect-later flow. | R |
 | SK-9 | Debug build: `adb push` a new `launcher.json` into the app-private path (`run-as`). | FileObserver picks it up within 1 s. | I |
 
 ## 12. Drawer, keyboard and label backdrop (A§17 (b), A§18.1, A§18.2)
@@ -298,9 +303,9 @@ Sync transfer time is excluded from all targets (A§15 OQ-23).
 | DR-3 | Keyboard up, **swipe down** on the list. | Hides the keyboard first. A further swipe down closes the drawer. | I, M |
 | DR-4 | Settings → `Open keyboard with drawer` **off**, then open the drawer. | No focus, no keyboard. Tapping the field shows it. The setting survives a restart (DataStore) and doesn't touch launcher.json. | R, I |
 | DR-5 | Keyboard up with 2000 apps: type 3 letters. | Results filter on each keystroke (UX§2 rules). Enter launches the first result. | I |
-| DR-6 | Hardware keyboard or Samsung DeX (A53/S25 if available). | Search field focused, no on-screen keyboard forced. Behaviour isn't specified, see Q-v3-2. | M |
+| DR-6 | Hardware keyboard or Samsung DeX (A53/S25 if available). | Search field always focused. The IME is requested only when `hardKeyboardHidden != HARDKEYBOARDHIDDEN_NO`; with a hardware keyboard/DeX none is forced. `Open keyboard with drawer` controls focus only (A§18.6 Q-v3-2). Bug: #39. | M |
 | LB-1 | Settings → `Label backdrop` (off by default). | Off: white label with a 1 dp 50% black shadow. On: a rounded 40% black scrim behind each home label. Stored in DataStore, never written to launcher.json (assert 0 writes on toggle). | R, I |
-| LB-2 | Backdrop on, on a busy, bright wallpaper. | Label contrast ≥ 4.5:1 against the scrim (screenshot + contrast check). Folder and dock labels: see Q-v3-3. | M |
+| LB-2 | Backdrop on, on a busy, bright wallpaper. | Label contrast ≥ 4.5:1 against the scrim (screenshot + contrast check). Applies to home-grid labels incl. the label under a folder icon; **not** the open folder sheet, the drawer or the dock (A§18.6 Q-v3-3). | M |
 | LB-3 | Backdrop on with a 60-emoji label and with a bidi-stripped label. | The scrim wraps the ellipsized text, with no overflow outside the cell. | I |
 
 ## 13. API-level gates (minSdk 29)
@@ -323,7 +328,7 @@ Marked **(R)** where the expectation comes from research (public reports or docs
 | ID | Steps | Expected / what to record | Basis |
 |---|---|---|---|
 | OU-1 | **Default launcher prompt:** install, open, `Set as Home`. Then press Home after installing another launcher, and after an OTA. | The RoleManager dialog on One UI 8 (A53/S25). Record whether One UI resets the default home after an update or an app update (reported on some OEMs, A§13 "home role resets"). | (R) for resets |
-| OU-2 | **Secure Folder as a profile.** One UI 8 reclassified Secure Folder as a **private** profile. Older One UI implemented it as a **work (managed) profile** (Android Authority, Android Police reports on One UI 8). A53/S25: Secure Folder exists, open or hidden. | One UI 8: not in our drawer as a work profile, and not shown unless we hold ACCESS_HIDDEN_PROFILES + HOME (we don't). On older One UI (e.g. the optional A51 on Android 13): Secure Folder may show up as the "first managed profile" and be treated as `work`. Record which profile `InstalledApps` picks when both a real work profile and Secure Folder exist. See Q-v3-4. | (R) |
+| OU-2 | **Secure Folder as a profile.** One UI 8 reclassified Secure Folder as a **private** profile. Older One UI implemented it as a **work (managed) profile** (Android Authority, Android Police reports on One UI 8). A53/S25: Secure Folder exists, open or hidden. | One UI 8: not in our drawer as a work profile, and not shown unless we hold ACCESS_HIDDEN_PROFILES + HOME (we don't). On older One UI (e.g. the optional A51 on Android 13): Secure Folder may show up as the "first managed profile" and be treated as `work`. Record which profile `InstalledApps` picks when both a real work profile and Secure Folder exist. Ruling A§18.6 Q-v3-4: skip managed profiles containing `com.samsung.knox.securefolder`; real work profile wins; detected Secure Folder is treated like private space. Heuristic **unverified**: see SF-A51. Bug: #40. | (R) |
 | OU-3 | **Game Launcher / Game Booster.** | Game Launcher is an app, not a profile. Record whether games are hidden from LauncherApps when "Hide game apps" is on in Game Launcher. Expected: still listed by LauncherApps (they're normal launchable activities), unless Samsung hides them. | (R), unverified |
 | OU-4 | **Battery optimisation and app sleeping:** Settings → Battery → Background usage limits (Sleeping / Deep sleeping apps), and "Put unused apps to sleep". | Our polling runs only while home is visible, so sleep should not affect it. Check: (a) after 1 h idle with the launcher in "Sleeping apps", pressing Home polls immediately (LR-1 ≤ 1 s); (b) the launcher is never auto-added to Deep sleeping; (c) the git client's own sync isn't killed (that's the git client's problem, but record it). The default home is normally exempt from app standby (R). | (R) |
 | OU-5 | **One UI Home gestures:** Settings → Display → Navigation bar → Swipe gestures, with our launcher as Home. | Gestures stay enabled with a third-party home. Record (a) swipe-up-to-home latency before the first tap registers (a known One UI delay with third-party launchers: recents are provided by One UI Home), and (b) whether the recents animation targets our icon. Document it, but don't treat it as our bug. | (R) |
@@ -376,6 +381,11 @@ Implemented as `.github/workflows/emulator-smoke.yml` (PR #23): nightly, on dema
 | PS-M | Private space on the S25 Ultra or A53 (Android 15+) | PS-1, PS-2, PS-3 | As in §9 |
 | SF-M | Secure Folder on the A53 and A51 | OU-2 | Record it |
 
+### Pending manual case (unverified heuristic, do later)
+| ID | Device | Steps | Record / expected |
+|---|---|---|---|
+| SF-A51 | Galaxy A51 (Android 13, pre-One UI 8), Secure Folder set up; optionally also a real work profile. Later repeat on A53/S25 (One UI 8). | `adb shell pm list users`; `adb shell dumpsys user`; for each managed user `adb shell cmd package query-activities --user <id> -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \| grep -i securefolder`; open our drawer. | **Pending.** Confirm Secure Folder appears as a *managed profile* whose launchable activities include `com.samsung.knox.securefolder`; that it's excluded and the real work profile wins (A§18.6 Q-v3-4). On One UI 8 record what shows (expected: private profile, invisible to us). Paste the outputs here. |
+
 ## 17. Manual checklist: Galaxy A53 (≈10 min, git sync, no app-killing)
 
 Before you start: the launcher is set as Home, the config folder is the git repo folder in your git app, and the PC side can commit and push `launcher.json`. Have one small app ready to install.
@@ -402,11 +412,4 @@ Report anything that differs, with a screenshot.
 
 ## Open questions (v3)
 
-All of Q1-Q16 from v2 are resolved by A§17. Still open:
-
-1. **Q-v3-1** Folder → phone → folder round trip (SK-8): does `Use phone storage` *overwrite* the app-private file with the current layout (A§18.2 says "copies"), and is the previous app-private version snapshotted to history first?
-2. **Q-v3-2** Drawer with a hardware keyboard or DeX: still focus and show the IME?
-3. **Q-v3-3** Label backdrop: does it apply to folder labels and the dock (where labels are hidden), or home page labels only?
-4. **Q-v3-4** Secure Folder on older One UI (A51, S8+) can look like a managed profile. If both a real work profile and Secure Folder exist, `InstalledApps` picks the "first managed profile". Should Secure Folder be excluded explicitly (if detectable), and should "first work profile wins" (OQ-29) prefer the real one?
-5. **Q-v3-6** Auto-merge Undo (CM-6): if the file changes again between the merge and the Undo tap, does Undo still write the old file version (overwriting the newer agent edit), or is it disabled?
-6. **Q-v3-9** minSdk 29 came from the coordinator (2026-10-18, 15:27 MDT), but ARCHITECTURE §18.3 on main still says 23, and Sprite's open PR #31 implements 23 with API gates. Archimedes should amend §18.3 (device list, cost section, CI matrix), and #31 needs re-scoping. Until then, this plan follows minSdk 29.
+All v3 questions are resolved in A§18.6 (Q-v3-1, -2, -3, -4, -6, -9); the rulings are folded into SK-8, DR-6, LB-2, OU-2, CM-6/CM-22–26 and §13. Remaining unknown: the Secure Folder detection heuristic (SF-A51, pending manual run).
