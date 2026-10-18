@@ -8,4 +8,6 @@ data class AppEntry(
     val userSerial: Long = 0,
 ) {
     val key: String get() = "$packageName/$activityName"
+    /** Unique across profiles; the separator prevents "p/A1"+0 colliding with "p/A"+10. */
+    val gridKey: String get() = "$key#$userSerial"
 }

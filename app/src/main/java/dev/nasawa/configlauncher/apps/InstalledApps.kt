@@ -53,8 +53,10 @@ class InstalledApps(private val context: Context) {
         return bmp
     }
 
+    /** Launch in the entry's own profile; never silently fall back to the personal profile. */
     fun launch(app: AppEntry) {
-        val user = infos[app.key + "#" + app.userSerial]?.second ?: Process.myUserHandle()
+        val user = infos[app.key + "#" + app.userSerial]?.second
+            ?: if (app.userSerial == 0L) Process.myUserHandle() else userManager.getUserForSerialNumber(app.userSerial) ?: return
         launcherApps.startMainActivity(
             ComponentName(app.packageName, app.activityName), user, null, null,
         )

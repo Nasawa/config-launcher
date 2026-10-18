@@ -2,6 +2,7 @@ package dev.nasawa.configlauncher
 
 import dev.nasawa.configlauncher.apps.AppEntry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class AppEntryTest {
@@ -16,9 +17,9 @@ class AppEntryTest {
  * This documents the collision; see the PR #4 review.
  */
 class GridKeyCollisionTest {
-    @Test fun concatenatedKeyCanCollide() {
+    @Test fun gridKeyDoesNotCollide() {
         val personal = AppEntry("p.q", "p.q.A1", "A", userSerial = 0)
         val work = AppEntry("p.q", "p.q.A", "A", userSerial = 10)
-        assertEquals(personal.key + personal.userSerial, work.key + work.userSerial)
+        assertNotEquals(personal.gridKey, work.gridKey)
     }
 }
