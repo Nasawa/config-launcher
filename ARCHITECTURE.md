@@ -12,8 +12,8 @@ Status: proposal for review, 2026-10-18. Author: Archimedes (architecture). Buil
 | Choice | Decision | Why |
 |---|---|---|
 | Language/UI | Kotlin 2.x, Jetpack Compose (Material 3), single `MainActivity` with the HOME category | Matches the spike; Compose renders an immutable model naturally. |
-| minSdk | **26** (Android 8.0) | Pinned shortcuts (`LauncherApps.PinItemRequest`, `ShortcutManager.requestPinShortcut`) and `ACTION_CONFIRM_PIN_SHORTCUT` arrive in 26; adaptive icons arrive in 26; persisted SAF permissions and `DocumentsContract` work fine from 21 but 26 removes the need for a second shortcut code path (legacy `INSTALL_SHORTCUT` broadcasts). Below 26 is <1% of active devices and Christopher's phone is far newer. |
-| target/compile | **35** | Current Play requirement baseline; 35 brings edge-to-edge by default, which a launcher wants anyway. Move to 36 when the toolchain in the scaffold supports it; nothing here depends on 36. |
+| minSdk | **23** (Android 6.0), changed from 26 in §18 | The current AndroidX/Compose artifacts' own floor is 23; it covers every device Christopher owns (OnePlus 2 and stock OnePlus One stop at 23). Shortcuts need 25+ and are disabled below that; see §18.3 for the gates. |
+| target / compile | **targetSdk 35, compileSdk 37** (§18) | compileSdk 37 is required by core-ktx 1.19 and Compose BOM 2026.09; targetSdk stays 35 (edge-to-edge default, no 36/37 behaviour changes taken yet). |
 | JSON | `kotlinx.serialization` for the model; `org.json`/kotlinx `JsonElement` tree for preserving `x-` keys | No reflection, multiplatform-friendly, fast. |
 | Validation | Hand-written Kotlin validator mirroring the schema, plus schema tests on the JVM with a JSON Schema library (networknt) against the same examples | Pulling a full 2020-12 validator into the APK costs size and startup; the Kotlin validator also gives friendlier, path-based messages. The test suite keeps the two in lockstep. |
 | Async | Coroutines + `StateFlow` | Single source of truth flow into Compose. |
@@ -198,7 +198,7 @@ Root: `ConfigLauncherApp` (Application, holds `AppGraph`). Data flow: `store` em
 | GPL if Kvaesitso code is copied | Reference only; copying code makes the app GPL-3, which conflicts with this repo's MIT license. **Departs from spike** (it says GPL is "fine"): it is fine only if we relicense, so we don't copy. |
 | OEM launcher quirks (home role resets, Samsung) | Manual QA on one OEM device. |
 
-## 14. Open questions for Christopher
+## 14. Open questions for Christopher (resolved 2026-10-18, see §18.1)
 1. **File name and location:** is `launcher.json` in a folder of your choice OK, and which sync tool will you use (Syncthing, a git client, Drive)? This decides what Grace tests first.
 2. **JSON vs YAML:** OK to go JSON-only (no comments; use `x-note` keys) for reliable write-back?
 3. **Unsorted default:** should unplaced apps just live in the drawer (proposed), or also appear on an "Unsorted" home page by default?
@@ -323,3 +323,88 @@ So the coordinator's 1 MiB is **not** enough for a legal config with long labels
 **Pragma (docs):** README line 98 and ux.md B1 "over 256 KiB" → 2 MiB; B4 adds `Reconnect`; B8 copy and `Upgrade now`; B5 adds the over-2 MB message; Q4 snackbar, Q12 hint and Q15 warning copy; drawer section states "includes placed apps"; README `.gitignore` snippet (Q14).
 
 **Grace (QA):** update HC-7 and the size fixtures to 2 MiB (just-under / just-over), add a 2000-item long-string valid fixture (~1.46 MiB) and a writer-refusal case; conformance test with the Kotlin-only list (Q2); NUL fixture as B1 (Q3); constant-mtime provider case (Q5); Q6-Q9 rows in the conflict matrix; battery/poll measurement (Q10); B3 vs B4 and B8 dismiss-per-hash cases; drawer-with-placed-apps and private-space drag-blocked cases.
+
+## 18. Christopher's answers, SDK levels and minSdk ruling (2026-10-18)
+These override earlier sections where they differ.
+
+### 18.1 Answers to §14 and docs/ux.md Q-C
+| Question | Answer | Effect on the design |
+|---|---|---|
+| §14 Q8 devices | Daily phone **Galaxy S25 Ultra**; tests first on a **Galaxy A53**; also A51, S8+, Galaxy Tab S2, OnePlus 2, and a modded OnePlus One as wall displays. | minSdk 23 (§18.3). QA order: A53 → S25 Ultra → old devices. |
+| §14 Q1 sync tool | **git is the primary sync target.** | Grace tests a git client folder first; Syncthing and Drive second. README leads with git. |
+| §14 Q2 / Q-C5 | **JSON only is OK.** | No change. |
+| §14 Q3 / Q-C3 | **Unsorted apps go in the drawer only.** | `unsorted.mode` default stays `drawer`. `page` stays in the schema but is not offered in Settings in v1. |
+| §14 Q4 conflicts | **The file wins by default, except items the user just touched.** | §18.2: automatic ID-based replay, no prompt by default. Replaces the always-on B6 prompt from §6/§16 AQ-6. |
+| §14 Q5 | **status.json and backups in the folder: yes.** | No change (`.configlauncher/`). |
+| Q-C1 | **Add "Skip for now" with app-only storage.** | §18.2: app-private source. |
+| Q-C2 | **The drawer opens with the keyboard up.** | Drawer search field focused on open, IME shown (§18.2). |
+| Q-C4 | **Label backdrop: wanted if easy; flag if costly.** | Cheap: one boolean setting drawing a rounded 40 % black scrim behind each home label (a `Modifier.background` on the label). In v1 settings as `Label backdrop`, off by default. Stored in DataStore, not in launcher.json. Not costly, so no flag. |
+| Q-C6 | **10 history copies is fine.** | No change. |
+| §14 Q9 widgets | **Critical to the end vision, not a v1 gate.** | Stay in Later, but widgets are the first post-MVP item. The schema v2 plan (`widget` type, `w`/`h`) should not be designed around anything that blocks them. |
+| §14 Q7 distribution | **GitHub Releases for now.** | Signed release APK built by CI and attached to a Release; no Play/F-Droid work. Releases are cut by Grok Bot or Christopher, not this doc (no tags from agents). |
+| §14 Q6 profiles | Not answered. | Keep the §15 OQ-29 defaults (work opt-in off, private never written). |
+
+### 18.2 Store design changes
+**"Skip for now" (app-only storage).**
+- Onboarding step 2 gets a secondary button `Skip for now`. It selects the **app-private source**: `filesDir/config/source/launcher.json` (a real path, separate from `last-good.json` and `history/`). This is what Sprite's `LocalFileSource` and `ConfigStore.useAppStorage()` already implement.
+- Same pipeline as SAF (§4/§5), with these differences: change detection uses `FileObserver` on that directory (it is a real path we own, so inotify works; polling is unnecessary), writes are true atomic temp-then-`renameTo`, and the `.configlauncher/` artifacts (status.json, backup/, broken/) live under `filesDir/config/source/.configlauncher/` so code paths stay identical.
+- External editing isn't possible except via `adb` on debug builds; Settings shows `Layout stored on this phone only` with `Choose folder`.
+- **Moving to a folder later** (Settings → `Choose folder`): if the folder has no `launcher.json`, the current layout is written there (one write, then the folder becomes the source). If it has a valid one: dialog `This folder already has a launcher.json.` with `Use the folder's layout` (the app-private file is kept as a history entry) or `Replace it with mine` (the folder file is copied to `.configlauncher/backup/` first). Invalid: the same choices, plus `See problems`. The app-private file is not deleted; switching back via `Use phone storage` reloads it.
+- **Moving from a folder to the phone** (Settings → `Use phone storage`): copies the current layout into the app-private file and releases the persisted grant (already in `useAppStorage()`).
+- Banners B3/B4 never show in app-private mode; B5 can (disk full).
+
+**Conflict default: the file wins, except items the user just touched.** Replaces the always-on B6 prompt.
+- On a hash mismatch at write time, or an incoming file with pending ops, the launcher **automatically** replays the pending ops by ID onto the file (the §6 replay rules, Q9 partial folders) and writes the result. No prompt.
+- "Just touched" means exactly the items targeted by pending ops (ops not yet written). Everything else comes from the file. Once an op is written it is no longer special.
+- Feedback: snackbar `Layout updated from launcher.json. Kept your 2 changes.` with `Undo` (Undo writes the file's version back, i.e. "Use file"). Skipped ops use the existing skip snackbar.
+- Both pre-merge versions (the file's and our local model) go to history, as before.
+- Setting `Ask before merging` (off by default) restores the B6 `Use file` / `Keep mine` prompt for users who want it.
+- If replay fails validation (shouldn't happen), fall back to B6 regardless of the setting.
+
+**Drawer keyboard (Q-C2).** Opening the drawer focuses the search field and shows the keyboard. Swipe-down or Back with the keyboard up hides the keyboard first, then a second Back closes the drawer. On the wall-display devices (no hardware keyboard, rarely used for search) the user can turn off `Open keyboard with drawer` (default on).
+
+### 18.3 minSdk ruling: **23**
+**Dependency floor (checked in the published AAR manifests on Google Maven, 2026-10-18):** core / core-ktx 1.19.1 → 23; activity / activity-compose 1.13.0 → 23; lifecycle-runtime-compose / viewmodel-compose 2.11.0 → 23; Compose BOM 2026.09.00 = ui / foundation / runtime 1.12.1 → 23, material3 1.4.0 → 21; documentfile 1.1.0 → 21. **The real floor is 23**; 22 or lower is impossible without downgrading AndroidX. kotlinx.serialization and our code use no `java.time` or `java.nio.file` (verified by grep), so no core-library desugaring is needed.
+
+**Devices:**
+| Device | Latest official Android (API) | Role | Covered at 23? | Notes |
+|---|---|---|---|---|
+| Galaxy S25 Ultra | 16 (36) | Daily phone | Yes | Full features, private space. |
+| Galaxy A53 | 16 (36) | First test device | Yes | Full features. |
+| Galaxy A51 | 13 (33) | Spare | Yes | Full except private space. |
+| Galaxy S8+ | 9 (28) | Wall display | Yes | No RoleManager (settings fallback); adaptive icons OK. |
+| Galaxy Tab S2 | 7.0 (24) | Wall display | Yes | No shortcuts, legacy icons. |
+| OnePlus 2 | 6.0.1 / OxygenOS 3 (23) | Wall display | Yes | No shortcuts, legacy icons, no quiet mode. |
+| OnePlus One (modded) | Stock 6.0.1 (23); custom ROM likely newer | Wall display | Yes | Whatever ROM it runs, it's ≥ 23. Christopher can confirm the version, but it doesn't change the ruling. |
+At minSdk 24 we would lose the OnePlus 2 (and the One if it runs stock); at 26 we'd lose the Tab S2 too. **23 is the only value that covers every device he owns.**
+
+**Cost on API 23-25:**
+- **Pinned shortcuts:** `LauncherApps.getShortcuts/pinShortcuts/startShortcut` are 25; the pin-request flow (`ACTION_CONFIRM_PIN_SHORTCUT`, `PinItemRequest`) is 26. Ruling: on 23-25 shortcut items render greyed with `Shortcuts need Android 8 or later.` and never launch; the pin flow is 26+ only (the manifest intent filter is harmless on older versions). No legacy `INSTALL_SHORTCUT` broadcast support. Exactly: 25 could launch existing shortcuts, but one device at most (none of his) sits on 25, so one gate at 26 keeps it simple.
+- **Adaptive icons (26):** `getBadgedIcon` returns a legacy bitmap/drawable on 23-25; draw it as-is. No icon shape masking below 26. Zero extra code beyond not assuming `AdaptiveIconDrawable`.
+- **Home role (29):** `RoleManager` on 29+, `Settings.ACTION_HOME_SETTINGS` on 23-28 (already in §8). On some old Samsung ROMs that intent may be missing; fall back to `Settings.ACTION_SETTINGS` with the copy `Open Apps → Default apps → Home app`.
+- **Profiles:** `LauncherApps.getProfiles()` is **26** (the current code calls it unconditionally). On 23-25 use `UserManager.getUserProfiles()`. `UserManager.isQuietModeEnabled` is **24** and `requestQuietModeEnabled` is **28**: below 24 assume not paused; on 24-27 a paused work app shows the hint and doesn't launch.
+- **Private space (35):** already gated.
+- **SAF:** `ACTION_OPEN_DOCUMENT_TREE` and persisted grants are 21; fine on 23. Old `ExternalStorageProvider` quirks: on 23-25 internal storage is hidden in the picker until the user taps ⋮ → `Show internal storage`, so onboarding copy on those versions adds that hint; `"wt"` truncation works; `DocumentsContract.isTreeUri` is 24, so don't use it; `ContentObserver` notifications are even rarer, but polling already covers that.
+- **Notification channels (26):** not applicable; the launcher posts no notifications. If a later feature does, gate on 26.
+- **Dynamic colour (31) and themed icons (33):** gate when added; Material3 falls back to the static scheme.
+- **Compose on 2015-era hardware** (OnePlus 2: Snapdragon 810, 3-4 GB; One: 801, 3 GB; Tab S2: Exynos 5433, 3 GB): workable for a static grid but startup and first drawer open will be slow. Mitigations: R8-minified release builds only on those devices, baseline profile (profileinstaller works from API 24; on 23 it's JIT-only, so the OnePlus 2 is the slowest case), drawer list `LazyVerticalGrid` with stable keys, icons decoded once into the existing LRU cache at the home cell size, no animations beyond the system defaults, and no blur. Budget: first frame ≤ 1.5 s cold on the OnePlus 2, drawer scroll without visible jank at 2000 items on the Tab S2. If those budgets fail, a `Reduce motion` setting disables page/drawer animations rather than raising minSdk.
+- **Test matrix:** emulators API 23, 26, 29, 35 and 36 in CI (unit + Robolectric at `@Config(sdk=[23, 26, 35])`), plus manual on A53 (primary), S25 Ultra, and one old device (Tab S2 or OnePlus 2) per release. The other wall displays are smoke-tested only when convenient. That's one extra emulator and one extra manual device compared with minSdk 26.
+
+**Code gates Sprite needs to add** (no other change is required for 23):
+1. `app/build.gradle.kts`: `minSdk = 23` (compileSdk 37 and targetSdk 35 are already set).
+2. `InstalledApps.profiles()`: `if (SDK_INT >= 26) launcherApps.profiles else userManager.userProfiles`.
+3. `InstalledApps.load()`: `isQuietModeEnabled` only when `SDK_INT >= 24`, else `false`.
+4. `InstalledApps.launch(app)`: `requestQuietModeEnabled` only when `SDK_INT >= 28`; otherwise return false and show the paused hint.
+5. `InstalledApps.launch(ShortcutItem)` and any `getShortcuts`/`pinShortcuts`: only when `SDK_INT >= 26`; below that the item resolves as unavailable with the "needs Android 8" hint.
+6. Pin-shortcut activity (when added): `@RequiresApi(26)`; `LauncherApps.getPinItemRequest` only on 26+.
+7. Home role request: `RoleManager` on 29+, `ACTION_HOME_SETTINGS` on 23-28 with the `ACTION_SETTINGS` fallback.
+8. Icons: never cast to `AdaptiveIconDrawable` without `SDK_INT >= 26`.
+9. Onboarding: on `SDK_INT < 26`, add the `Show internal storage` hint to the picker step.
+10. Keep Android Lint `NewApi` as an error in CI so a missed gate fails the build; add Robolectric runs at sdk 23.
+
+### 18.4 Copy rulings on docs/ux.md
+- **Q15 cloud warning, `Choose another folder`: approved as written** (`Use anyway` · `Choose another folder`, reopening the picker).
+- **Q9 folder message: replace.** The current text says the folder "was skipped because its apps were removed in the file", which is wrong when a member was *moved* into another folder, and it doesn't mention the survivor that gets placed alone. Exact replacement:
+  - One member left: `Folder "<Label>" wasn't recreated because its other apps were removed or moved in the file. "<App>" was placed on its own.`
+  - None left: `Folder "<Label>" wasn't recreated because its apps were removed or moved in the file.`
+  - Both with `[Undo]`. The trigger becomes "an automatic merge (or `Keep mine`) skipped a folder", per §18.2.
