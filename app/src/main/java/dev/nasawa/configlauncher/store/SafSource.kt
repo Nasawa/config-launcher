@@ -23,11 +23,15 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
         val cols = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE,
             Document.COLUMN_LAST_MODIFIED, Document.COLUMN_SIZE)
         val out = mutableMapOf<String, Child>()
-        resolver.query(uri, cols, null, null, null)?.use { c ->
+        if (resolver.persistedUriPermissions.none { it.uri == treeUri && it.isReadPermission }) throw AccessLostException("folder permission was revoked")
+        try { resolver.query(uri, cols, null, null, null)?.use { c ->
             while (c.moveToNext()) {
                 out[c.getString(1)] = Child(c.getString(0), c.getString(2) ?: "", if (c.isNull(3)) 0 else c.getLong(3), if (c.isNull(4)) 0 else c.getLong(4))
             }
-        } ?: throw IOException("folder is not accessible (reconnect it in settings)")
+        } ?: throw AccessLostException("folder is not accessible")
+        } catch (e: SecurityException) { throw AccessLostException("folder permission was revoked") }
+        catch (e: java.io.FileNotFoundException) { throw AccessLostException("folder no longer exists") }
+        catch (e: IllegalArgumentException) { throw AccessLostException("folder no longer exists") }
         return out
     }
 

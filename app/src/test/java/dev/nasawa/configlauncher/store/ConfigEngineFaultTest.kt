@@ -76,7 +76,7 @@ class ConfigEngineFaultTest {
     @Test fun oversizeFileRejectedWithoutSwap() = runBlocking {   // HC-5
         val src = FakeSource().apply { put(cfg(1)) }
         val e = engine(src); e.poll()
-        src.put(cfg(2).replace("}]}]}", "}],\"x-pad\":\"${"a".repeat(300 * 1024)}\"}]}"))
+        src.put(cfg(2).replace("}]}]}", "}],\"x-pad\":\"${"a".repeat(2 * 1024 * 1024 + 1)}\"}]}"))
         assertFalse(e.poll())
         assertEquals(1L, e.state.value.config.revision)
     }
@@ -142,8 +142,9 @@ class ConfigEngineFaultTest {
         val src = FakeSource().apply { writeFails = IOException("ENOSPC") }
         val e = engine(src)
         val before = e.state.value.config
-        assertFalse(e.poll())
+        e.poll()
+        assertFalse(e.createFromCurrentLayout()) // creation is explicit (B4); a failed create reports B5
         assertEquals(before, e.state.value.config)
-        assertTrue(e.state.value.errors.isNotEmpty())
+        assertTrue(e.state.value.issue is Issue.SaveFailed)
     }
 }

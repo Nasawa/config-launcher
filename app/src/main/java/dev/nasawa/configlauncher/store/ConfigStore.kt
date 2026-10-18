@@ -29,9 +29,9 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
 
     private fun currentSource(): ConfigSource {
         val uri = prefs.folderUri
-        if (uri != null && context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission && it.isWritePermission }) {
-            return SafSource(context.contentResolver, uri)
-        }
+        // A picked folder stays the source even if its grant is gone, so B3 (Reconnect) shows
+        // instead of silently switching to app storage.
+        if (uri != null) return SafSource(context.contentResolver, uri)
         return LocalFileSource(localDir)
     }
 
@@ -40,7 +40,8 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         if (pollJob?.isActive == true) return
         watch(engine.source)
         pollJob = scope.launch(Dispatchers.IO) {
-            while (isActive) { runCatching { engine.poll() }; delay(2_000) }
+            runCatching { engine.poll(force = true) } // resume always hashes (§17 Q5)
+            while (isActive) { delay(2_000); runCatching { engine.poll() } }
         }
     }
 
@@ -51,6 +52,11 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     }
 
     fun pollNow() { scope.launch(Dispatchers.IO) { engine.poll(force = true) } }
+
+    fun createFromCurrentLayout() { scope.launch(Dispatchers.IO) { engine.createFromCurrentLayout() } }
+
+    /** §17 Q15: cloud providers may sync slowly; only local storage is the recommended case. */
+    fun isCloudFolder(uri: Uri) = uri.authority != "com.android.externalstorage.documents"
 
     fun useFolder(uri: Uri) {
         context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
