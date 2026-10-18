@@ -422,7 +422,7 @@ Rules:
 - **Folder message:** shown only when the folder is the *only* change and it was skipped. In every other case it's folded into the counts (one folder = one skipped change). The full story is in history.
 - **Undo** (automatic merge only) restores the file's version as it arrived, i.e. "Use file" (§18.2), with Sprite's safety rule: if the file changed again since the merge, only the items the merge touched are reverted. Skipped edits stay skipped either way. **All-skipped merges have no Undo**, because nothing of yours was written and the screen already shows the file's version. The pre-merge phone layout stays in `Restore previous layout`.
 - **`Keep mine`** (B6) uses the same table, minus Undo, because the user has just chosen. All kept shows nothing extra.
-- Snackbar duration: 6 s when it has Undo (Material long), 4 s without.
+- Snackbar duration: 10 s when it has Undo (the §18.2 Undo window), 6 s without.
 - **TalkBack** announces the full sentence, not the short form. Mixed: `Layout updated from launcher.json. Kept 2 changes. Skipped 2 changes because their items were removed or moved in the file.` The Undo action is exposed as the snackbar's action and announced by the system (`Undo, button`). All-kept and all-skipped announce the visible text.
 - **Android resources** (no hard-coded English in Kotlin):
   ```xml

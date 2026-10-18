@@ -1,5 +1,8 @@
 package dev.nasawa.configlauncher.ui
 
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import dev.nasawa.configlauncher.R
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -81,20 +84,21 @@ fun HomeScreen(vm: HomeViewModel) {
         return
     }
     // Merge results use the in-app snackbar (ux.md §9.1); other one-shot notices are toasts.
-    LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
+    val res = androidx.compose.ui.platform.LocalResources.current
+    LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it.resolve(res), Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
     val toast = { msg: String -> Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
-    val launchApp = { app: InstalledApp -> if (!vm.apps.launch(app)) toast("Couldn't open ${Labels.clean(app.label)}") }
+    val launchApp = { app: InstalledApp -> if (!vm.apps.launch(app)) toast(res.getString(R.string.open_failed, Labels.clean(app.label))) }
 
     val onOpen: (ResolvedItem) -> Unit = { r ->
         when (val item = r.item) {
             is FolderItem -> openFolder = r
             is ShortcutItem -> when {
-                r.workDisabled -> toast("Turn on \"Include work apps in config\" to use this.")
-                !vm.apps.launch(item) -> toast("Shortcut no longer available")
+                r.workDisabled -> toast(res.getString(R.string.work_disabled))
+                !vm.apps.launch(item) -> toast(res.getString(R.string.shortcut_gone))
             }
             is AppItem -> when {
-                r.workDisabled -> toast("Turn on \"Include work apps in config\" to use this.")
-                r.app == null -> toast("Not installed")
+                r.workDisabled -> toast(res.getString(R.string.work_disabled))
+                r.app == null -> toast(res.getString(R.string.not_installed))
                 else -> launchApp(r.app)
             }
         }
@@ -104,23 +108,23 @@ fun HomeScreen(vm: HomeViewModel) {
         Surface(Modifier.fillMaxSize(), color = Color(0xFF101418)) {
             Column(Modifier.fillMaxSize().systemBarsPadding()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(ui.load.sourceName, style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
-                    TextButton({ drawerOpen = true }) { Text("Apps") }
+                    Text(if (ui.load.reconnectable) stringResource(R.string.source_folder, ui.load.sourceName.removePrefix("Folder: ")) else stringResource(R.string.source_app_storage), style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
+                    TextButton({ drawerOpen = true }) { Text(stringResource(R.string.apps)) }
                     Box {
                         TextButton({ menuOpen = true }) { Text("⋮") }
                         DropdownMenu(menuOpen, { menuOpen = false }) {
-                            DropdownMenuItem({ Text("Pick config folder…") }, { menuOpen = false; moving = true; pickFolder.launch(null) })
-                            DropdownMenuItem({ Text("Use phone storage") }, { menuOpen = false; vm.store.useAppStorage() })
-                            DropdownMenuItem({ Text("Label backdrop") }, {
+                            DropdownMenuItem({ Text(stringResource(R.string.menu_pick_folder)) }, { menuOpen = false; moving = true; pickFolder.launch(null) })
+                            DropdownMenuItem({ Text(stringResource(R.string.menu_use_phone_storage)) }, { menuOpen = false; vm.store.useAppStorage() })
+                            DropdownMenuItem({ Text(stringResource(R.string.menu_label_backdrop)) }, {
                                 backdrop = !backdrop; vm.store.prefs.labelBackdrop = backdrop
                             }, trailingIcon = { Checkbox(backdrop, null) })
-                            DropdownMenuItem({ Text("Ask before merging") }, {
+                            DropdownMenuItem({ Text(stringResource(R.string.menu_ask_before_merging)) }, {
                                 askMerge = !askMerge; vm.store.setAskBeforeMerging(askMerge)
                             }, trailingIcon = { Checkbox(askMerge, null) })
-                            DropdownMenuItem({ Text("Open keyboard with drawer") }, {
+                            DropdownMenuItem({ Text(stringResource(R.string.menu_open_keyboard)) }, {
                                 keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
                             }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
-                            DropdownMenuItem({ Text("Reload launcher.json") }, { menuOpen = false; vm.store.pollNow() })
+                            DropdownMenuItem({ Text(stringResource(R.string.menu_reload)) }, { menuOpen = false; vm.store.pollNow() })
                         }
                     }
                 }
@@ -156,7 +160,7 @@ fun HomeScreen(vm: HomeViewModel) {
         openFolder?.let { folder ->
             AlertDialog(
                 onDismissRequest = { openFolder = null },
-                confirmButton = { TextButton({ openFolder = null }) { Text("Close") } },
+                confirmButton = { TextButton({ openFolder = null }) { Text(stringResource(R.string.close)) } },
                 title = { Text(folder.title) },
                 text = {
                     LazyVerticalGrid(GridCells.Fixed(4)) {
@@ -184,11 +188,11 @@ fun HomeScreen(vm: HomeViewModel) {
                 LaunchedEffect(gridState.isScrollInProgress) { if (gridState.isScrollInProgress) ime?.hide() }
                 OutlinedTextField(
                     query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp).focusRequester(focus),
-                    placeholder = { Text("Search apps") }, singleLine = true,
+                    placeholder = { Text(stringResource(R.string.search_hint)) }, singleLine = true,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Go),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = { shown.firstOrNull()?.let { drawerOpen = false; launchApp(it) } }),
                 )
-                if (shown.isEmpty()) Text("No apps match \"${query.trim()}\".", Modifier.padding(16.dp), color = Color.Gray)
+                if (shown.isEmpty()) Text(stringResource(R.string.search_no_match, query.trim()), Modifier.padding(16.dp), color = Color.Gray)
                 LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxHeight(0.85f).padding(8.dp), state = gridState) {
                     items(shown, key = { it.key }) { app ->
                         Tile(ResolvedItem(AppItem("drawer", app.packageName, app.activityName), app), vm.apps) {
@@ -203,7 +207,7 @@ fun HomeScreen(vm: HomeViewModel) {
 
 @Composable
 private fun MergeSnackbar(n: dev.nasawa.configlauncher.store.MergeNotice, onUndo: (() -> Unit)?, onDismiss: () -> Unit) {
-    val res = androidx.compose.ui.platform.LocalContext.current.resources
+    val res = androidx.compose.ui.platform.LocalResources.current
     val copy = remember(res) { dev.nasawa.configlauncher.store.MergeCopy(res) }
     val text = copy.text(n); val spoken = copy.spoken(n)
     LaunchedEffect(n) { kotlinx.coroutines.delay(dev.nasawa.configlauncher.store.MergeCopy.durationMs(n)); onDismiss() }
@@ -221,9 +225,9 @@ private fun ConflictBanner(count: Int, onUseFile: () -> Unit, onKeepMine: () -> 
         Modifier.fillMaxWidth().padding(8.dp).background(Color(0xFF4A3B00), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("launcher.json changed while you were editing ($count change${if (count == 1) "" else "s"}).", color = Color.White, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-        TextButton(onUseFile) { Text("Use file") }
-        TextButton(onKeepMine) { Text("Keep mine") }
+        Text(pluralStringResource(R.plurals.b6_conflict, count, count), color = Color.White, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        TextButton(onUseFile) { Text(stringResource(R.string.action_use_file)) }
+        TextButton(onKeepMine) { Text(stringResource(R.string.action_keep_mine)) }
     }
 }
 
@@ -232,12 +236,12 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
     val errors = issue.details
     var expanded by remember(issue) { mutableStateOf(false) }
     val title = when (issue) {
-        is dev.nasawa.configlauncher.store.Issue.ParseError, is dev.nasawa.configlauncher.store.Issue.ReadFailed -> "Can't read launcher.json. Showing the last working layout."
-        is dev.nasawa.configlauncher.store.Issue.Invalid -> "launcher.json has ${errors.size} problem${if (errors.size == 1) "" else "s"}. Showing the last working layout."
-        is dev.nasawa.configlauncher.store.Issue.AccessLost -> "Can't reach your config folder. Showing the last working layout."
-        dev.nasawa.configlauncher.store.Issue.Missing -> "No launcher.json yet."
-        is dev.nasawa.configlauncher.store.Issue.SaveFailed -> "Couldn't save your change."
-        is dev.nasawa.configlauncher.store.Issue.TooNew -> "This file needs a newer Config Launcher."
+        is dev.nasawa.configlauncher.store.Issue.ParseError, is dev.nasawa.configlauncher.store.Issue.ReadFailed -> stringResource(R.string.b1_cant_read)
+        is dev.nasawa.configlauncher.store.Issue.Invalid -> pluralStringResource(R.plurals.b2_invalid, errors.size, errors.size)
+        is dev.nasawa.configlauncher.store.Issue.AccessLost -> stringResource(R.string.b3_access_lost)
+        dev.nasawa.configlauncher.store.Issue.Missing -> stringResource(R.string.b4_missing)
+        is dev.nasawa.configlauncher.store.Issue.SaveFailed -> issue.title.resolve(androidx.compose.ui.platform.LocalResources.current)
+        is dev.nasawa.configlauncher.store.Issue.TooNew -> stringResource(R.string.b7_too_new)
     }
     Column(
         Modifier.fillMaxWidth().padding(8.dp).background(Color(0xFF5C1F1F), RoundedCornerShape(8.dp))
@@ -247,9 +251,9 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
         Row {
             BannerActions.forIssue(issue, reconnectable).forEach { a ->
                 when (a) {
-                    BannerAction.CREATE -> TextButton(onCreate) { Text("Create from current layout") }
-                    BannerAction.RECONNECT -> TextButton(onReconnect) { Text("Reconnect") }
-                    BannerAction.RETRY -> TextButton(onRetry) { Text("Retry") }
+                    BannerAction.CREATE -> TextButton(onCreate) { Text(stringResource(R.string.action_create)) }
+                    BannerAction.RECONNECT -> TextButton(onReconnect) { Text(stringResource(R.string.action_reconnect)) }
+                    BannerAction.RETRY -> TextButton(onRetry) { Text(stringResource(R.string.action_retry)) }
                 }
             }
         }
@@ -258,9 +262,10 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
         if (expanded) androidx.compose.runtime.LaunchedEffect(issue) {
             where = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { runCatching { locate(errors) }.getOrDefault(emptyList()) }
         }
-        val shown = if (expanded) errors.mapIndexed { i, e -> where.getOrNull(i)?.let { "Line ${it.line}, col ${it.column}: $e" } ?: e } else errors.take(1)
+        val res = androidx.compose.ui.platform.LocalResources.current
+        val shown = if (expanded) errors.mapIndexed { i, e -> where.getOrNull(i)?.let { res.getString(R.string.error_at, it.line, it.column, e) } ?: e } else errors.take(1)
         shown.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFCDD2)) }
-        if (!expanded && errors.size > 1) Text("Tap to see all", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
+        if (!expanded && errors.size > 1) Text(stringResource(R.string.tap_to_see_all), style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
     }
 }
 
@@ -301,7 +306,7 @@ private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragContr
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
         items.forEach { r -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { with(drag) { Tile(r, apps, Modifier.draggable(r), showLabel = false) { onOpen(r) } } } }
-        if (items.isEmpty()) Text("Dock: long-press an app and drop it here", color = Color.Gray, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterVertically))
+        if (items.isEmpty()) Text(stringResource(R.string.dock_empty), color = Color.Gray, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterVertically))
     }
 }
 

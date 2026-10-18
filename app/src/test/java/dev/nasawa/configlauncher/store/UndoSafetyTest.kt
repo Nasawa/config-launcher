@@ -22,7 +22,7 @@ class UndoSafetyTest {
         .replace("\"package\":\"p.b\"", "\"package\":\"p.b\",\"label\":\"Bee\"")
         .replace("\"package\":\"p.a\",\"x\":0", "\"package\":\"p.a\",\"x\":3")
         .replace("\"dock\":[]", "\"dock\":[{\"id\":\"c\",\"type\":\"app\",\"package\":\"p.c\"}]")
-    private val cancelled = "File changed again, Undo cancelled."
+    private val cancelled = Msg(dev.nasawa.configlauncher.R.string.undo_cancelled)
 
     private class Rig(val e: ConfigEngine, val src: LocalFileSource, val lg: LastGoodStore)
 

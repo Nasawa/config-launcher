@@ -34,7 +34,7 @@ class MergeCopy(private val r: Resources) {
         else r.getString(R.string.merge_folder_none_left, f.label)
 
     companion object {
-        /** Snackbar duration: 6 s with Undo (Material long), 4 s without. */
-        fun durationMs(n: MergeNotice) = if (n.undo) 6_000L else 4_000L
+        /** Snackbar duration: 10 s with Undo (the §18.2 Undo window), 6 s without. */
+        fun durationMs(n: MergeNotice) = if (n.undo) 10_000L else 6_000L
     }
 }
