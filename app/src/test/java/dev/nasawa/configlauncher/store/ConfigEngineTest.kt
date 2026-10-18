@@ -53,6 +53,18 @@ class ConfigEngineTest {
         assertEquals(emptyList<String>(), e.state.value.errors)
     }
 
+    @Test fun vanishedFileIsNotRecreated() = runBlocking {
+        val (e, src, _) = setup()
+        src.file.put(cfg(1), 1000); e.poll()
+        src.file.delete()
+        assertFalse(e.poll())
+        assertFalse(src.file.exists())
+        assertTrue(e.state.value.errors.single().contains("missing"))
+        src.file.put(cfg(2), 2000)
+        assertTrue(e.poll())
+        assertEquals(2L, e.state.value.config.revision)
+    }
+
     @Test fun unchangedStampSkipsRead() = runBlocking {
         val (e, src, _) = setup()
         src.file.put(cfg(1), 1000); e.poll()

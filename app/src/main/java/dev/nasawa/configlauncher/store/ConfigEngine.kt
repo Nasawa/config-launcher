@@ -35,6 +35,8 @@ class ConfigEngine(
 ) {
     private val mutex = Mutex()
     private var lastStamp: Stamp? = null
+    /** True once launcher.json has existed on the current source. */
+    private var seenFile = false
     /** Hashes we wrote ourselves (last 4); seeing one of them again is an echo, not an edit (§5). */
     private val selfWrites = ArrayDeque<String>()
 
@@ -51,6 +53,7 @@ class ConfigEngine(
     suspend fun switchSource(newSource: ConfigSource) = mutex.withLock {
         source = newSource
         lastStamp = null
+        seenFile = false
         _state.update { it.copy(sourceName = newSource.displayName, errors = emptyList()) }
     }.also { poll(force = true) }
 
@@ -62,9 +65,14 @@ class ConfigEngine(
         val stamp = try { src.stamp() } catch (e: Exception) { return fail("Can't read ${src.displayName}: ${e.message}") }
         if (stamp == null) {
             lastStamp = null
-            // No launcher.json yet: create it from the current layout so there is something to edit.
+            // A file we have seen vanish is usually an external replace (adb push, sync tools, git):
+            // never recreate it then, or we would clobber the incoming version.
+            if (seenFile) return fail("launcher.json is missing; showing the last working layout")
+            if (stabilityMs > 0) { delay(stabilityMs); if (runCatching { src.stamp() }.getOrNull() != null) return false }
+            // No launcher.json on this source yet: create it from the current layout so there is something to edit.
             return try { writeLocked(_state.value.config); false } catch (e: Exception) { fail("Couldn't create launcher.json: ${e.message}") }
         }
+        seenFile = true
         if (!force && stamp == lastStamp) return false
         var bytes = try { src.read(ConfigCodec.MAX_BYTES) } catch (e: Exception) { return fail(e.message ?: "read failed") } ?: return false
         var hash = ConfigCodec.sha256(bytes)
@@ -95,6 +103,7 @@ class ConfigEngine(
         val hash = ConfigCodec.sha256(bytes)
         selfWrites.addLast(hash); while (selfWrites.size > 4) selfWrites.removeFirst()
         source.write(bytes)
+        seenFile = true
         lastStamp = source.stamp()
         _state.value = LoadState(config, Origin.FILE, source.displayName, hash)
         runCatching { lastGood.save(bytes) }
