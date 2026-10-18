@@ -364,7 +364,7 @@ class ConfigEngine(
         pending.clear()
         _state.update {
             it.copy(conflict = false, pendingEdits = 0, issue = null,
-                notice = if (skipped > 0) "$skipped change(s) skipped because the item was removed or moved in the file" else null)
+                notice = if (skipped > 0) MergeCopy.skipped(skipped) else null)
         }
         true
     }
