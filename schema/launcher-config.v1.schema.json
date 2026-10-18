@@ -51,16 +51,11 @@
       }
     },
     "dock": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "items": {
-          "type": "array",
-          "maxItems": 7,
-          "items": {
-            "$ref": "#/$defs/dockItem"
-          }
-        }
+      "description": "Dock items in order, left to right.",
+      "type": "array",
+      "maxItems": 7,
+      "items": {
+        "$ref": "#/$defs/dockItem"
       }
     },
     "drawer": {
@@ -109,26 +104,6 @@
       ],
       "default": "personal"
     },
-    "position": {
-      "type": "object",
-      "required": [
-        "x",
-        "y"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "x": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 11
-        },
-        "y": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 11
-        }
-      }
-    },
     "label": {
       "type": "string",
       "maxLength": 60
@@ -172,9 +147,17 @@
           },
           "uniqueItems": true
         },
-        "position": {
-          "$ref": "#/$defs/position",
-          "description": "Required on page items; forbidden in folders and the dock."
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11,
+          "description": "Column. Required on page items; forbidden in folders and the dock."
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11,
+          "description": "Row. Required on page items; forbidden in folders and the dock."
         }
       }
     },
@@ -211,9 +194,17 @@
         "label": {
           "$ref": "#/$defs/label"
         },
-        "position": {
-          "$ref": "#/$defs/position",
-          "description": "Required on page items; forbidden in folders and the dock."
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11,
+          "description": "Column. Required on page items; forbidden in folders and the dock."
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11,
+          "description": "Row. Required on page items; forbidden in folders and the dock."
         }
       }
     },
@@ -256,15 +247,32 @@
               }
             ],
             "not": {
-              "required": [
-                "position"
+              "anyOf": [
+                {
+                  "required": [
+                    "x"
+                  ]
+                },
+                {
+                  "required": [
+                    "y"
+                  ]
+                }
               ]
             }
           }
         },
-        "position": {
-          "$ref": "#/$defs/position",
-          "description": "Required on page items; forbidden in folders and the dock."
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11,
+          "description": "Column. Required on page items; forbidden in folders and the dock."
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11,
+          "description": "Row. Required on page items; forbidden in folders and the dock."
         }
       }
     },
@@ -288,7 +296,8 @@
         }
       ],
       "required": [
-        "position"
+        "x",
+        "y"
       ]
     },
     "dockItem": {
@@ -298,8 +307,17 @@
         }
       ],
       "not": {
-        "required": [
-          "position"
+        "anyOf": [
+          {
+            "required": [
+              "x"
+            ]
+          },
+          {
+            "required": [
+              "y"
+            ]
+          }
         ]
       }
     },

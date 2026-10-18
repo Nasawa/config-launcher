@@ -25,13 +25,13 @@ Status: proposal for review, 2026-10-18. Author: Archimedes (architecture). Buil
 ## 3. Config schema (v1)
 File: `launcher.json` in the picked folder. Schema: [`schema/launcher-config.v1.schema.json`](schema/launcher-config.v1.schema.json) (JSON Schema 2020-12). Example: [`schema/examples/minimal.json`](schema/examples/minimal.json).
 
-Top level: `schemaVersion` (const 1), `revision`, `grid {columns, rows}`, `pages[]`, `dock {items[]}`, `drawer {sort, hidden[], rules[]}`, `unsorted {mode, pageTitle}`.
+Top level: `schemaVersion` (const 1), `revision`, `grid {columns, rows}`, `pages[]`, `dock[]`, `drawer {sort, hidden[], rules[]}`, `unsorted {mode, pageTitle}`.
 
 Items (discriminated by `type`):
 - `app`: `package`, optional `activity` (omit to use the default launcher activity), optional `profile` (`personal`|`work`), `label` override, `tags[]`.
 - `shortcut`: `package` + `shortcutId` (a pinned shortcut owned by that package, see §8), optional `profile`, `label`.
 - `folder`: `label`, `items[]` of apps/shortcuts. No nested folders in v1.
-- Page items need `position {x, y}`; dock and folder items must not have one (order is the array order). Every item is 1x1 in v1; `w/h` arrive with widgets.
+- Page items need `x` and `y`; dock and folder items must not have them (order is the array order). Every item is 1x1 in v1; `w/h` arrive with widgets.
 
 **Unsorted.** Installed launchable apps that appear nowhere in pages/dock/folders and are not in `drawer.hidden` are "unsorted". `unsorted.mode`: `drawer` (default: they simply appear in the drawer, which always lists all apps), `page` (also shown on a synthetic last page, not written to the file), or `hidden`. The launcher never writes unsorted apps into the file on its own; placing one by drag is an explicit edit. This keeps installs from churning the file.
 
@@ -107,13 +107,17 @@ Cases:
 - **External edit arrives during a drag:** do not swap the model mid-gesture. Park the new file as `incoming`. On drag end, the drop becomes a pending edit and we go to the merge below.
 - **External edit detected at write time (hash ≠ base):** three-way merge by ID.
 
-**Merge rule (ID-based, operation replay).** Local edits are stored as operations, not as a whole-file diff: `Move(id, container, position|index)`, `Add(item, container, position)`, `Remove(id)`, `Rename(id, label)`, `CreateFolder(id, memberIds, position)`. To merge, take the external file as the new base and replay each pending op:
-- Target ID still exists → apply. If the target cell is now occupied, place in the nearest free cell on the same page, else the first free cell on any page, else a new page.
-- Target ID was removed externally → drop the op (external deletion wins), notice "1 change discarded because the item was removed in the file".
-- `Add` whose (package, activity, profile) already exists in the destination container → skip as duplicate.
-Result is validated; if it fails validation (should not happen), discard local ops, apply external, and show "Your last change conflicted and was discarded" with Undo (Undo re-applies our model as a fresh write).
+**When the hash check fails, the user decides** (adopted from docs/ux.md §4.4 and the coordinator, AQ-6). Nothing is overwritten; banner B6 `launcher.json changed while you were editing.` offers:
+- **`Use file`**: discard the pending local ops and load the file. The discarded local model is snapshotted to history.
+- **`Keep mine`**: replay the pending ops by ID onto the *file's* version (not a whole-file overwrite), validate, and write. The file version as it was is snapshotted first.
 
-This is "external file wins on structure, local gestures win on the items they touched", which is what a user who just dropped an icon expects, and it never loses an agent's bulk reorganization. **Departs from spike:** the spike proposes last-writer-wins plus a version counter; LWW would silently erase either a large agent edit or the user's drag. `revision` stays as a hint for humans and agents, not for correctness.
+**Replay rule (ID-based).** Local edits are stored as operations, not as a whole-file diff: `Move(id, container, cell|index)`, `Add(item, container, cell)`, `Remove(id)`, `Rename(id, label)`, `CreateFolder(id, memberIds, cell)`. On `Keep mine`, each op is applied to the file's model:
+- Target ID still exists → apply. If the target cell is now occupied, place in the nearest free cell on the same page, else the first free cell on any page, else a new page.
+- Target ID was removed in the file → drop the op, snackbar "1 change skipped because the item was removed in the file".
+- `Add` whose (package, activity, profile) already exists in the destination container → skip as duplicate.
+If the result fails validation (should not happen), nothing is written and the B6 banner stays with only `Use file`.
+
+Why `Keep mine` replays instead of overwriting (a small deviation from ux.md's "write my version"): an agent's bulk reorganization and the user's one drag usually touch different items, so replay keeps both; a whole-file overwrite would silently erase the agent's work, which `.history` could recover but the user wouldn't know to look for. **Departs from spike:** the spike's last-writer-wins plus counter is rejected for the same reason; `revision` is a hint, not the conflict key.
 
 Every merge or discarded edit writes the pre-merge local model to `filesDir/config/history/` so a "Restore previous layout" action in Settings can recover anything.
 
@@ -137,7 +141,7 @@ Every merge or discarded edit writes the pre-merge local model to `filesDir/conf
 
 ## 9. Error UX
 Principle: **the home screen always works**; errors never blank it.
-- **Invalid file:** keep rendering the current (or last-good) layout; a slim, dismissible banner at the top: "launcher.json has 2 problems. Showing the last working layout." Tap → an error sheet listing each problem with a JSON path (`pages[0].items[3].position: cell (2,0) already used by "a-settings"`) and line/column when parsing fails, plus actions: Copy errors, Restore last-good to file, Dismiss. The banner clears automatically when a valid version appears.
+- **Invalid file:** keep rendering the current (or last-good) layout; a slim, dismissible banner at the top: "launcher.json has 2 problems. Showing the last working layout." Tap → an error sheet listing each problem with a JSON path (`pages[0].items[3]: cell (2,0) already used by "a-settings"`) and line/column when parsing fails, plus actions: Copy errors, Restore last-good to file, Dismiss. The banner clears automatically when a valid version appears.
 - **Folder access lost / folder missing:** banner "Can't reach your config folder" → Reconnect (re-pick) / Use built-in copy.
 - **Save failed:** banner "Couldn't save your change" → Retry; the edit is kept in memory and last-good.
 - **Merge notices:** a snackbar for discarded ops, with Undo.
@@ -218,7 +222,7 @@ Answers to OQ-1 to OQ-31 in [docs/test-plan.md](docs/test-plan.md). Coordinator 
 | 6 | JSON only (RFC 8259, no comments, no JSON5/YAML). Filename `launcher.json` at the root of the picked folder. |
 | 7 | A UTF-8 BOM is accepted on read and stripped; the launcher always writes without one. Other encodings (UTF-16 etc.) are a parse error. |
 | 8 | Grey out at runtime, not a validation error: whether a shortcut is published depends on device state, not the file. Greyed shortcuts never launch. |
-| 9 | 256 KiB file (refused before full read via `COLUMN_SIZE` and a streaming cap), JSON nesting depth 8 at the parser and folder depth 1 in the model (see 10), 2000 items total, 20 pages, 144 items per page, labels 60 chars, IDs 64 chars, other strings 256. **Override:** coordinator said depth 4; the legal v1 structure (root, pages, page, items, folder, items, item, position) already needs 8 JSON levels, so the parser limit is 8 and the *folder* nesting limit is stricter than 4. The parser counts depth itself, so deep input fails fast without StackOverflowError. |
+| 9 | 256 KiB file (refused before full read via `COLUMN_SIZE` and a streaming cap), JSON nesting depth 8 at the parser and folder depth 1 in the model (see 10), 2000 items total, 20 pages, 144 items per page, labels 60 chars, IDs 64 chars, other strings 256. **Override:** coordinator said depth 4; the legal v1 structure (root, pages, page, items, folder, items, item) already needs 7 JSON levels, so the parser limit is 8 (one spare) and the *folder* nesting limit is stricter than 4. The parser counts depth itself, so deep input fails fast without StackOverflowError. |
 | 10 | No. Folders hold apps and shortcuts only (enforced by the schema). |
 | 11 | Bidi controls (U+202A-202E, U+2066-2069), zero-width characters and other Cf/Cc characters are stripped from labels at render time; the file is left as written. A label override is always shown with the app's real icon, and the long-press sheet shows the real app name and package, so a label cannot disguise a different app. NUL or invalid UTF-8/lone surrogates are a parse error. |
 | 12 | Duplicate keys in one object are rejected (parse error with a path). |
@@ -228,12 +232,12 @@ Answers to OQ-1 to OQ-31 in [docs/test-plan.md](docs/test-plan.md). Coordinator 
 | 16 | N = 10, kept in app-private `filesDir/config/history/`, not in the synced folder. The folder only gets `.configlauncher/` (status.json, temp, broken and migration backups). Always kept even with git, since it costs ~2.5 MB max and covers the on-phone side; git covers the agent side. |
 | 17 | No. The launcher reformats only when it writes because of a user edit or upgrade; a reload never triggers a write (no echo). |
 | 18 | Adopted: write `.configlauncher/launcher.json.tmp`, read back and verify the hash; then truncate-write (`"wt"`) `launcher.json`, read back and verify; restore from temp on failure. Readers validate and fall back to last-good. SAF has no replace-rename, so this is used on every provider (§5); a torn read is rejected by validation, never applied. |
-| 19 | Content hash decides, not the counter. A file whose hash differs from what we applied is a new version and is accepted even if its `revision` is lower or equal (adopted from coordinator: keep the newer content, log it). Identical hash is a no-op. The losing version is snapshotted to history (10). **Override on merge:** if the phone has unsaved ops when an external file arrives, the ops are replayed by ID onto the external file (§6) instead of being dropped. This is an op replay, not a 3-way text merge, and it's about 200 lines of pure tested code; without it, any agent sync during a drag silently loses the user's gesture. A full 3-way merge stays deferred. |
+| 19 | Content hash decides, not the counter. A file whose hash differs from what we applied is a new version and is accepted even if its `revision` is lower or equal (adopted: keep the newer content, log it). Identical hash is a no-op. Every replaced version is snapshotted to history (10). If the phone has unsaved edits when the file changes, the user picks `Use file` or `Keep mine` (B6, §6); `Keep mine` replays the edits by ID onto the file rather than overwriting it. A full 3-way text merge is deferred (adopted). |
 | 20 | The launcher bumps `revision` on its own writes (max seen + 1). Agents should bump it; if they don't, the file is accepted (hash decides) and the launcher's next write continues from max + 1. Missing `revision` is valid. |
 | 21 | Ignored by the loader (only `launcher.json` is read). If siblings matching `launcher*.sync-conflict-*` or `launcher (n).json` exist, a dismissible notice names them and status.json lists them. Never auto-merged or deleted. |
 | 22 | Write-back debounce 750 ms after the last edit and never mid-drag. Inbound: foreground poll every 2 s, immediate poll on resume and on any ContentObserver callback, and a 300 ms stability re-check before parsing, so two writes inside one window apply only the final content. |
 | 23 | Edit visible within 1 s of the file landing on the device when the user presses Home (poll on resume), and within 3 s while the home screen is already showing (2 s poll + parse). Sync transfer time is not counted. |
-| 24 | Deferred until drop; the incoming file is parked and the drop is replayed onto it (§6). |
+| 24 | Deferred until drop. If the drop then produces a write, the hash check fails and B6 (`Use file` / `Keep mine`) decides (§6). |
 | 25 | The drawer by default (`unsorted.mode: drawer`); an optional synthetic "Unsorted" page via `unsorted.mode: page`. New installs don't touch home pages. |
 | 26 | No. Unsorted is derived at runtime and never written. Only an explicit user drag onto a page/dock/folder writes. |
 | 27 | Re-map by package. An `app` item without `activity` follows the package's current default launcher activity. One with an `activity` that no longer exists falls back to the package's single launcher activity if there is exactly one (the file is left unchanged until the next edit), and is greyed if there are several. |
@@ -241,3 +245,31 @@ Answers to OQ-1 to OQ-31 in [docs/test-plan.md](docs/test-plan.md). Coordinator 
 | 29 | A symbolic `profile`: `personal` (default) or `work`. Never user IDs or serial numbers. Multiple work profiles: first one (rare). **Override in part:** coordinator said work apps are never written; instead work-profile items are written only if the user turns on "Include work apps in config" (default **off**). With it off, work apps show in the drawer with the work badge but can't be placed on pages, and nothing about them reaches the file. Reason: some users (maybe Christopher, see §14 Q6) will want them organized, and the opt-in keeps the safe default. |
 | 30 | Paused: work items stay, shown greyed with the work badge; tap calls `UserManager.requestQuietModeEnabled(false, ...)` (the system unpause prompt). Removed: items greyed, kept in the file, "Remove from layout" offered. Never deleted automatically. |
 | 31 | Never. Private-space apps are never written to the file, never shown in Unsorted, and never appear in status.json, whether locked or unlocked; they appear only in the system private-space section of the drawer while it is unlocked. The schema has no `private` profile value. |
+
+## 16. Reconciling docs/ux.md (shape decision and AQ-1 to AQ-7)
+**Canonical shape and file name: `launcher.json`, this repo's schema** ([`schema/launcher-config.v1.schema.json`](schema/launcher-config.v1.schema.json)). I took two things from Pragma's sketch because they are simpler for agents: **`dock` is a plain array**, and **grid coordinates are flat `x`/`y`** on page items (the schema originally nested them in `position`). I kept the rest of the schema shape for the reasons below.
+
+**What docs/ux.md needs to change** (Pragma):
+1. §1 example: `"schema": 1` → `"schemaVersion": 1`.
+2. §1 example: `id` is a stable opaque ID, not the component. Apps carry `"package"` and optional `"activity"` (full class name, no leading-dot shorthand). E.g. `{ "id": "a-chrome", "type": "app", "package": "com.android.chrome", "x": 0, "y": 0 }`. Reason: the component changes (OQ-27), the same app can sit in two places (OQ-5), and drags and conflict replay refer to items by ID.
+3. Pages need an `id` (`{ "id": "home", "items": [...] }`); `title` is optional.
+4. Folders use `"label"`, not `"name"` (one field name for all display overrides). Folder children have no `x`/`y`.
+5. `drawer.hidden[]` holds **package names** (`"com.example.bloat"`), not components: hiding is per app.
+6. Work-profile apps use `"profile": "work"`, not an ID marker (AQ-5), and are written only when "Include work apps in config" is on. Private-space apps are never written (OQ-31).
+7. §3 grid limits: 2–12 columns × 2–12 rows in the file (AQ-3). The UI may offer a narrower picker (3–6 × 4–7); that's a UX choice, not a validation rule.
+8. §4.3 step 3: unknown keys are preserved only if prefixed `x-`; other unknown keys make the file invalid (OQ-4). Key order is canonical, not preserved (AQ-2).
+9. §4.3 step 5 and everywhere `.history/` appears: history lives in **app-private storage, last 10** (OQ-16), not `.history/` in the folder. The folder gets `.configlauncher/` only (status.json, temp file, `broken/` and migration backups). The "Restore last working version" and onboarding "Start fresh" backups go to `.configlauncher/backup/` so the replaced file stays reachable from the PC.
+10. §4.3 step 6: replace "temp file, then replace atomically" with the AQ-4 sequence.
+11. §4.4 `Keep mine`: "replays my edits onto the file's version" rather than "write my version" (§6).
+12. §2/§3: "Edit blocked" (`Fix launcher.json first…`) no longer applies: edits while invalid are allowed after the broken file is copied to `.configlauncher/broken/` (OQ-15). Replace that message with B2 plus a snackbar `Your broken launcher.json was saved to .configlauncher/broken/.`
+13. Add `unsorted` (drawer/page/hidden) and `drawer.rules` / `drawer.sort` to the shape description; the starter layout uses `unsorted.mode: "drawer"`.
+
+| AQ | Answer |
+|---|---|
+| AQ-1 | `launcher.json`, shape as above, JSON Schema 2020-12 published at `schema/launcher-config.v1.schema.json` with `schema/examples/`. |
+| AQ-2 | Canonical reformat on every launcher write: 2-space indent, schema key order, `x-` keys after known keys, LF, no BOM. User formatting and key order are not preserved, and JSON has no comments (use `x-note`). The README and onboarding say so. Reloads never trigger a write (OQ-17). |
+| AQ-3 | Errors, the whole file is rejected with last-good kept and B2 listing each problem: out-of-range or overlapping cells, grid outside 2–12. Skipping items would make the next write-back delete them. |
+| AQ-4 | Same as OQ-18: write `.configlauncher/launcher.json.tmp`, read back and verify the hash, truncate-write `launcher.json` (`"wt"`), read back and verify, restore from temp on failure. Partial writes are caught by read-side parse/validation and by the 300 ms size/mtime stability re-check; last-good is the fallback. No SAF rename is relied on. |
+| AQ-5 | Separate fields: opaque `id` (`^[a-z0-9][a-z0-9_-]{0,63}$`), `package`, optional `activity`, optional `profile` (`personal` default, `work` opt-in). No profile marker inside IDs; private space is never written. |
+| AQ-6 | Hash check before writing (adopted). On mismatch, B6 with `Use file` / `Keep mine`; `Keep mine` replays my ops by ID onto the file, and the version that loses is snapshotted. `revision` isn't enough: sync tools and agents may not bump it, so the content hash is the conflict key. During a drag the incoming file is held until drop (OQ-24). |
+| AQ-7 | App-private `filesDir/config/last-good.json`, written by temp + rename after every successful load and verified write; survives process death and reboots, not uninstall (OQ-13). Rendered at cold start before the folder read finishes. |
