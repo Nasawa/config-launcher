@@ -1,0 +1,534 @@
+[
+  {
+    "file": "valid/minimal.json",
+    "expect": "valid",
+    "layer": "both",
+    "ref": "§3",
+    "note": "copy of schema/examples/minimal.json"
+  },
+  {
+    "file": "valid/bom.json",
+    "expect": "valid (BOM stripped; next write has no BOM)",
+    "layer": "parser",
+    "ref": "§15 OQ-7",
+    "note": ""
+  },
+  {
+    "file": "valid/x-keys.json",
+    "expect": "valid; x- keys round-trip verbatim",
+    "layer": "both",
+    "ref": "§15 OQ-4",
+    "note": ""
+  },
+  {
+    "file": "valid/no-revision.json",
+    "expect": "valid",
+    "layer": "both",
+    "ref": "§15 OQ-20",
+    "note": ""
+  },
+  {
+    "file": "valid/same-app-dock-and-page.json",
+    "expect": "valid",
+    "layer": "both",
+    "ref": "§15 OQ-5",
+    "note": ""
+  },
+  {
+    "file": "valid/same-app-twice-on-page.json",
+    "expect": "valid with warning",
+    "layer": "kotlin",
+    "ref": "§3, §15 OQ-5",
+    "note": ""
+  },
+  {
+    "file": "valid/unknown-package.json",
+    "expect": "valid; renders greyed, never launched",
+    "layer": "both",
+    "ref": "§3, §15 OQ-28",
+    "note": ""
+  },
+  {
+    "file": "valid/bidi-label.json",
+    "expect": "valid; bidi/zero-width stripped at render, file untouched",
+    "layer": "both",
+    "ref": "§15 OQ-11",
+    "note": ""
+  },
+  {
+    "file": "valid/emoji-label.json",
+    "expect": "valid",
+    "layer": "both",
+    "ref": "§15 OQ-11",
+    "note": ""
+  },
+  {
+    "file": "valid/grid-12x12-max.json",
+    "expect": "valid",
+    "layer": "both",
+    "ref": "§15 OQ-2",
+    "note": ""
+  },
+  {
+    "file": "valid/work-profile.json",
+    "expect": "valid; work item honoured only if \"Include work apps\" on",
+    "layer": "both",
+    "ref": "§15 OQ-29",
+    "note": ""
+  },
+  {
+    "file": "valid/revision-lower.json",
+    "expect": "valid; accepted even if lower than last seen (hash decides)",
+    "layer": "both",
+    "ref": "§15 OQ-19",
+    "note": ""
+  },
+  {
+    "file": "valid/max-depth-8.json",
+    "expect": "valid (exactly depth 8)",
+    "layer": "parser",
+    "ref": "§15 OQ-9",
+    "note": "folder>item>tags is depth 8"
+  },
+  {
+    "file": "invalid/empty.json",
+    "expect": "parse error, B1, last-good kept",
+    "layer": "parser",
+    "ref": "§4, §15 OQ-14",
+    "note": ""
+  },
+  {
+    "file": "invalid/truncated.json",
+    "expect": "parse error, B1",
+    "layer": "parser",
+    "ref": "§4 step 4, §15 OQ-18",
+    "note": "simulates torn read"
+  },
+  {
+    "file": "invalid/trailing-garbage.json",
+    "expect": "parse error, B1",
+    "layer": "parser",
+    "ref": "§15 OQ-6",
+    "note": ""
+  },
+  {
+    "file": "invalid/comments.json",
+    "expect": "parse error, B1 (no comments)",
+    "layer": "parser",
+    "ref": "§15 OQ-6",
+    "note": ""
+  },
+  {
+    "file": "invalid/json5-trailing-comma.json",
+    "expect": "parse error, B1",
+    "layer": "parser",
+    "ref": "§15 OQ-6",
+    "note": ""
+  },
+  {
+    "file": "invalid/utf16.json",
+    "expect": "parse error, B1",
+    "layer": "parser",
+    "ref": "§15 OQ-7",
+    "note": ""
+  },
+  {
+    "file": "invalid/invalid-utf8.json",
+    "expect": "parse error, B1",
+    "layer": "parser",
+    "ref": "§15 OQ-11",
+    "note": ""
+  },
+  {
+    "file": "invalid/lone-surrogate.json",
+    "expect": "parse error, B1",
+    "layer": "parser",
+    "ref": "§15 OQ-11",
+    "note": ""
+  },
+  {
+    "file": "invalid/nul-in-label.json",
+    "expect": "parse error, B1",
+    "layer": "parser",
+    "ref": "§15 OQ-11",
+    "note": ""
+  },
+  {
+    "file": "invalid/duplicate-key.json",
+    "expect": "parse error with path, B1",
+    "layer": "parser",
+    "ref": "§15 OQ-12",
+    "note": ""
+  },
+  {
+    "file": "invalid/deep-nesting.json",
+    "expect": "parse error, depth > 8, no StackOverflowError",
+    "layer": "parser",
+    "ref": "§15 OQ-9",
+    "note": "100k nested arrays"
+  },
+  {
+    "file": "invalid/depth-9.json",
+    "expect": "parse error, depth 9 > 8",
+    "layer": "parser",
+    "ref": "§15 OQ-9",
+    "note": "x- keys still count toward depth"
+  },
+  {
+    "file": "invalid/oversize-257k.json",
+    "expect": "refused before full read (COLUMN_SIZE + stream cap), B2/B1, last-good kept",
+    "layer": "store",
+    "ref": "§4 step 1, §15 OQ-9",
+    "note": ">256 KiB"
+  },
+  {
+    "file": "invalid/missing-schemaVersion.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-3",
+    "note": ""
+  },
+  {
+    "file": "invalid/newer-schemaVersion.json",
+    "expect": "refused, \"needs a newer Config Launcher\" banner, never downgrade-written",
+    "layer": "both",
+    "ref": "§3 rule 4, §15 OQ-3",
+    "note": ""
+  },
+  {
+    "file": "invalid/schemaVersion-string.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-3",
+    "note": ""
+  },
+  {
+    "file": "invalid/missing-pages.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§3",
+    "note": ""
+  },
+  {
+    "file": "invalid/zero-pages.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "schema minItems",
+    "note": ""
+  },
+  {
+    "file": "invalid/21-pages.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-9",
+    "note": ""
+  },
+  {
+    "file": "invalid/widget-type.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-1",
+    "note": ""
+  },
+  {
+    "file": "invalid/text-type.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-1",
+    "note": ""
+  },
+  {
+    "file": "invalid/intent-type.json",
+    "expect": "invalid, B2; nothing launched",
+    "layer": "both",
+    "ref": "§8, §15 OQ-4",
+    "note": ""
+  },
+  {
+    "file": "invalid/hostile-key-action.json",
+    "expect": "invalid, B2 (unknown key); no Intent built, nothing launched",
+    "layer": "both",
+    "ref": "§8, §15 OQ-4",
+    "note": ""
+  },
+  {
+    "file": "invalid/hostile-key-uri.json",
+    "expect": "invalid, B2 (unknown key); no Intent built, nothing launched",
+    "layer": "both",
+    "ref": "§8, §15 OQ-4",
+    "note": ""
+  },
+  {
+    "file": "invalid/hostile-key-extras.json",
+    "expect": "invalid, B2 (unknown key); no Intent built, nothing launched",
+    "layer": "both",
+    "ref": "§8, §15 OQ-4",
+    "note": ""
+  },
+  {
+    "file": "invalid/hostile-key-script.json",
+    "expect": "invalid, B2 (unknown key); no Intent built, nothing launched",
+    "layer": "both",
+    "ref": "§8, §15 OQ-4",
+    "note": ""
+  },
+  {
+    "file": "invalid/hostile-key-cmd.json",
+    "expect": "invalid, B2 (unknown key); no Intent built, nothing launched",
+    "layer": "both",
+    "ref": "§8, §15 OQ-4",
+    "note": ""
+  },
+  {
+    "file": "invalid/hostile-key-exec.json",
+    "expect": "invalid, B2 (unknown key); no Intent built, nothing launched",
+    "layer": "both",
+    "ref": "§8, §15 OQ-4",
+    "note": ""
+  },
+  {
+    "file": "invalid/unknown-key-typo.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§3, §15 OQ-4",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-intent-uri.json",
+    "expect": "invalid, B2; nothing launched",
+    "layer": "both",
+    "ref": "§3 schema packageName, spike §3",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-tel-uri.json",
+    "expect": "invalid, B2; nothing launched",
+    "layer": "both",
+    "ref": "§3 schema packageName, spike §3",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-http-url.json",
+    "expect": "invalid, B2; nothing launched",
+    "layer": "both",
+    "ref": "§3 schema packageName, spike §3",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-empty.json",
+    "expect": "invalid, B2; nothing launched",
+    "layer": "both",
+    "ref": "§3 schema packageName, spike §3",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-dotdot.json",
+    "expect": "invalid, B2; nothing launched",
+    "layer": "both",
+    "ref": "§3 schema packageName, spike §3",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-leading-digit.json",
+    "expect": "invalid, B2; nothing launched",
+    "layer": "both",
+    "ref": "§3 schema packageName, spike §3",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-slash.json",
+    "expect": "invalid, B2; nothing launched",
+    "layer": "both",
+    "ref": "§3 schema packageName, spike §3",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-space.json",
+    "expect": "invalid, B2; nothing launched",
+    "layer": "both",
+    "ref": "§3 schema packageName, spike §3",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-no-dot.json",
+    "expect": "invalid, B2; nothing launched",
+    "layer": "both",
+    "ref": "§3 schema packageName, spike §3",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-unicode.json",
+    "expect": "invalid, B2; nothing launched",
+    "layer": "both",
+    "ref": "§3 schema packageName, spike §3",
+    "note": ""
+  },
+  {
+    "file": "invalid/package-1000-chars.json",
+    "expect": "invalid: other strings are capped at 256 (schema has no maxLength on package)",
+    "layer": "kotlin",
+    "ref": "§15 OQ-9",
+    "note": "see open question Q1"
+  },
+  {
+    "file": "invalid/activity-injection.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "schema className",
+    "note": ""
+  },
+  {
+    "file": "invalid/id-uppercase.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§3 Stable IDs",
+    "note": ""
+  },
+  {
+    "file": "invalid/id-65-chars.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-9",
+    "note": ""
+  },
+  {
+    "file": "invalid/duplicate-id.json",
+    "expect": "invalid, B2",
+    "layer": "kotlin",
+    "ref": "§3, §15 OQ-5",
+    "note": ""
+  },
+  {
+    "file": "invalid/overlapping-cells.json",
+    "expect": "invalid, B2",
+    "layer": "kotlin",
+    "ref": "§15 OQ-2, AQ-3",
+    "note": ""
+  },
+  {
+    "file": "invalid/cell-outside-grid.json",
+    "expect": "invalid, B2 (grid is 4 wide)",
+    "layer": "kotlin",
+    "ref": "§15 OQ-2",
+    "note": ""
+  },
+  {
+    "file": "invalid/negative-x.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-2",
+    "note": ""
+  },
+  {
+    "file": "invalid/grid-13.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-2",
+    "note": ""
+  },
+  {
+    "file": "invalid/grid-1.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-2",
+    "note": ""
+  },
+  {
+    "file": "invalid/x-float.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-2",
+    "note": ""
+  },
+  {
+    "file": "invalid/x-huge.json",
+    "expect": "invalid, B2/B1; no overflow",
+    "layer": "both",
+    "ref": "§15 OQ-2",
+    "note": ""
+  },
+  {
+    "file": "invalid/page-item-missing-xy.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§3",
+    "note": ""
+  },
+  {
+    "file": "invalid/dock-item-with-xy.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§3",
+    "note": ""
+  },
+  {
+    "file": "invalid/folder-child-with-xy.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§3",
+    "note": ""
+  },
+  {
+    "file": "invalid/nested-folder.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-10",
+    "note": ""
+  },
+  {
+    "file": "invalid/dock-8-items.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "schema maxItems 7",
+    "note": ""
+  },
+  {
+    "file": "invalid/label-61-chars.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-9",
+    "note": ""
+  },
+  {
+    "file": "invalid/label-1mb.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-9",
+    "note": "200 KiB label, under file cap"
+  },
+  {
+    "file": "invalid/profile-private.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-31",
+    "note": ""
+  },
+  {
+    "file": "invalid/profile-numeric.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-29",
+    "note": ""
+  },
+  {
+    "file": "invalid/revision-negative.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "schema",
+    "note": ""
+  },
+  {
+    "file": "invalid/unsorted-mode-bad.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "§15 OQ-25",
+    "note": ""
+  },
+  {
+    "file": "invalid/2016-items.json",
+    "expect": "invalid, B2 (>2000 items total)",
+    "layer": "kotlin",
+    "ref": "§15 OQ-9",
+    "note": "14 pages x 144, compact JSON so it stays under 256 KiB"
+  }
+]
