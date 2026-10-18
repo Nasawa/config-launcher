@@ -139,7 +139,7 @@ Gestures and taps (home):
 | Item | Spec |
 |---|---|
 | Open / close | Swipe up from home, or tap the handle. Close: swipe down at the top of the list, Back, or Home |
-| Search | Field at top, hint `Search apps`. **The keyboard does not open automatically** (Q-C2). Filters live on each keystroke: case- and accent-insensitive match on the label start or word start, then anywhere. Enter launches the first result. No results: `No apps match "xyz".` |
+| Search | Field at top, hint `Search apps`. **The drawer opens with the search field focused and the keyboard up** (Q-C2, ARCHITECTURE §18.2). Back or swipe-down with the keyboard up hides the keyboard first; a second Back closes the drawer. Setting `Open keyboard with drawer` (default on) turns this off, e.g. for wall displays. Filters live on each keystroke: case- and accent-insensitive match on the label start or word start, then anywhere. Enter launches the first result. No results: `No apps match "xyz".` |
 | Sorting | `drawer.sort`: `label` (default, A–Z with locale-aware `Collator`, numbers first) or `installTime` (newest first). Not editable in the UI in the MVP |
 | Groups | `drawer.rules[]` create titled groups (the rule's `group`) at the top of the list, in rule order, each sorted as above. An app matching no rule is listed under `All apps`. Rules never affect home pages |
 | What's listed | **Every launchable app** in the personal profile (and the work profile, badged), **including apps already placed** on pages, the dock or in folders, minus `drawer.hidden` (§17 b). Private space has its own section (§1.2) |
@@ -433,7 +433,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 - [ ] Home: pager + grid (`grid.columns/rows`, default 4 × 5, file allows 2–12) + dock (0–7), sizes from §1.1, wallpaper through.
 - [ ] Dimmed tiles and reconciliation (§1.2): not installed, unpublished shortcut, paused work apps, activity fallback, Unsorted modes (incl. the synthetic page), private space never placed. Never auto-delete.
 - [ ] Item sheet shows the real app name and package. Strip bidi and zero-width characters from labels at render.
-- [ ] Drawer: search (§2 match rules, no auto keyboard), `drawer.sort` (label or installTime), `drawer.rules` groups, hidden apps section (package names), work tab.
+- [ ] Drawer: search (§2 match rules, keyboard up on open unless `Open keyboard with drawer` is off), `drawer.sort` (label or installTime), `drawer.rules` groups, hidden apps section (package names), work tab.
 - [ ] Folders: `label`, create/rename/add/remove/delete rules (§3), open card, max 48.
 - [ ] Edit mode: entry/exit, outlines, drag targets (§4.2), no reflow, 30 s idle exit, **allowed while invalid** with the broken-copy snackbar, work-app refusal when the opt-in is off.
 - [ ] Write path (§4.3): ID-based ops → 750 ms debounce (never mid-drag) → hash check → canonical serialize (`x-` keys kept) → temp write + verify → `"wt"` write + verify → restore on failure → remember hash, history (10). B5 on failure.
@@ -454,7 +454,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 The architecture proposes answers to some of these (noted). They stay here until you confirm.
 
 - **Q-C1** *(Answered §18.1: yes, built.)* Onboarding requires picking a folder (architecture). Do you also want a "skip for now" path using app-only storage (no external editing)? Not in the architecture today.
-- **Q-C2** Should the drawer open with the keyboard up (search-first, like KISS) or without it (the spec's default)?
+- **Q-C2** *(Answered §18.1: keyboard up, with a setting to turn it off.)* Should the drawer open with the keyboard up (search-first, like KISS) or without it (the spec's default)?
 - **Q-C3** Unplaced apps: the architecture defaults to the drawer (`unsorted.mode: "drawer"`), with an optional synthetic `Unsorted` page (`"page"`). Is the drawer the right default for you? (Same as ARCHITECTURE §14 Q3.)
 - **Q-C4** Home labels: plain white with a shadow (spec), or an optional dark backdrop behind labels for busy wallpapers?
 - **Q-C5** The architecture chose JSON only (no comments; use `x-note` keys). OK for you? (Same as ARCHITECTURE §14 Q2.)

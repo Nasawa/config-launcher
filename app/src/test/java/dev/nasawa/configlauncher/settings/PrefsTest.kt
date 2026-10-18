@@ -22,3 +22,13 @@ class PrefsTest {
         assertTrue(p.onboarded)
     }
 }
+
+@RunWith(AndroidJUnit4::class)
+class DrawerPrefsTest {
+    private val p get() = Prefs(ApplicationProvider.getApplicationContext())
+    @Test fun keyboardOnByDefaultAndPersists() {
+        assertTrue(p.drawerKeyboard)
+        p.drawerKeyboard = false
+        assertFalse(p.drawerKeyboard)
+    }
+}
