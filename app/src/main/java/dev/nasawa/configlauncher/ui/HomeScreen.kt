@@ -32,7 +32,7 @@ fun HomeScreen() {
                 GridCells.Fixed(4),
                 Modifier.fillMaxSize().systemBarsPadding().padding(8.dp),
             ) {
-                items(apps, key = { it.key + it.userSerial }) { app ->
+                items(apps, key = { it.gridKey }) { app ->
                     AppIcon(app, installed) { installed.launch(app) }
                 }
             }
