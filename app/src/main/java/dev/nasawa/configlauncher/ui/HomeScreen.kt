@@ -146,10 +146,10 @@ fun HomeScreen(vm: HomeViewModel) {
                     pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, onOpen) }
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.currentPage)
+                }
                 Dock(ui.layout.dock, vm.apps, drag, onOpen)
                 if (ui.load.mergeUndo) MergeSnackbar(ui.load.notice.orEmpty(),
                     onUndo = { vm.store.undoMerge() }, onDismiss = { vm.store.engine.dismissMergeUndo(); vm.store.engine.consumeNotice() })
-                }
             }
         }
 
