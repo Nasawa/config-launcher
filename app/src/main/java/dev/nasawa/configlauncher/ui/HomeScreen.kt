@@ -121,7 +121,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     }
                 }
                 if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
-                ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }) }
+                ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
                 pages.getOrNull(pager.currentPage).let { p ->
@@ -214,7 +214,7 @@ private fun ConflictBanner(count: Int, onUseFile: () -> Unit, onKeepMine: () -> 
 }
 
 @Composable
-private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnectable: Boolean, locate: (List<String>) -> List<dev.nasawa.configlauncher.config.TextPos?>, onReconnect: () -> Unit, onCreate: () -> Unit, onUseAppStorage: () -> Unit) {
+private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnectable: Boolean, locate: (List<String>) -> List<dev.nasawa.configlauncher.config.TextPos?>, onReconnect: () -> Unit, onCreate: () -> Unit, onUseAppStorage: () -> Unit, onRetry: () -> Unit) {
     val errors = issue.details
     var expanded by remember(issue) { mutableStateOf(false) }
     val title = when (issue) {
@@ -235,6 +235,7 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
                 when (a) {
                     BannerAction.CREATE -> TextButton(onCreate) { Text("Create from current layout") }
                     BannerAction.RECONNECT -> TextButton(onReconnect) { Text("Reconnect") }
+                    BannerAction.RETRY -> TextButton(onRetry) { Text("Retry") }
                 }
             }
         }

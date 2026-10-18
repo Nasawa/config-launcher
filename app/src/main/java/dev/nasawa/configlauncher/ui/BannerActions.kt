@@ -2,13 +2,14 @@ package dev.nasawa.configlauncher.ui
 
 import dev.nasawa.configlauncher.store.Issue
 
-enum class BannerAction { RECONNECT, CREATE }
+enum class BannerAction { RECONNECT, CREATE, RETRY }
 
 /** Buttons for an issue banner (docs/ux.md §6.1). Reconnect only makes sense for a picked folder. */
 object BannerActions {
     fun forIssue(issue: Issue, reconnectable: Boolean): List<BannerAction> = when (issue) {
         is Issue.AccessLost -> if (reconnectable) listOf(BannerAction.RECONNECT) else emptyList()
         Issue.Missing -> listOfNotNull(BannerAction.CREATE, BannerAction.RECONNECT.takeIf { reconnectable })
+        is Issue.SaveFailed -> listOf(BannerAction.RETRY)   // B5
         else -> emptyList()
     }
 }

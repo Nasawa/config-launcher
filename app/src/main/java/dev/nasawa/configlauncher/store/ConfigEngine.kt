@@ -256,6 +256,9 @@ class ConfigEngine(
         flushJob = s.launch { delay(debounceMs); while (dragging) delay(100); flush() }
     }
 
+    /** B5 `Retry`: write the edits kept in memory again (same path as a debounced flush, incl. the B6 hash check). */
+    suspend fun retrySave(): Boolean { flushJob?.cancel(); return flush() }
+
     /**
      * Write pending edits. The B6 hash check runs first (§17 Q7): if the file changed since we
      * loaded it, enter the conflict state. Only if the file is still the same broken bytes is the
@@ -269,7 +272,8 @@ class ConfigEngine(
         val stillBroken = curHash != null && curHash == invalidHash
         if (current != null && curHash != base && curHash !in selfWrites && !stillBroken) {
             // §18.2: the file wins except the items targeted by pending ops; prompt only if asked to.
-            if (!askBeforeMerge && autoMergeLocked(current)) return true
+            // A merge whose write failed still returns true from autoMergeLocked (no B6), but reports B5.
+            if (!askBeforeMerge && autoMergeLocked(current)) return _state.value.issue !is Issue.SaveFailed
             _state.update { it.copy(conflict = true) }
             return false
         }
