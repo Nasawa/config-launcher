@@ -42,6 +42,8 @@ class ConfigEngineFaultTest {
             writeFails?.let { throw it }
             writes++; content = bytes; mtime++
         }
+        val sidecars = mutableMapOf<String, ByteArray>()
+        override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) { sidecars["$subdir/$name"] = bytes }
         fun put(s: String) { content = s.toByteArray(); mtime++ }
     }
 
