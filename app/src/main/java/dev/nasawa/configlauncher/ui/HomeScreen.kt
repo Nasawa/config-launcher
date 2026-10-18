@@ -80,7 +80,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     }
                 }
                 if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
-                ui.load.issue?.let { IssueBanner(it, onReconnect = { pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = vm.store::useAppStorage) }
+                ui.load.issue?.let { IssueBanner(it, locate = vm.store.engine::locateErrors, onReconnect = { pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = vm.store::useAppStorage) }
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
                 pages.getOrNull(pager.currentPage).let { p ->
@@ -149,7 +149,7 @@ private fun ConflictBanner(count: Int, onUseFile: () -> Unit, onKeepMine: () -> 
 }
 
 @Composable
-private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, onReconnect: () -> Unit, onCreate: () -> Unit, onUseAppStorage: () -> Unit) {
+private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, locate: (List<String>) -> List<dev.nasawa.configlauncher.config.TextPos?>, onReconnect: () -> Unit, onCreate: () -> Unit, onUseAppStorage: () -> Unit) {
     val errors = issue.details
     var expanded by remember(issue) { mutableStateOf(false) }
     val title = when (issue) {
@@ -175,7 +175,12 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, onReconnec
                 else -> {}
             }
         }
-        val shown = if (expanded) errors else errors.take(1)
+        // Tokenizer pass runs only once the detail view is open (Q-S3), off the main thread.
+        var where by remember(issue) { mutableStateOf<List<dev.nasawa.configlauncher.config.TextPos?>>(emptyList()) }
+        if (expanded) androidx.compose.runtime.LaunchedEffect(issue) {
+            where = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { runCatching { locate(errors) }.getOrDefault(emptyList()) }
+        }
+        val shown = if (expanded) errors.mapIndexed { i, e -> where.getOrNull(i)?.let { "Line ${it.line}, col ${it.column}: $e" } ?: e } else errors.take(1)
         shown.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFCDD2)) }
         if (!expanded && errors.size > 1) Text("Tap to see all", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
     }
