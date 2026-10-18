@@ -24,22 +24,19 @@ data class ResolvedItem(
     val title: String get() = item.label ?: app?.label ?: (item as? AppItem)?.packageName ?: (item as? ShortcutItem)?.shortcutId ?: "Folder"
 }
 
-data class ResolvedPage(val id: String, val title: String?, val items: List<ResolvedItem>, val synthetic: Boolean = false)
+data class ResolvedPage(val id: String, val title: String?, val items: List<ResolvedItem>)
 
 data class ResolvedLayout(
     val grid: Grid,
     val pages: List<ResolvedPage>,
     val dock: List<ResolvedItem>,
-    /** Installed apps placed nowhere in the config (minus drawer.hidden). */
+    /** Installed apps placed nowhere in the config (minus drawer.hidden); they live in the drawer (AF-2). */
     val unsorted: List<InstalledApp>,
     /** Drawer: every installed app, including placed ones, minus drawer.hidden (§17 b). */
     val drawer: List<InstalledApp>,
-    val mode: UnsortedMode,
 )
 
 object Reconcile {
-    const val UNSORTED_PAGE_ID = "unsorted"
-
     fun resolve(config: LauncherConfig, installed: List<InstalledApp>, includeWork: Boolean = false): ResolvedLayout {
         val byPkg = installed.groupBy { it.packageName to it.profile }
 
@@ -64,15 +61,6 @@ object Reconcile {
         val drawer = installed.filter { it.packageName !in hidden }.sortedBy { it.label.lowercase() }
         val unsorted = drawer.filter { it.key !in placed }
 
-        val mode = config.unsortedMode
-        val allPages = if (mode == UnsortedMode.PAGE && unsorted.isNotEmpty()) {
-            val g = config.effectiveGrid
-            val items = unsorted.mapIndexed { n, app ->
-                ResolvedItem(AppItem("u-$n", app.packageName, app.activityName, app.profile.takeIf { it != Profile.PERSONAL },
-                    x = n % g.columns, y = n / g.columns), app)
-            }
-            pages + ResolvedPage(UNSORTED_PAGE_ID, config.unsorted?.pageTitle ?: "Unsorted", items, synthetic = true)
-        } else pages
-        return ResolvedLayout(config.effectiveGrid, allPages, dock, unsorted, drawer, mode)
+        return ResolvedLayout(config.effectiveGrid, pages, dock, unsorted, drawer)
     }
 }
