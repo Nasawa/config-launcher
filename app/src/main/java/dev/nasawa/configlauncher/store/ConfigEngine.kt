@@ -58,6 +58,8 @@ data class LoadState(
     val notice: String? = null,
     /** Whether the source has a folder grant that "Reconnect" can re-pick (false for app storage). */
     val reconnectable: Boolean = true,
+    /** §18.2: an automatic merge just happened; the snackbar offers Undo ([ConfigEngine.undoMerge]). */
+    val mergeUndo: Boolean = false,
 ) {
     /** Problem lines for the detail view (kept for callers/tests that only need text). */
     val errors: List<String> get() = when (issue) { null, Issue.Missing -> emptyList(); else -> issue.details }
@@ -68,6 +70,8 @@ data class LoadState(
  * §17 Q5) → capped read → hash guard → 300 ms stability re-check → parse/migrate/validate →
  * atomic swap into [state] → last-good. Pure Kotlin; Android wiring lives in ConfigStore.
  */
+private const val CANCELLED = "File changed again, Undo cancelled."
+
 class ConfigEngine(
     @Volatile var source: ConfigSource,
     private val lastGood: LastGoodStore,
@@ -82,6 +86,13 @@ class ConfigEngine(
     private var invalidHash: String? = null
     /** Bytes of the file that last failed, kept only so the detail view can locate errors on demand. */
     @Volatile private var invalidBytes: ByteArray? = null
+    /** §18.2 `Ask before merging` (default off): when true, conflicts show the B6 prompt instead of auto-merging. */
+    @Volatile var askBeforeMerge = false
+    /** §18.2 Undo record: pre-merge file bytes, the hash the merge wrote, and the items it touched. */
+    private var undoBytes: ByteArray? = null
+    private var mergedHash: String? = null
+    private var undoTouched: List<dev.nasawa.configlauncher.model.UndoMerge.Touched> = emptyList()
+
     /** While true (drag in progress) inbound reloads are held until drop (OQ-24). */
     @Volatile var dragging = false
     private val mutex = Mutex()
@@ -215,7 +226,9 @@ class ConfigEngine(
             is ParseResult.Ok -> {
                 invalidHash = null; invalidBytes = null
                 writeStatus("ok", emptyList(), hash)
-                _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash, reconnectable = src.reconnectable)
+                // An external reload doesn't expire Undo (§18.2); it takes the "changed" path.
+                _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash, reconnectable = src.reconnectable,
+                    mergeUndo = undoBytes != null, notice = _state.value.notice.takeIf { undoBytes != null })
                 saveLastGood(bytes)
                 true
             }
@@ -255,6 +268,8 @@ class ConfigEngine(
         val base = _state.value.baseHash
         val stillBroken = curHash != null && curHash == invalidHash
         if (current != null && curHash != base && curHash !in selfWrites && !stillBroken) {
+            // §18.2: the file wins except the items targeted by pending ops; prompt only if asked to.
+            if (!askBeforeMerge && autoMergeLocked(current)) return true
             _state.update { it.copy(conflict = true) }
             return false
         }
@@ -267,7 +282,7 @@ class ConfigEngine(
         }
         val cfg = _state.value.config.let { it.copy(revision = (it.revision ?: 0) + 1) }
         try { writeLocked(cfg) } catch (e: Exception) { return fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")) }
-        pending.clear(); invalidHash = null
+        pending.clear(); invalidHash = null; clearUndo()
         _state.update { it.copy(pendingEdits = 0, issue = null, notice = when {
             brokenName != null -> "Your broken launcher.json was saved to .configlauncher/broken/."
             stillBroken -> "Your broken launcher.json was saved to history."
@@ -275,6 +290,58 @@ class ConfigEngine(
         }) }
         true
     }
+
+    /**
+     * Replay pending ops by ID onto the file's version and write it. Both pre-merge versions go to
+     * history. Returns false (caller falls back to B6) if the file or the merged result is invalid.
+     */
+    private fun autoMergeLocked(fileBytes: ByteArray): Boolean {
+        val fileCfg = (ConfigCodec.decode(fileBytes) as? ParseResult.Ok)?.config ?: return false
+        val ops = pending.toList()
+        val (merged, skipped) = Edits.replay(fileCfg, ops)
+        val out = merged.copy(revision = maxOf(merged.revision ?: 0, _state.value.config.revision ?: 0) + 1)
+        if (ConfigCodec.decode(ConfigCodec.encodeBytes(out)) !is ParseResult.Ok) return false
+        runCatching { lastGood.snapshot(fileBytes) }
+        runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
+        val written = try { writeLocked(out) } catch (e: Exception) { fail(Issue.SaveFailed("Couldn't save your change: ${e.message}")); return true }
+        pending.clear(); undoBytes = fileBytes; mergedHash = written
+        undoTouched = dev.nasawa.configlauncher.model.UndoMerge.record(fileCfg, out)
+        val kept = ops.size - skipped
+        _state.update {
+            it.copy(pendingEdits = 0, issue = null, mergeUndo = true, notice = MergeCopy.notice(kept, skipped))
+        }
+        return true
+    }
+
+    /**
+     * Snackbar Undo after an automatic merge (§18.2 Undo safety rule). Re-reads and hashes the file:
+     * unchanged → write the pre-merge version through [writeLocked]; changed → revert only the
+     * touched items by ID onto the new file, or cancel with no write. Both versions go to history first.
+     */
+    suspend fun undoMerge(): Boolean = mutex.withLock {
+        val before = undoBytes ?: return false
+        val touched = undoTouched
+        clearUndo()
+        val cancel = { msg: String -> _state.update { it.copy(mergeUndo = false, notice = msg) }; false }
+        val now = try { source.read(Limits.MAX_BYTES) } catch (_: Exception) { null } ?: return cancel(CANCELLED)
+        val target: LauncherConfig = if (ConfigCodec.sha256(now) == mergedHash) {
+            (ConfigCodec.decode(before) as? ParseResult.Ok)?.config ?: return cancel(CANCELLED)
+        } else {
+            val nowCfg = (ConfigCodec.decode(now) as? ParseResult.Ok)?.config ?: return cancel(CANCELLED)
+            val r = dev.nasawa.configlauncher.model.UndoMerge.revert(nowCfg, touched) ?: return cancel(CANCELLED)
+            if (ConfigCodec.decode(ConfigCodec.encodeBytes(r)) !is ParseResult.Ok) return cancel(CANCELLED)
+            r.copy(revision = (nowCfg.revision ?: 0) + 1)
+        }
+        runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
+        runCatching { lastGood.snapshot(before) }
+        if (ConfigCodec.sha256(now) != mergedHash) runCatching { lastGood.snapshot(now) }
+        try { writeLocked(target); _state.update { it.copy(mergeUndo = false, notice = null) }; true }
+        catch (e: Exception) { fail(Issue.SaveFailed("Couldn't undo: ${e.message}")) }
+    }
+
+    private fun clearUndo() { undoBytes = null; mergedHash = null; undoTouched = emptyList() }
+
+    fun dismissMergeUndo() { clearUndo(); _state.update { it.copy(mergeUndo = false) } }
 
     /** B6 "Use file": drop local edits (snapshotted to history) and load the file. */
     suspend fun resolveUseFile() {

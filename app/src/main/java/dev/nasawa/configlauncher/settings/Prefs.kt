@@ -32,4 +32,9 @@ class Prefs(context: Context) {
     var labelBackdrop: Boolean
         get() = sp.getBoolean("labelBackdrop", false)
         set(v) = sp.edit { putBoolean("labelBackdrop", v) }
+
+    /** §18.2: restore the B6 Use file / Keep mine prompt instead of the automatic merge (default off). */
+    var askBeforeMerging: Boolean
+        get() = sp.getBoolean("askBeforeMerging", false)
+        set(v) = sp.edit { putBoolean("askBeforeMerging", v) }
 }

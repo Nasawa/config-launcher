@@ -22,6 +22,7 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     /** §18.5 AF-1 app-only source: app-private, separate from last-good.json and history/. */
     val localDir: File = File(context.filesDir, "config/source")
     val engine = ConfigEngine(currentSource(), LastGoodStore(File(context.filesDir, "config")), scope = scope)
+        .also { it.askBeforeMerge = prefs.askBeforeMerging }
     val state get() = engine.state
 
     private var pollJob: Job? = null
@@ -57,6 +58,11 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     fun pollNow() { scope.launch(Dispatchers.IO) { engine.poll(force = true) } }
 
     fun edit(e: dev.nasawa.configlauncher.model.Edit) { scope.launch(Dispatchers.IO) { engine.edit(e) } }
+    /** Snackbar Undo after an automatic merge (§18.2). */
+    fun undoMerge() { scope.launch(Dispatchers.IO) { engine.undoMerge() } }
+
+    fun setAskBeforeMerging(v: Boolean) { prefs.askBeforeMerging = v; engine.askBeforeMerge = v }
+
     fun useFile() { scope.launch(Dispatchers.IO) { engine.resolveUseFile() } }
     fun keepMine() { scope.launch(Dispatchers.IO) { engine.resolveKeepMine() } }
 

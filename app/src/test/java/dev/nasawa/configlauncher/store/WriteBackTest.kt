@@ -19,6 +19,7 @@ class WriteBackTest {
         val src = LocalFileSource(tmp.newFolder("src"))
         src.file.writeText(file1); src.file.setLastModified(1000)
         val e = ConfigEngine(src, LastGoodStore(tmp.newFolder("lg")), stabilityMs = 0)
+        e.askBeforeMerge = true // these tests cover the B6 prompt path; AutoMergeTest covers the default
         e.poll(); e to src
     }
 
