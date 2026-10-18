@@ -59,15 +59,18 @@ fun HomeScreen(vm: HomeViewModel) {
         }
         Unit
     }
+    var pickCancelled by remember { mutableStateOf(false) }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        pickCancelled = uri == null
         if (uri != null) { if (vm.store.isCloudFolder(uri)) cloudUri = uri else proceed(uri) }
     }
     if (!onboarded) {
         FirstRunScreen(
             onChooseFolder = { moving = true; pickFolder.launch(null) },
             onSkip = { vm.store.skipOnboarding(); onboarded = true },
+            cancelled = pickCancelled,
         )
-        cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }) }
+        cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }, { cloudUri = null; pickFolder.launch(null) }) }
         moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it); onboarded = true }, { moveAsk = null }) }
         return
     }
@@ -129,7 +132,7 @@ fun HomeScreen(vm: HomeViewModel) {
             }
         }
 
-        cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }) }
+        cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }, { cloudUri = null; pickFolder.launch(null) }) }
         moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it) }, { moveAsk = null }) }
 
         openFolder?.let { folder ->
