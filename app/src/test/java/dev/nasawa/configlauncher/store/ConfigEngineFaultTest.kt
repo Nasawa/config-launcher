@@ -149,4 +149,58 @@ class ConfigEngineFaultTest {
         assertEquals(before, e.state.value.config)
         assertTrue(e.state.value.issue is Issue.SaveFailed)
     }
+
+    // FI-2/FI-5 + ux.md B5: a failed save keeps the edit, and Retry writes it.
+    @Test fun failedSaveKeepsEditAndRetryWrites() = runBlocking {
+        val src = FakeSource().apply { put(cfg(1)) }
+        val e = engine(src); e.poll()
+        src.writeFails = IOException("ENOSPC")
+        e.edit(dev.nasawa.configlauncher.model.Edit.MoveToCell("a", "home", 2, 1))
+        assertFalse(e.flush())
+        assertTrue(e.state.value.issue is Issue.SaveFailed)
+        assertEquals(1, e.state.value.pendingEdits)
+        assertFalse(String(src.content!!).contains("\"x\": 2"))
+        // A poll while the edit is unsaved must not drop it.
+        e.poll(force = true)
+        assertEquals(1, e.state.value.pendingEdits)
+        src.writeFails = null
+        assertTrue(e.retrySave())
+        assertNull(e.state.value.issue)
+        assertEquals(0, e.state.value.pendingEdits)
+        assertTrue(String(src.content!!).contains("\"x\": 2"))
+        // Retry with nothing pending is a no-op that clears nothing else.
+        assertFalse(e.retrySave())
+    }
+
+    @Test fun retryAfterExternalChangeMergesInsteadOfOverwriting() = runBlocking {
+        val src = FakeSource().apply { put(cfg(1)) }
+        val e = engine(src); e.poll()
+        src.writeFails = IOException("ENOSPC")
+        e.edit(dev.nasawa.configlauncher.model.Edit.MoveToCell("a", "home", 2, 1))
+        assertFalse(e.flush())
+        src.writeFails = null
+        src.put("""{"schemaVersion":1,"revision":5,"pages":[{"id":"home","items":[{"id":"a","type":"app","package":"a.b","x":0,"y":0},{"id":"z","type":"app","package":"z.z","x":3,"y":3}]}]}""")
+        assertTrue(e.retrySave())
+        val out = String(src.content!!)
+        assertTrue("agent's item kept", out.contains("z.z"))
+        assertTrue("my move kept", out.contains("\"x\": 2"))
+        assertNull(e.state.value.issue)
+    }
+
+    @Test fun failedAutoMergeWriteReportsB5AndRetryMerges() = runBlocking {
+        val src = FakeSource().apply { put(cfg(1)) }
+        val e = engine(src); e.poll()
+        e.edit(dev.nasawa.configlauncher.model.Edit.MoveToCell("a", "home", 2, 1))
+        src.put("""{"schemaVersion":1,"revision":5,"pages":[{"id":"home","items":[{"id":"a","type":"app","package":"a.b","x":0,"y":0},{"id":"z","type":"app","package":"z.z","x":3,"y":3}]}]}""")
+        src.writeFails = IOException("ENOSPC")
+        assertFalse("a failed merge write is not a success", e.flush())
+        assertTrue(e.state.value.issue is Issue.SaveFailed)
+        assertFalse(e.state.value.conflict)
+        assertEquals(1, e.state.value.pendingEdits)
+        src.writeFails = null
+        assertTrue(e.retrySave())
+        val out = String(src.content!!)
+        assertTrue(out.contains("z.z") && out.contains("\"x\": 2"))
+        assertNull(e.state.value.issue)
+    }
 }

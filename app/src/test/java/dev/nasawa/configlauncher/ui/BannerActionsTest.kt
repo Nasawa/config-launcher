@@ -29,4 +29,9 @@ class BannerActionsTest {
         assertFalse(e.state.value.reconnectable)
         assertEquals(listOf(BannerAction.CREATE), BannerActions.forIssue(e.state.value.issue!!, e.state.value.reconnectable))
     }
+
+    @Test fun saveFailedOffersRetry() {   // ux.md B5
+        assertEquals(listOf(BannerAction.RETRY), BannerActions.forIssue(Issue.SaveFailed("x"), reconnectable = false))
+        assertEquals(listOf(BannerAction.RETRY), BannerActions.forIssue(Issue.SaveFailed("x"), reconnectable = true))
+    }
 }

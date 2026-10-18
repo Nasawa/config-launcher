@@ -58,6 +58,8 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
 
     fun edit(e: dev.nasawa.configlauncher.model.Edit) { scope.launch(Dispatchers.IO) { engine.edit(e) } }
     /** Snackbar Undo after an automatic merge (§18.2). */
+    fun retrySave() { scope.launch(Dispatchers.IO) { engine.retrySave() } }
+
     fun undoMerge() { scope.launch(Dispatchers.IO) { engine.undoMerge() } }
 
     fun setAskBeforeMerging(v: Boolean) { prefs.askBeforeMerging = v; engine.askBeforeMerge = v }
