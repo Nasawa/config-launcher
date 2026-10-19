@@ -4,8 +4,10 @@ An Android home screen whose whole layout lives in one file, `launcher.json`, in
 on your phone and the file updates. Edit the file on your computer (or let an agent edit it) and the phone updates.
 
 - Kotlin + Jetpack Compose, Android 10+ (minSdk 29).
-- No risky permissions: no storage, `QUERY_ALL_PACKAGES`, Accessibility or network access. You grant access to one
-  folder through Android's system folder picker, and you can revoke it.
+- No risky permissions: no storage, `QUERY_ALL_PACKAGES` or Accessibility. You grant access to one folder through
+  Android's system folder picker, and you can revoke it.
+- The app doesn't fetch from the internet yet. Widgets can show remote data that your agent fetches and writes into
+  the folder. A later release may let widgets fetch directly, only with your approval.
 - Status: architecture and UX specs are done. See [ARCHITECTURE.md](ARCHITECTURE.md) and [docs/ux.md](docs/ux.md).
 
 ## Editing launcher.json (for agents and humans)
