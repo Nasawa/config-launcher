@@ -600,44 +600,101 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | R10 | No Settings screen; ⋮ menu holds folder and home-app items | **Acceptable interim**, but use the doc's names: `Choose folder` (not `Pick config folder…`), `Reload layout` (not `Reload launcher.json`), `Set as home app`, `Hidden apps`. Until the screen exists, the home menu's `Settings` opens the same ⋮ menu | Rename `menu_pick_folder` → `Choose folder`, `menu_reload` → `Reload layout`; route home-menu `Settings` to the ⋮ menu | MVP interim |
 | R11 | Which Settings are MVP | **MVP:** Config folder (Choose folder / Use phone storage / Reload layout), Home app, Hidden apps, Ask before merging, Open keyboard with drawer, Label backdrop, Include work apps in config (only shown if a work profile exists), Restore previous layout. **Later:** Grid (edit the file), About (version only in the ⋮ menu is fine) | — | — |
 
-## 15. Proposal: config-driven title bar (#79, later, not v1-gating)
-UX side only, a proposal for Archimedes. The architecture and schema decisions are his. Builds on §1.3.
+## 15. Config-driven title bar (#79, later, not v1-gating)
+UX side of Archimedes' design in [`docs/design/title-bar.md`](design/title-bar.md) (#81), which decides the architecture and schema.
+The bar is the first element in the general `elements[]` model. The three-slot bar below is the **default preset** the
+phone offers. The file can go further (templates, styling, per-page overrides), and the phone keeps whatever it can't
+edit verbatim.
 
-**What it shows.** An optional bar at the top of the home screen (under the status bar, above the grid), replacing the
-§1.3 page label when it's on. Slots, left to right: `start`, `center`, `end`. Each slot holds one element from a small
-fixed set: `pageTitle` (the §1.3 label, including its tap target), `clock` (system 12/24 h), `date` (locale medium,
-e.g. `Sun, Oct 18`), or empty. No free text in v1 of the feature, so nothing in the file can impersonate a system
-message.
+**Default preset (what the phone writes).** Off by default. When off, or with no `titleBar` element, the §1.3 page label
+shows. Turning it on writes `{ "id": "t-main", "type": "titleBar", "anchor": "top", "content": { "slots": { "center": "{page}" } } }`.
+The slot picker (start, center, end) offers `Page title` (`{page}`), `Clock` (`{time}`), `Date` (`{date}`) and `None`.
+- **Custom slots (Q-T1):** if a slot holds anything else (e.g. `{date:EEE d MMM}` or literal text), the picker shows a
+  read-only, selected row `Custom (set in the file)` with the raw template underneath in monospace. Picking another choice
+  replaces it (one write; history keeps the old version), with the inline note `Picking another option replaces it.`
+- The phone edits only on/off and the preset. Style, overrides (`pages[].overrides[<elementId>]`) and templates are
+  file-only and never edited on the phone in this release.
 
-**Defaults.** Off (absent = today's §1.3 page label). When turned on without slots: `center: pageTitle`.
+**Rulings from #81 that the UX follows.** Top-level element by default; per-page overrides only in the file. No
+schemaVersion 2: an unknown element type, or one whose `requires` is above the launcher's feature level, is **skipped with
+a warning** and kept in the file. Unknown keys inside a known type are still errors (B2). `backdrop: "auto"` (default)
+follows the device's `Label backdrop` setting; an explicit `none`, `scrim` or custom backdrop in the file wins.
 
-**Missing or invalid config.** Missing → default. Invalid (unknown element, bad colour) is a normal validation error
-(B2, last working layout). There's no partial rendering of a bad bar. Unknown future elements behave like `widget` today.
+**Layout and size.** One line. `center` keeps at least 50 % of the width; side slots ellipsize first, then `center`. Clock
+and date never truncate, and the page title ellipsizes at the end. **Default size is `small`, 14 sp (Q-T3)**: it matches
+the §1.3 page label and status-bar text, and at 200 % font (28 sp) it still fits one line and costs one grid row at most
+on small phones, where 18 sp (36 sp at 200 %) would push rows below the 64 × 80 dp minimum. The bar takes its height
+from size + padding, and grid rows share the rest. Never overlaps icons.
 
-**Length and truncation.** 1 line, 14 sp default. `center` gets at least 50 % of the width. Side slots ellipsize first,
-then `center`. Clock and date never truncate (they're short); the page title ellipsizes at the end.
+**Contrast.** Light text always gets the label shadow; dark text doesn't. With `auto` + `Label backdrop` on, or
+`scrim`, the 60 % scrim gives ≥ 5.7:1 for white (§12). With a custom backdrop, the launcher measures text vs backdrop.
+**Below 4.5:1 it renders anyway** and adds a warning (Q-T2): in `status.json` and in the error detail view's
+**Warnings** section only. **No snackbar or banner**: the person editing the file chose the colours, and the agent sees it
+in `status.json`. With `none` nothing is measured (the wallpaper is unknown).
 
-**Styling (keep it small).** Size: `small` / `medium` / `large` (12 / 14 / 18 sp), not free numbers. Alignment comes
-from the slots. Colour: white (default) or a dark variant for light wallpapers. Backdrop: none, or the same 60 % scrim
-as `Label backdrop` (one rounded bar behind the whole row). Rule: white text always gets the shadow, and if
-`Label backdrop` is on, the bar gets the scrim too (≥ 5.7:1 worst case, §12). A dark text colour gets a 60 % *white*
-scrim when the backdrop is on, for the same ratio.
+**Skipped elements (Q-T4).** Nothing on home: no placeholder, banner or snackbar (an element is decoration and must
+never make the home screen look broken). If the skipped element was the title bar, the §1.3 page label shows instead.
+The warning appears in `status.json` and the Warnings section.
 
-**TalkBack.** One focusable row per slot, in reading order. `pageTitle` keeps the §1.3 button semantics and
-`List pages` action. Clock/date are plain text (`10:42 PM`, `Sunday, October 18`), with no live region (no ticking
-announcements).
+**Where warnings are found.** The error detail view (§6.2) gets a **Warnings** section under any problems, header
+`1 warning` / `3 warnings`, each with the path and message (same layout as problems, ▲ instead of ■). With a valid file
+that has warnings, it's reachable from Settings (interim: the ⋮ menu) → `Config folder`, whose status line reads
+`Layout loaded · 1 warning` (tap → the detail view). `Copy errors` includes warnings.
 
-**#78 tap target.** The page list opens only from the `pageTitle` element (48 dp min height). Clock and date aren't
-tappable in v1 (later maybe: clock → alarms app). If no slot holds `pageTitle`, the page list is still reachable
-through the TalkBack action `List pages` and from the long-press home menu (`Pages`).
+**TalkBack.** One focusable node per non-empty slot, in reading order. `{page}` keeps the §1.3 button semantics, the
+48 dp target and the `List pages` action. Clock and date are read in spoken form (`10:42 PM`, `Sunday, October 18`) and
+aren't a live region. Literal text in a template is read as written.
 
-> **Note for Archimedes (schema shape, suggestion only):** an optional top-level object, e.g.
-> `"titleBar": { "enabled": true, "slots": { "start": "date", "center": "pageTitle", "end": "clock" }, "size": "medium", "color": "light", "backdrop": "auto" }`,
-> enums only, no free strings or colours. Alternative: model it as the first *widget* type when schema v2 lands
-> (#79 says it should fit the widgets work), with v1 keeping only the page label. Open questions:
-> (1) top-level object vs per-page override? (UX prefers top-level only.)
-> (2) does a v1 `titleBar` key need schemaVersion 2, given unknown keys are invalid in v1?
-> (3) should the backdrop follow the app's `Label backdrop` setting (DataStore) or live in the file? (UX: follow the setting, `auto`.)
+**#78 tap target.** The page list opens only from a `{page}` token's node. Other slots aren't tappable in this release.
+If no visible slot holds `{page}` (including an override that hides it), the page list is still reachable through the
+`List pages` action and a `Pages` item in the home long-press menu.
+
+### 15.1 Copy: token errors and warnings (Q-T5)
+Same style as §6.3: path first, then what's wrong, then the fix. Errors are B2 problems (`launcher.json has 2 problems.
+Showing the last working layout.`). Warnings never raise a banner.
+
+| Case | Kind | Message |
+|---|---|---|
+| Unknown token | Error | `elements[0].content.slots.end: unknown token {wether}. Use page, pageNumber, pageCount, time or date.` |
+| Disallowed pattern letter | Error | `elements[0].content.slots.end: "s" isn't allowed in {time:HH:mm:ss}. Use y M d E a H h k K m; seconds and time zones aren't supported.` |
+| Unclosed brace | Error | `elements[0].content.slots.start: the "{" at character 5 isn't closed. For a literal brace, write {{.` |
+| Stray closing brace | Error | `elements[0].content.slots.start: the "}" at character 9 has no opening "{". For a literal brace, write }}.` |
+| Pattern too long | Error | `elements[0].content.slots.start: the pattern in {date:…} is 40 characters; the maximum is 32.` |
+| Too many tokens | Error | `elements[0].content.slots.center has 9 tokens; the maximum is 8.` |
+| Template too long | Error | `elements[0].content.slots.center is 130 characters; the maximum is 120.` |
+| Second title bar | Error | `elements[1]: only one titleBar is allowed (elements[0] is already one).` |
+| Unknown element type | Warning | `elements[2]: type "appWidget" isn't supported by this Config Launcher, so it was skipped. It stays in the file.` |
+| `requires` too high | Warning | `elements[2] needs feature level 3, but this Config Launcher supports up to 2, so it was skipped. It stays in the file. Update the app to show it.` |
+| Override for a missing element | Warning | `pages[1].overrides: "t-clock" doesn't match any element, so it was ignored.` |
+| Low contrast | Warning | `elements[0].style.color: contrast 2.1:1 on the backdrop (4.5:1 recommended). Shown anyway.` |
+
+Resources (character positions are 1-based, like line and column):
+```xml
+<string name="err_token_unknown">%1$s: unknown token {%2$s}. Use page, pageNumber, pageCount, time or date.</string>
+<string name="err_token_letter">%1$s: \"%2$s\" isn\'t allowed in %3$s. Use y M d E a H h k K m; seconds and time zones aren\'t supported.</string>
+<string name="err_token_unclosed">%1$s: the \"{\" at character %2$d isn\'t closed. For a literal brace, write {{.</string>
+<string name="err_token_stray">%1$s: the \"}\" at character %2$d has no opening \"{\". For a literal brace, write }}.</string>
+<string name="err_pattern_long">%1$s: the pattern in %2$s is %3$d characters; the maximum is %4$d.</string>
+<string name="err_tokens_many">%1$s has %2$d tokens; the maximum is %3$d.</string>
+<string name="err_template_long">%1$s is %2$d characters; the maximum is %3$d.</string>
+<string name="err_titlebar_twice">%1$s: only one titleBar is allowed (%2$s is already one).</string>
+<string name="warn_element_type">%1$s: type \"%2$s\" isn\'t supported by this Config Launcher, so it was skipped. It stays in the file.</string>
+<string name="warn_element_level">%1$s needs feature level %2$d, but this Config Launcher supports up to %3$d, so it was skipped. It stays in the file. Update the app to show it.</string>
+<string name="warn_override_missing">%1$s: \"%2$s\" doesn\'t match any element, so it was ignored.</string>
+<string name="warn_contrast">%1$s: contrast %2$s:1 on the backdrop (4.5:1 recommended). Shown anyway.</string>
+<plurals name="warnings_header">
+    <item quantity="one">%d warning</item>
+    <item quantity="other">%d warnings</item>
+</plurals>
+<plurals name="status_loaded_warnings">
+    <item quantity="one">Layout loaded · %d warning</item>
+    <item quantity="other">Layout loaded · %d warnings</item>
+</plurals>
+<string name="titlebar_custom">Custom (set in the file)</string>
+<string name="titlebar_custom_note">Picking another option replaces it.</string>
+```
+Counts in the messages above (the maxima) are always ≥ 2, so they don't need plurals. `status.json` uses the same English
+text so agents and the phone say the same thing. The contrast ratio is formatted with one decimal, locale-independent (`2.1`).
 
 ## Open questions for Christopher
 
