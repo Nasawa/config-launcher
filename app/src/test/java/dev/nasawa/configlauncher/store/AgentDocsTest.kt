@@ -39,9 +39,9 @@ class AgentDocsTest {
     }
 
     @Test fun updatesAnUntouchedShippedVersion() {
-        val shippedOld = AgentDocs.SHIPPED_SHA256.first()
-        // A file with a shipped hash but different bytes than the bundle is updated.
-        assertEquals(Outcome.UPDATED, AgentDocs.decide("new".toByteArray(), template, true, true, false).also { assertEquals(ConfigCodec.sha256(template), shippedOld) })
+        // The bundled template is itself a shipped version, so once a newer one ships, this file is updated.
+        assertTrue(ConfigCodec.sha256(template) in AgentDocs.SHIPPED_SHA256)
+        assertEquals(Outcome.UPDATED, AgentDocs.decide("new".toByteArray(), template, true, true, false))
         assertEquals(Outcome.USER_CHANGED, AgentDocs.decide(template, old, true, true, false))
     }
 

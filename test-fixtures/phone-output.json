@@ -59,6 +59,43 @@
       "not valid JSON: duplicate key \"schemaVersion\" (line 3)"
     ]
   },
+  "invalid/element-anchor-and-grid.json": {
+    "errors": [
+      "elements[0]: has both \"anchor\" and a grid position; use one"
+    ]
+  },
+  "invalid/element-duplicate-id.json": {
+    "errors": [
+      "elements[0].id: duplicate id \"a-settings\" (also at pages[0].items[0])"
+    ]
+  },
+  "invalid/element-missing-type.json": {
+    "errors": [
+      "elements[0]: missing required \"type\""
+    ]
+  },
+  "invalid/element-outside-grid.json": {
+    "errors": [
+      "elements[0]: x 3 + w 2 is outside the grid (4 columns)"
+    ]
+  },
+  "invalid/element-overlaps-element.json": {
+    "errors": [
+      "elements[1]: overlaps elements[0] at cell (1, 1)"
+    ]
+  },
+  "invalid/element-overlaps-item.json": {
+    "errors": [
+      "elements[0]: overlaps pages[0].items[0] at cell (0, 0)"
+    ]
+  },
+  "invalid/element-partial-placement.json": {
+    "errors": [
+      "elements[0]: missing required \"y\" (grid-placed elements need page, x, y, w and h)",
+      "elements[0]: missing required \"w\" (grid-placed elements need page, x, y, w and h)",
+      "elements[0]: missing required \"h\" (grid-placed elements need page, x, y, w and h)"
+    ]
+  },
   "invalid/empty.json": {
     "errors": [
       "not valid JSON: Cannot read Json element because of unexpected end of the input at path: $"
@@ -208,6 +245,11 @@
   "invalid/overlapping-cells.json": {
     "errors": [
       "pages[0].items[1]: overlaps pages[0].items[0] at cell (0, 0)"
+    ]
+  },
+  "invalid/override-unknown-key.json": {
+    "errors": [
+      "pages[0].overrides.t-main: unknown key \"hidden\""
     ]
   },
   "invalid/package-1000-chars.json": {
@@ -367,6 +409,15 @@
   },
   "valid/drawer-rules-key-order.json": {
     "canonicalSha256": "44d8f9807adf1cea56c04b3ff8f311e9e6fd6f385007f40558ad1603f753f07e"
+  },
+  "valid/elements-skipped.json": {
+    "canonicalSha256": "f1835581eeb673d26d4f58f06b64bded3d58a0c5e82f42c6db0ffd6db52ee492",
+    "warnings": [
+      "elements[0]: type \"titleBar\" isn't supported by this Config Launcher, so it was skipped. It stays in the file.",
+      "elements[1]: type \"appWidget\" isn't supported by this Config Launcher, so it was skipped. It stays in the file.",
+      "elements[2] needs feature level 9, but this Config Launcher supports up to 1, so it was skipped. It stays in the file. Update the app to show it.",
+      "pages[0].overrides: \"t-gone\" doesn't match any element, so it was ignored."
+    ]
   },
   "valid/emoji-label.json": {
     "canonicalSha256": "fcac82e04484d15eeb74f7a05f4c7091bbf1596280af32e036ccc9fcc866955e"

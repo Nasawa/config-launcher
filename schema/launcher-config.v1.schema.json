@@ -61,6 +61,14 @@
     "drawer": {
       "$ref": "#/$defs/drawer"
     },
+    "elements": {
+      "description": "Non-app elements (title bar first, widgets later): docs/design/title-bar.md. An element whose type this launcher doesn't know, or whose requires is above its feature level, is skipped with a warning and kept in the file.",
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/element"
+      }
+    },
     "unsorted": {
       "description": "DEPRECATED, accepted and ignored in v1 (ARCHITECTURE.md section 18.5, AF-2): validated for type, never acted on, never written by the launcher. Unplaced apps always appear in the drawer. Removed in schema v2 with a migration.",
       "type": "object",
@@ -351,6 +359,9 @@
           "items": {
             "$ref": "#/$defs/gridItem"
           }
+        },
+        "overrides": {
+          "$ref": "#/$defs/pageOverrides"
         }
       }
     },
@@ -432,6 +443,145 @@
           "maxItems": 64,
           "items": {
             "$ref": "#/$defs/drawerRule"
+          }
+        }
+      }
+    },
+    "element": {
+      "description": "Common element fields, checked for every element (docs/design/title-bar.md §3, docs/research/widgets.md §5.1). An element is anchored (anchor) or grid-placed (page, x, y, w, h), never both; a grid-placed element reserves its cells even when this launcher skips it. No additionalProperties here: an unknown type accepts any other keys (skipped, kept verbatim); each known type's own definition is strict.",
+      "type": "object",
+      "required": [
+        "id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,31}$"
+        },
+        "requires": {
+          "description": "Launcher feature level this element needs. Above the launcher's level: skipped with a warning.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "anchor": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "page": {
+          "$ref": "#/$defs/id"
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11
+        },
+        "w": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "h": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        }
+      },
+      "dependentRequired": {
+        "page": [
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "x": [
+          "page",
+          "y",
+          "w",
+          "h"
+        ],
+        "y": [
+          "page",
+          "x",
+          "w",
+          "h"
+        ],
+        "w": [
+          "page",
+          "x",
+          "y",
+          "h"
+        ],
+        "h": [
+          "page",
+          "x",
+          "y",
+          "w"
+        ]
+      },
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "anchor",
+              "page"
+            ]
+          },
+          {
+            "required": [
+              "anchor",
+              "x"
+            ]
+          },
+          {
+            "required": [
+              "anchor",
+              "y"
+            ]
+          },
+          {
+            "required": [
+              "anchor",
+              "w"
+            ]
+          },
+          {
+            "required": [
+              "anchor",
+              "h"
+            ]
+          }
+        ]
+      }
+    },
+    "pageOverrides": {
+      "description": "Per-page changes to elements, keyed by element ID. An ID that matches no element is a warning (ignored, kept).",
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "object"
+          },
+          "style": {
+            "type": "object"
           }
         }
       }

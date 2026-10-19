@@ -45,6 +45,8 @@ class MatchesPhone(unittest.TestCase):
                 sha = hashlib.sha256(V.canonical(tree).encode("utf-8")).hexdigest()
                 if sha != want["canonicalSha256"]:
                     problems.append(f"{name}: canonical output differs from the phone's")
+                if V.warnings(tree) != want.get("warnings", []):
+                    problems.append(f"{name}: script warnings {V.warnings(tree)} != phone {want.get('warnings', [])}")
         self.assertEqual([], problems)
 
     def test_schema_pass_agrees_with_manifest(self):

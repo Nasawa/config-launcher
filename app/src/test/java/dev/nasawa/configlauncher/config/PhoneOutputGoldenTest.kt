@@ -21,7 +21,11 @@ class PhoneOutputGoldenTest {
             putJsonObject(e) {
                 when (val r = ConfigCodec.decode(File(dir, e).readBytes())) {
                     is ParseResult.Invalid -> putJsonArray("errors") { r.errors.forEach { add(it) } }
-                    is ParseResult.Ok -> put("canonicalSha256", ConfigCodec.sha256(ConfigCodec.encodeBytes(r.config)))
+                    is ParseResult.Ok -> {
+                        put("canonicalSha256", ConfigCodec.sha256(ConfigCodec.encodeBytes(r.config)))
+                        // #79: load warnings (status.json `warnings`), only when there are some.
+                        Elements.warnings(r.config).takeIf { it.isNotEmpty() }?.let { w -> putJsonArray("warnings") { w.forEach { add(it) } } }
+                    }
                 }
             }
         }
