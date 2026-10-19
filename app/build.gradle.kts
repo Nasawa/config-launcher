@@ -27,8 +27,8 @@ android {
             keyPassword = "android"
         }
     }
-    // §20.2: schema/launcher-config.v1.schema.json ships as an asset (with schema/README.md and examples/; tiny) for the offline copy in .configlauncher/.
-    sourceSets { getByName("main") { assets.srcDir("../schema") } }
+    // §20.1 templates/config-folder/AGENTS.md → asset "config-folder/AGENTS.md"; §20.2 schema/launcher-config.v1.schema.json → asset (with schema/README.md and examples/, tiny).
+    sourceSets { getByName("main") { assets.srcDir("../templates"); assets.srcDir("../schema") } }
     buildTypes {
         debug { signingConfig = signingConfigs.getByName("debug") }
         release {

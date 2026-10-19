@@ -25,6 +25,8 @@ fun FirstRunScreen(onChooseFolder: () -> Unit, onSkip: () -> Unit, cancelled: Bo
                     stringResource(R.string.first_run_body),
                     color = Color.LightGray,
                 )
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.first_run_agent_docs), color = Color.LightGray, style = MaterialTheme.typography.bodySmall)   // §20.1
                 Spacer(Modifier.height(24.dp))
                 if (cancelled) Text(stringResource(R.string.first_run_cancelled),
                     color = Color(0xFFFFCDD2), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))

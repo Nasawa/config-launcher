@@ -1,5 +1,9 @@
 package dev.nasawa.configlauncher.model
 
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+
 /**
  * Local edits are stored as ID-based operations (ARCHITECTURE.md §6) so "Keep mine" can replay them
  * onto an externally edited file instead of overwriting it.
@@ -257,13 +261,28 @@ object Edits {
         return ApplyResult(c.copy(pages = pages), true)
     }
 
-    /** New stable ID like "a-chrome-3f2k" (schema pattern ^[a-z0-9][a-z0-9_-]{0,63}$). */
-    fun newId(c: LauncherConfig, packageName: String, random: () -> Int = { (0..Int.MAX_VALUE).random() }): String {
-        val base = "a-" + packageName.substringAfterLast('.').lowercase().replace(Regex("[^a-z0-9_-]"), "").take(40)
-        val taken = c.allItems().map { it.id }.toSet()
+    /** Generated-ID prefixes (README "ID prefixes", ARCHITECTURE.md §20.4). Pages use readable "page-N" (§14 R9). */
+    enum class IdKind(val prefix: String) { APP("a-"), SHORTCUT("s-"), FOLDER("f-"), RULE("r-") }
+
+    /** New stable app ID like "a-chrome-3f2k" (schema pattern ^[a-z0-9][a-z0-9_-]{0,63}$). */
+    fun newId(c: LauncherConfig, packageName: String, random: () -> Int = { (0..Int.MAX_VALUE).random() }): String =
+        newId(c, IdKind.APP, packageName.substringAfterLast('.'), random)
+
+    /**
+     * New ID "<prefix><hint>-<random>", e.g. "f-games-3f2k" or "s-chrome-new-tab-1a2b". [hint] is reduced to the ID
+     * alphabet; an empty hint gives "f-3f2k". Unique across the whole file: items, pages and drawer rules.
+     */
+    fun newId(c: LauncherConfig, kind: IdKind, hint: String, random: () -> Int = { (0..Int.MAX_VALUE).random() }): String {
+        val slug = hint.lowercase().replace(Regex("[^a-z0-9_-]+"), "-").trim('-', '_').take(40)
+        val base = kind.prefix + (if (slug.isEmpty()) "" else "$slug-")
+        val taken = usedIds(c)
         while (true) {
-            val id = base + "-" + Integer.toString(random() and 0xfffff, 36)
+            val id = base + Integer.toString(random() and 0xfffff, 36)
             if (id !in taken) return id
         }
     }
+
+    private fun usedIds(c: LauncherConfig): Set<String> =
+        c.allItems().map { it.id }.toSet() + c.pages.map { it.id } +
+            c.drawer?.rules.orEmpty().mapNotNull { ((it as? JsonObject)?.get("id") as? JsonPrimitive)?.contentOrNull }
 }

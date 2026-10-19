@@ -102,7 +102,7 @@ object ConfigCodec {
             putJsonObject("drawer") {
                 opt("sort", d.sort)
                 d.hidden?.let { h -> putJsonArray("hidden") { h.forEach { add(it) } } }
-                d.rules?.let { r -> put("rules", JsonArray(r)) }
+                d.rules?.let { r -> put("rules", JsonArray(r.map(::canonicalRule))) }
             }
         }
         extras(c.extras)
@@ -128,4 +128,18 @@ object ConfigCodec {
         opt("x", i.x); opt("y", i.y)
         extras(i.extras)
     }
+
+    private val RULE_KEYS = listOf("id", "group", "match")
+    private val MATCH_KEYS = listOf("packages", "packagePrefix", "tag", "category")
+
+    private fun ordered(o: JsonObject, keys: List<String>, inner: (String, JsonElement) -> JsonElement = { _, v -> v }) =
+        JsonObject(LinkedHashMap<String, JsonElement>().apply {
+            keys.forEach { k -> o[k]?.let { put(k, inner(k, it)) } }
+            o.forEach { (k, v) -> if (k !in keys) put(k, v) }
+        })
+
+    /** ARCHITECTURE.md §20.3: drawer rules are written as id, group, match{packages, packagePrefix, tag, category}. */
+    internal fun canonicalRule(r: JsonElement): JsonElement =
+        if (r !is JsonObject) r
+        else ordered(r, RULE_KEYS) { k, v -> if (k == "match" && v is JsonObject) ordered(v, MATCH_KEYS) else v }
 }

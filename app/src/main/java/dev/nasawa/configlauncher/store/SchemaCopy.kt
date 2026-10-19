@@ -4,20 +4,35 @@ import dev.nasawa.configlauncher.config.ConfigCodec
 
 /**
  * ARCHITECTURE.md §20.2: keep `.configlauncher/launcher-config.v1.schema.json` (the bundled schema) in a connected folder,
- * so agents can validate offline. Written when a folder is chosen or connected and again after an app update changes the
- * bundled schema. `validate.py` is not shipped; it stays a download from the repo.
+ * so agents can validate offline. Checked when a folder is chosen or connected and on every start (so an app update
+ * brings the new schema). Hash-guarded like [AgentDocs]: an existing file is replaced only if it is a version we shipped;
+ * a file the user edited is never touched. Writes only that one file. `validate.py` is not shipped.
  */
 object SchemaCopy {
     const val NAME = "launcher-config.v1.schema.json"
     const val ASSET = NAME
+    private const val MAX_BYTES = 1024 * 1024
 
     /**
-     * Writes [bundled] into [src]'s `.configlauncher/` unless [lastWrittenSha] (what we last wrote to this folder) already
-     * matches it. Returns the hash to remember, or null when nothing changed or the write failed (retried next time).
+     * SHA-256 of every schema copy ever shipped. When schema/launcher-config.v1.schema.json changes, ADD its new hash
+     * (keep the old ones); SchemaCopyTest fails until you do.
      */
-    fun sync(src: ConfigSource, bundled: ByteArray, lastWrittenSha: String?): String? {
-        val sha = ConfigCodec.sha256(bundled)
-        if (sha == lastWrittenSha) return null
-        return try { src.writeSidecar("", NAME, bundled); sha } catch (e: Exception) { null }
+    val SHIPPED_SHA256 = setOf(
+        "8ed3e407309d41e58c9529c2e0b6bce70f9e35deaedd11f7835c990651eb0ab8",   // first shipped with #88
+    )
+
+    enum class Outcome { WROTE, UPDATED, UP_TO_DATE, USER_CHANGED, FAILED }
+
+    fun decide(bundled: ByteArray, existing: ByteArray?): Outcome = when {
+        existing == null -> Outcome.WROTE
+        existing.contentEquals(bundled) -> Outcome.UP_TO_DATE
+        ConfigCodec.sha256(existing) in SHIPPED_SHA256 -> Outcome.UPDATED
+        else -> Outcome.USER_CHANGED
     }
+
+    fun sync(src: ConfigSource, bundled: ByteArray): Outcome = try {
+        decide(bundled, src.readSidecar("", NAME, MAX_BYTES)).also {
+            if (it == Outcome.WROTE || it == Outcome.UPDATED) src.writeSidecar("", NAME, bundled)
+        }
+    } catch (e: Exception) { Outcome.FAILED }
 }

@@ -35,6 +35,11 @@ class LocalFileSource(val dir: File, val sidecars: Boolean = true) : ConfigSourc
     // App-only mode: sync-conflict notices don't apply (§18.5).
     override fun siblingNames(): List<String> = if (sidecars) dir.list()?.toList().orEmpty() else emptyList()
 
+    override fun readSidecar(subdir: String, name: String, maxBytes: Int): ByteArray? {
+        if (!sidecars) throw UnsupportedOperationException("app-only mode has no .configlauncher folder (§18.5)")
+        return File(File(File(dir, ".configlauncher"), subdir), name).takeIf { it.isFile }?.inputStream()?.use { it.readCapped(maxBytes) }
+    }
+
     override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
         if (!sidecars) throw UnsupportedOperationException("app-only mode has no .configlauncher folder (§18.5)")
         val d = File(File(dir, ".configlauncher"), subdir)
@@ -43,6 +48,19 @@ class LocalFileSource(val dir: File, val sidecars: Boolean = true) : ConfigSourc
         val t = File(d, "$name.tmp")
         FileOutputStream(t).use { it.write(bytes); it.fd.sync() }
         if (!t.renameTo(f)) throw IOException("could not write ${f.name}")
+    }
+
+    // Folder stand-in for tests only; app-only mode (sidecars = false) has no folder files (§20.1).
+    override fun readRoot(name: String, maxBytes: Int): ByteArray? {
+        if (!sidecars) throw UnsupportedOperationException("app-only mode")
+        return File(dir, name).takeIf { it.isFile }?.inputStream()?.use { it.readCapped(maxBytes) }
+    }
+
+    override fun writeRoot(name: String, bytes: ByteArray) {
+        if (!sidecars) throw UnsupportedOperationException("app-only mode")
+        val t = File(dir, "$name.tmp")
+        FileOutputStream(t).use { it.write(bytes); it.fd.sync() }
+        if (!t.renameTo(File(dir, name))) throw IOException("could not write $name")
     }
 
     companion object { const val FILE_NAME = "launcher.json" }

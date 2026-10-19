@@ -61,26 +61,44 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
                 ?.let { DocumentsContract.getDocumentId(it) }
             ?: throw IOException("can't create $name")
 
-    override fun write(bytes: ByteArray) {
+    override fun write(bytes: ByteArray) = writeVerified(FILE, "application/json", bytes, "layout")
+
+    override fun readRoot(name: String, maxBytes: Int): ByteArray? {
+        val child = children(rootDocId)[name] ?: return null
+        if (child.size > maxBytes) throw IOException("$name is larger than ${maxBytes / 1024} KiB")
+        return resolver.openInputStream(docUri(child.docId))?.use { it.readCapped(maxBytes) }
+    }
+
+    override fun writeRoot(name: String, bytes: ByteArray) = writeVerified(name, "application/octet-stream", bytes, name)
+
+    private fun writeVerified(name: String, mime: String, bytes: ByteArray, what: String) {
         val want = ConfigCodec.sha256(bytes)
         val dir = ensure(rootDocId, ".configlauncher", Document.MIME_TYPE_DIR)
         // Some providers append ".json" for application/json; octet-stream keeps the exact name.
-        val tmp = docUri(ensure(dir, "$FILE.tmp", "application/octet-stream"))
+        val tmp = docUri(ensure(dir, "$name.tmp", "application/octet-stream"))
         writeUri(tmp, bytes)
         if (readUri(tmp)?.let { ConfigCodec.sha256(it) } != want) throw IOException("temp copy verification failed")
-        val target = docUri(children(rootDocId)[FILE]?.docId
-            ?: DocumentsContract.createDocument(resolver, docUri(rootDocId), "application/json", FILE)?.let { DocumentsContract.getDocumentId(it) }
-            ?: throw IOException("can't create $FILE"))
+        val target = docUri(children(rootDocId)[name]?.docId
+            ?: DocumentsContract.createDocument(resolver, docUri(rootDocId), mime, name)?.let { DocumentsContract.getDocumentId(it) }
+            ?: throw IOException("can't create $name"))
         try {
             writeUri(target, bytes)
             if (readUri(target)?.let { ConfigCodec.sha256(it) } != want) throw IOException("write verification failed")
         } catch (e: Exception) {
             runCatching { writeUri(target, readUri(tmp)!!) }
-            throw IOException("Couldn't save layout: ${e.message}", e)
+            throw IOException("Couldn't save $what: ${e.message}", e)
         }
     }
 
     override fun siblingNames(): List<String> = children(rootDocId).keys.toList()
+
+    override fun readSidecar(subdir: String, name: String, maxBytes: Int): ByteArray? {
+        var dir = children(rootDocId)[".configlauncher"]?.docId ?: return null
+        if (subdir.isNotEmpty()) dir = children(dir)[subdir]?.docId ?: return null
+        val child = children(dir)[name] ?: return null
+        if (child.size > maxBytes) throw IOException("$name is larger than ${maxBytes / 1024} KiB")
+        return resolver.openInputStream(docUri(child.docId))?.use { it.readCapped(maxBytes) }
+    }
 
     override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
         var dir = ensure(rootDocId, ".configlauncher", Document.MIME_TYPE_DIR)
