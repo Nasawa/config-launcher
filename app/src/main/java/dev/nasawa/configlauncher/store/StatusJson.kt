@@ -29,11 +29,13 @@ object StatusJson {
 
     fun encode(
         result: String, errors: List<String>, hash: String?, ms: Long,
-        backupError: String? = null, conflictFiles: List<String> = emptyList(), folder: String? = null,
+        backupError: String? = null, conflictFiles: List<String> = emptyList(), folder: String? = null, revision: Long? = null,
     ): ByteArray = buildJsonObject {
         put("result", result)
         put("errors", JsonArray(errors.map { JsonPrimitive(it) }))
         put("hash", hash)
+        // #55: receipt only; the content hash stays the authority (decision 19). null when rejected.
+        put("revision", revision)
         put("time", iso(ms))
         // §17 Q4: null when the private backup copy is current.
         put("backupError", backupError)

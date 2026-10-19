@@ -96,8 +96,8 @@ Gestures and taps (home):
 | Tap app | Launch via `LauncherApps.startMainActivity` |
 | Tap folder | Open folder (§3) |
 | Tap dimmed item | Nothing launches. A hint sheet says why: `Not installed`, `Shortcut no longer available`, `Work apps are paused`, `Turn on "Include work apps in config" to use this.` (tap → system unpause prompt) or `Set as Home to use shortcuts`, with **`Remove from layout`** (one write). `Open store page` comes later |
-| Long-press app, shortcut or folder | Item sheet showing the **real app name and package** (so a label override can't disguise an app), plus `Edit layout`, `App info`, `Remove from home` |
-| Long-press empty space | Home menu: `Edit layout`, `Reload layout`, `Settings` |
+| Long-press app, shortcut or folder | Item sheet showing the **real app name and package** (so a label override can't disguise an app), plus `Edit layout`, `App info`, `Remove from home`. Folder: header `Folder, 5 apps` (plural `Folder, 1 app`), no `App info`. Dimmed (not installed): header `Not installed · <package>`, no `App info` (§14) |
+| Long-press empty space (empty cells only; items open their sheet) | Home menu: `Edit layout`, `Wallpaper` (system wallpaper picker), `Reload layout`, `Settings`. In app-only mode also `Choose folder` |
 | Swipe up anywhere / tap ⌃ handle | Open the drawer (§2) |
 | Swipe left/right | Change page |
 | Home button while on home | Go to page 1, close drawer/folder |
@@ -146,8 +146,8 @@ Gestures and taps (home):
 | Sorting | `drawer.sort`: `label` (default, A–Z with locale-aware `Collator`, numbers first) or `installTime` (newest first). Not editable in the UI in the MVP |
 | Groups | `drawer.rules[]` create titled groups (the rule's `group`) at the top of the list, in rule order, each sorted as above. An app matching no rule is listed under `All apps`. Rules never affect home pages |
 | What's listed | **Every launchable app** in the personal profile (and the work profile, badged), **including apps already placed** on pages, the dock or in folders, minus `drawer.hidden` (§17 b). Private space has its own section (§1.2) |
-| Hidden apps | Package names in `drawer.hidden[]`. Not shown in the list or search. Long-press a drawer app → `Hide` (one write). Hidden apps are listed in **Settings → Hidden apps**, where `Unhide` is one write. A hidden app placed explicitly on a page still shows and launches there |
-| Long-press app | `Add to home` (first free cell, page 1 onward, else a new page), `Hide`, `App info`. Dragging out of the drawer enters edit mode on home (§4). Work apps offer `Add to home` only when **Include work apps in config** is on |
+| Hidden apps | Package names in `drawer.hidden[]`. Not shown in the list or search. Long-press a drawer app → `Hide` (one write). Hidden apps are listed in **Settings → Hidden apps**, where `Unhide` is one write (interim: drawer ⋮ → `Hidden apps`, §14). The `Hide` snackbar has `Undo`. A hidden app placed explicitly on a page still shows and launches there |
+| Long-press app | `Add to home` (first free cell, page 1 onward, else a new page), `Hide`, `App info`. Dragging out of the drawer to home is **later** (§14); `Add to home` covers the MVP. Work apps offer `Add to home` only when **Include work apps in config** is on |
 | Menu `⋮` | `Settings` |
 
 ---
@@ -369,6 +369,8 @@ Shown on first launch, before the home screen. Each step is one full screen with
 
 ## 8. Settings (MVP, minimal)
 
+MVP vs later and the interim ⋮ menu: see §14.
+
 | Setting | Spec |
 |---|---|
 | `Config folder` | Folder name and last load time, `Change folder`, `Reload layout`, `Use phone storage`. In app-only mode: `Layout stored on this phone only` and `Choose folder` (§7) |
@@ -451,6 +453,9 @@ Rules:
   </plurals>
   <string name="merge_folder_one_left">Folder "%1$s" wasn't recreated because its other apps were removed or moved in the file. "%2$s" was placed on its own.</string>
   <string name="merge_folder_none_left">Folder "%1$s" wasn't recreated because its apps were removed or moved in the file.</string>
+  <!-- TalkBack long form: %1$s = merge_updated, %2$s = merge_kept_part, %3$s = merge_skipped_a11y -->
+  <string name="merge_mixed_a11y">%1$s %2$s. %3$s</string>
+  <string name="merge_undo">Undo</string>
   ```
   `merge_mixed` is `merge_updated` + `merge_kept_part` + `merge_skipped_part`. Always pass the count as the plurals quantity *and* the format argument (`getQuantityString(id, n, n)`).
 
@@ -522,6 +527,22 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 - [ ] Manual tests: edit the file on a PC via Syncthing while the phone is on home, in edit mode, and mid-drag. Corrupt the file, then edit on the phone (broken copy). Revoke access in system settings. Delete the file. Newer `schemaVersion`. Font 200 %. TalkBack-only layout edit.
 
 ---
+
+## 14. Rulings on Sprite's #53 build (#59, #60, #62, #63)
+
+| # | Topic | Ruling | Sprite | Scope |
+|---|---|---|---|---|
+| R1 | Folder item sheet | Confirmed: header `Folder, 5 apps` (`Folder, 1 app`), actions `Edit layout`, `Remove from home`. No `App info` | — | MVP |
+| R2 | Not-installed item sheet (long-press) | Confirmed: header `Not installed · <package>`, actions `Edit layout`, `Remove from home`, no `App info`. A **tap** still opens the dimmed-item hint sheet (§1.1) | — | MVP |
+| R3 | `Remove from home` on a folder | Removes the folder and its items **from home only**. The apps stay installed and in the drawer (the drawer always lists every app). No confirm dialog. Instead: one write plus snackbar `Removed folder "<Label>" from home.` [`Undo`] (Undo = a second write restoring the folder with its items and position). TalkBack: the same text | Add the snackbar with Undo | MVP |
+| R4 | Home key in edit mode | **Change:** Home leaves edit mode (as §4.1 says), after flushing pending writes, and goes to page 1 | Handle Home in edit mode | MVP |
+| R5 | Empty pages | **Change:** leaving edit mode deletes empty pages (as §4.2 says), never the last page. Folded into the same write as the last edit, or one write if there were no edits | Implement | MVP |
+| R6 | Home menu only on empty cells | Confirmed. Menu: `Edit layout`, `Wallpaper`, `Reload layout`, `Settings` (+ `Choose folder` in app-only mode). `Wallpaper` (#63) opens the system wallpaper picker and is confirmed | — | MVP |
+| R7 | Drag out of the drawer | **Later.** MVP uses `Add to home`. ux.md §2 updated | — | Later |
+| R8 | Unhide | **Change (interim):** drawer ⋮ → `Hidden apps` opens a sheet titled `Hidden apps`, listing each hidden app (icon, label, package) with `Unhide` (one write). Empty: `No hidden apps.` The `Hide` snackbar `<Label> hidden from the app list.` gets [`Undo`]. Moves to Settings → Hidden apps when Settings exists | Add the interim sheet, the empty state and the Hide snackbar with Undo | MVP |
+| R9 | New pages from `Add to home` | Confirmed: id `page-N` (lowest unused N), no `title`, max 20 pages. **Change the full copy** from `No room on home. Remove a page first.` to `No room on home: all 20 pages are full.` | Change `home_full` | MVP |
+| R10 | No Settings screen; ⋮ menu holds folder and home-app items | **Acceptable interim**, but use the doc's names: `Choose folder` (not `Pick config folder…`), `Reload layout` (not `Reload launcher.json`), `Set as home app`, `Hidden apps`. Until the screen exists, the home menu's `Settings` opens the same ⋮ menu | Rename `menu_pick_folder` → `Choose folder`, `menu_reload` → `Reload layout`; route home-menu `Settings` to the ⋮ menu | MVP interim |
+| R11 | Which Settings are MVP | **MVP:** Config folder (Choose folder / Use phone storage / Reload layout), Home app, Hidden apps, Ask before merging, Open keyboard with drawer, Label backdrop, Include work apps in config (only shown if a work profile exists), Restore previous layout. **Later:** Grid (edit the file), About (version only in the ⋮ menu is fine) | — | — |
 
 ## Open questions for Christopher
 

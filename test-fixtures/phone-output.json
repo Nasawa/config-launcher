@@ -1,0 +1,404 @@
+{
+  "invalid/2016-items.json": {
+    "errors": [
+      "2018 items in total, at most 2000 allowed"
+    ]
+  },
+  "invalid/21-pages.json": {
+    "errors": [
+      ".pages: has 21 entries, at most 20 allowed"
+    ]
+  },
+  "invalid/activity-257-chars.json": {
+    "errors": [
+      "pages[0].items[0].activity: longer than 256 characters"
+    ]
+  },
+  "invalid/activity-injection.json": {
+    "errors": [
+      "pages[0].items[0].activity: \"com.x/.Main;S.extra=1\" is not valid"
+    ]
+  },
+  "invalid/cell-outside-grid.json": {
+    "errors": [
+      "pages[0].items[0].x: 4 is outside the grid (4 columns)"
+    ]
+  },
+  "invalid/comments.json": {
+    "errors": [
+      "not valid JSON: Unexpected JSON token at offset 4: Expected EOF after parsing, but had n instead at path: $"
+    ]
+  },
+  "invalid/deep-nesting.json": {
+    "errors": [
+      "not valid JSON: nested deeper than 8 levels (line 1)"
+    ]
+  },
+  "invalid/depth-9.json": {
+    "errors": [
+      "not valid JSON: nested deeper than 8 levels (line 87)"
+    ]
+  },
+  "invalid/dock-8-items.json": {
+    "errors": [
+      ".dock: has 8 entries, at most 7 allowed"
+    ]
+  },
+  "invalid/dock-item-with-xy.json": {
+    "errors": [
+      "dock[0]: x/y are not allowed in the dock"
+    ]
+  },
+  "invalid/duplicate-id.json": {
+    "errors": [
+      "dock[0].id: duplicate id \"a-settings\" (also at pages[0].items[0])"
+    ]
+  },
+  "invalid/duplicate-key.json": {
+    "errors": [
+      "not valid JSON: duplicate key \"schemaVersion\" (line 3)"
+    ]
+  },
+  "invalid/empty.json": {
+    "errors": [
+      "not valid JSON: Cannot read Json element because of unexpected end of the input at path: $"
+    ]
+  },
+  "invalid/folder-child-with-xy.json": {
+    "errors": [
+      "pages[0].items[2].items[0]: x/y are not allowed in folders"
+    ]
+  },
+  "invalid/git-conflict-markers.json": {
+    "errors": [
+      "not valid JSON: git merge conflict markers (line 3); finish the merge in git"
+    ]
+  },
+  "invalid/grid-1.json": {
+    "errors": [
+      "grid.columns: 1 is out of range 2..12",
+      "pages[0].items[2].x: 2 is outside the grid (2 columns)"
+    ]
+  },
+  "invalid/grid-13.json": {
+    "errors": [
+      "grid.columns: 13 is out of range 2..12"
+    ]
+  },
+  "invalid/hidden-257-chars.json": {
+    "errors": [
+      "drawer.hidden[0]: must be a package name (at most 256 characters)"
+    ]
+  },
+  "invalid/hostile-key-action.json": {
+    "errors": [
+      "pages[0].items[0]: unknown key \"action\""
+    ]
+  },
+  "invalid/hostile-key-cmd.json": {
+    "errors": [
+      "pages[0].items[0]: unknown key \"cmd\""
+    ]
+  },
+  "invalid/hostile-key-exec.json": {
+    "errors": [
+      "pages[0].items[0]: unknown key \"exec\""
+    ]
+  },
+  "invalid/hostile-key-extras.json": {
+    "errors": [
+      "pages[0].items[0]: unknown key \"extras\""
+    ]
+  },
+  "invalid/hostile-key-script.json": {
+    "errors": [
+      "pages[0].items[0]: unknown key \"script\""
+    ]
+  },
+  "invalid/hostile-key-uri.json": {
+    "errors": [
+      "pages[0].items[0]: unknown key \"uri\""
+    ]
+  },
+  "invalid/id-65-chars.json": {
+    "errors": [
+      "pages[0].items[0].id: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" is not valid"
+    ]
+  },
+  "invalid/id-uppercase.json": {
+    "errors": [
+      "pages[0].items[0].id: \"A-Settings\" is not valid"
+    ]
+  },
+  "invalid/intent-type.json": {
+    "errors": [
+      "pages[0].items[3].type: unknown type \"intent\" (app, shortcut or folder)"
+    ]
+  },
+  "invalid/invalid-utf8.json": {
+    "errors": [
+      "not valid UTF-8"
+    ]
+  },
+  "invalid/json5-trailing-comma.json": {
+    "errors": [
+      "not valid JSON: Unexpected JSON token at offset 51: Trailing comma before the end of JSON object at path: $"
+    ]
+  },
+  "invalid/label-1mb.json": {
+    "errors": [
+      "pages[0].items[0].label: longer than 60 characters"
+    ]
+  },
+  "invalid/label-61-chars.json": {
+    "errors": [
+      "pages[0].items[0].label: longer than 60 characters"
+    ]
+  },
+  "invalid/lone-surrogate.json": {
+    "errors": [
+      "not valid JSON: unpaired surrogate in a string (line 11)"
+    ]
+  },
+  "invalid/match-packages-257-chars.json": {
+    "errors": [
+      "drawer.rules[0].match.packages[0]: must be a package name (at most 256 characters)"
+    ]
+  },
+  "invalid/missing-pages.json": {
+    "errors": [
+      "missing required \"pages\""
+    ]
+  },
+  "invalid/missing-schemaVersion.json": {
+    "errors": [
+      "missing required \"schemaVersion\""
+    ]
+  },
+  "invalid/negative-x.json": {
+    "errors": [
+      "pages[0].items[0].x: -1 is out of range 0..11"
+    ]
+  },
+  "invalid/nested-folder.json": {
+    "errors": [
+      "pages[0].items[2].items[2]: folders cannot be nested"
+    ]
+  },
+  "invalid/newer-schemaVersion.json": {
+    "errors": [
+      "schemaVersion 2 is newer than this launcher supports (1); update the app"
+    ]
+  },
+  "invalid/nul-in-label.json": {
+    "errors": [
+      "not valid JSON: NUL character in a string (line 11)"
+    ]
+  },
+  "invalid/nul-raw.json": {
+    "errors": [
+      "not valid JSON: NUL character in a string (line 11)"
+    ]
+  },
+  "invalid/overlapping-cells.json": {
+    "errors": [
+      "pages[0].items[1]: overlaps pages[0].items[0] at cell (0, 0)"
+    ]
+  },
+  "invalid/package-1000-chars.json": {
+    "errors": [
+      "pages[0].items[0].package: longer than 256 characters"
+    ]
+  },
+  "invalid/package-dotdot.json": {
+    "errors": [
+      "pages[0].items[0].package: \"com..x\" is not valid"
+    ]
+  },
+  "invalid/package-empty.json": {
+    "errors": [
+      "pages[0].items[0].package: \"\" is not valid"
+    ]
+  },
+  "invalid/package-http-url.json": {
+    "errors": [
+      "pages[0].items[0].package: \"http://example.com\" is not valid"
+    ]
+  },
+  "invalid/package-intent-uri.json": {
+    "errors": [
+      "pages[0].items[0].package: \"intent:#Intent;action=android.intent.action.CALL;end\" is not valid"
+    ]
+  },
+  "invalid/package-leading-digit.json": {
+    "errors": [
+      "pages[0].items[0].package: \"1com.x\" is not valid"
+    ]
+  },
+  "invalid/package-no-dot.json": {
+    "errors": [
+      "pages[0].items[0].package: \"settings\" is not valid"
+    ]
+  },
+  "invalid/package-prefix-257-chars.json": {
+    "errors": [
+      "drawer.rules[0].match.packagePrefix: longer than 128 characters"
+    ]
+  },
+  "invalid/package-slash.json": {
+    "errors": [
+      "pages[0].items[0].package: \"com.x/.Main\" is not valid"
+    ]
+  },
+  "invalid/package-space.json": {
+    "errors": [
+      "pages[0].items[0].package: \"com. x\" is not valid"
+    ]
+  },
+  "invalid/package-tel-uri.json": {
+    "errors": [
+      "pages[0].items[0].package: \"tel:911\" is not valid"
+    ]
+  },
+  "invalid/package-unicode.json": {
+    "errors": [
+      "pages[0].items[0].package: \"com.exämple.app\" is not valid"
+    ]
+  },
+  "invalid/page-item-missing-xy.json": {
+    "errors": [
+      "pages[0].items[0]: page items need \"x\""
+    ]
+  },
+  "invalid/profile-numeric.json": {
+    "errors": [
+      "pages[0].items[0].profile: must be a string"
+    ]
+  },
+  "invalid/profile-private.json": {
+    "errors": [
+      "pages[0].items[0].profile: must be personal or work"
+    ]
+  },
+  "invalid/revision-negative.json": {
+    "errors": [
+      ".revision: -1 is out of range 0..∞"
+    ]
+  },
+  "invalid/schemaVersion-string.json": {
+    "errors": [
+      "schemaVersion: must be 1"
+    ]
+  },
+  "invalid/size-just-over-2mib.json": {
+    "errors": [
+      "file is larger than 2 MiB"
+    ]
+  },
+  "invalid/tags-17.json": {
+    "errors": [
+      "pages[0].items[0].tags: has 17 entries, at most 16 allowed"
+    ]
+  },
+  "invalid/text-type.json": {
+    "errors": [
+      "pages[0].items[3].type: unknown type \"text\" (app, shortcut or folder)"
+    ]
+  },
+  "invalid/trailing-garbage.json": {
+    "errors": [
+      "not valid JSON: Unexpected JSON token at offset 1570: Expected EOF after parsing, but had } instead at path: $"
+    ]
+  },
+  "invalid/truncated.json": {
+    "errors": [
+      "not valid JSON: Unexpected JSON token at offset 200: Expected quotation mark '\"', but had 'EOF' instead at path: $"
+    ]
+  },
+  "invalid/unknown-key-typo.json": {
+    "errors": [
+      "pages[0].items[0]: unknown key \"pakage\""
+    ]
+  },
+  "invalid/unsorted-mode-bad.json": {
+    "errors": [
+      "unsorted.mode: must be drawer, page or hidden"
+    ]
+  },
+  "invalid/utf16.json": {
+    "errors": [
+      "not valid UTF-8"
+    ]
+  },
+  "invalid/widget-type.json": {
+    "errors": [
+      "pages[0].items[3].type: unknown type \"widget\" (app, shortcut or folder)"
+    ]
+  },
+  "invalid/x-float.json": {
+    "errors": [
+      "pages[0].items[0].x: must be an integer"
+    ]
+  },
+  "invalid/x-huge.json": {
+    "errors": [
+      "pages[0].items[0].x: must be an integer"
+    ]
+  },
+  "invalid/zero-pages.json": {
+    "errors": [
+      ".pages: needs at least 1 entries"
+    ]
+  },
+  "valid/2000-items-long-strings.json": {
+    "canonicalSha256": "cf16cca1335c34f41933810f1a842488051042808a0413c253d7328f17e003fc"
+  },
+  "valid/bidi-label.json": {
+    "canonicalSha256": "2284025e13563ee896f9a893ec2e6d0df610934583572e8c833dea64e277eae3"
+  },
+  "valid/bom.json": {
+    "canonicalSha256": "d0391dfa528a863a6fcefc53211172a82bb00c7dbc9ff37cae48bf3a91bfb800"
+  },
+  "valid/emoji-label.json": {
+    "canonicalSha256": "fcac82e04484d15eeb74f7a05f4c7091bbf1596280af32e036ccc9fcc866955e"
+  },
+  "valid/grid-12x12-max.json": {
+    "canonicalSha256": "f82cf0673f713bcd81d5359b78f5a3c8962fa3a629a79f9b19f4dd20d38ba3cb"
+  },
+  "valid/max-depth-8.json": {
+    "canonicalSha256": "6e39fbd9c7250b9d5dfa482e173457e9bfb5815c3f039d0137227ed60ceda5aa"
+  },
+  "valid/minimal.json": {
+    "canonicalSha256": "d0391dfa528a863a6fcefc53211172a82bb00c7dbc9ff37cae48bf3a91bfb800"
+  },
+  "valid/no-revision.json": {
+    "canonicalSha256": "3e4c7d6cd74f1f88b8b6444ff7afc48fdd9e7f622211cca47d39d817acdfa8f4"
+  },
+  "valid/revision-lower.json": {
+    "canonicalSha256": "9e003b82fd07589b65a9ce97f51611f1be0b99645cee566a9bade83e499fc111"
+  },
+  "valid/same-app-dock-and-page.json": {
+    "canonicalSha256": "03031090f1942d5135983906b195b5b0835e90cdbdc6873e687575a12daee96f"
+  },
+  "valid/same-app-twice-on-page.json": {
+    "canonicalSha256": "ce48dcdaa79d40e86d4568485305f60bb363a2220eaafd75dd76e2c2cd8d2ba3"
+  },
+  "valid/size-257k.json": {
+    "canonicalSha256": "9ea17fe1de2cf1cf789353641a74e082d3f0fbe2c3d71e489bea952000f8c76e"
+  },
+  "valid/size-just-under-2mib.json": {
+    "canonicalSha256": "26b4f4508381b56acc4905efa2678cb6bc1a705d752c97cb180de79d90dc5586"
+  },
+  "valid/unknown-package.json": {
+    "canonicalSha256": "e55f86b5f43262fb41818b66cd17375554172aa589d33d039730dc7183830c59"
+  },
+  "valid/work-profile.json": {
+    "canonicalSha256": "068cbc8fa0833d0da0b2b2af25c5224606d73670244627d60249a45ead209c0f"
+  },
+  "valid/writer-overflow-seed.json": {
+    "canonicalSha256": "e532f41a6cd3270eb2326d7f76831757a9abebdaed4a3909d83fd860b3ba96c1"
+  },
+  "valid/x-keys.json": {
+    "canonicalSha256": "6e1a6d201e42acc25ab499041b2b9aea8bcaf914c4417d938c8e55128341b62b"
+  }
+}

@@ -11,6 +11,12 @@ sealed interface Edit {
     data class MoveToDock(val id: String, val index: Int) : Edit
     /** Add a new item (e.g. from Unsorted). [pageId] null = dock at [index]; else first free cell from ([x],[y]). */
     data class Add(val item: Item, val pageId: String?, val x: Int = 0, val y: Int = 0, val index: Int = Int.MAX_VALUE) : Edit
+    /** Remove an item from home (page, dock or a folder). The app stays installed and in the drawer (ux.md §1.1, §4.2). */
+    data class Remove(val id: String) : Edit
+    /** Drawer `Add to home` (ux.md §2): first free cell, page 1 onward, else a new page. */
+    data class AddToHome(val item: Item) : Edit
+    /** Drawer `Hide` (ux.md §2): append the package to `drawer.hidden`. */
+    data class Hide(val packageName: String) : Edit
 }
 
 data class ApplyResult(val config: LauncherConfig, val applied: Boolean, val folder: FolderSkip? = null)
@@ -34,6 +40,42 @@ object Edits {
         is Edit.MoveToCell -> moveToCell(c, e)
         is Edit.MoveToDock -> moveToDock(c, e)
         is Edit.Add -> add(c, e)
+        is Edit.Remove -> remove(c, e)
+        is Edit.AddToHome -> addToHome(c, e)
+        is Edit.Hide -> hide(c, e)
+    }
+
+    const val MAX_PAGES = 20   // schema pages.maxItems
+
+    private fun addToHome(c: LauncherConfig, e: Edit.AddToHome): ApplyResult {
+        for (p in c.pages) {
+            if (freeCell(c, p) == null) continue
+            add(c, Edit.Add(e.item, p.id)).takeIf { it.applied }?.let { return it }   // skips pages that already have it
+        }
+        if (c.pages.size >= MAX_PAGES) return ApplyResult(c, false)
+        val taken = c.pages.map { it.id }.toSet()
+        val id = generateSequence(c.pages.size + 1) { it + 1 }.map { "page-$it" }.first { it !in taken }
+        return add(c.copy(pages = c.pages + Page(id)), Edit.Add(e.item, id)).let { if (it.applied) it else ApplyResult(c, false) }
+    }
+
+    private fun hide(c: LauncherConfig, e: Edit.Hide): ApplyResult {
+        val d = c.drawer ?: Drawer()
+        val hidden = d.hidden.orEmpty()
+        if (e.packageName in hidden) return ApplyResult(c, false)
+        return ApplyResult(c.copy(drawer = d.copy(hidden = hidden + e.packageName)), true)
+    }
+
+    /** §3: a folder with one app left stays a folder; a folder with zero apps is deleted. */
+    private fun remove(c: LauncherConfig, e: Edit.Remove): ApplyResult {
+        fun strip(items: List<Item>): List<Item> = items.mapNotNull { i ->
+            when {
+                i.id == e.id -> null
+                i is FolderItem -> i.copy(items = strip(i.items)).takeIf { it.items.isNotEmpty() || i.items.isEmpty() }
+                else -> i
+            }
+        }
+        val out = c.copy(pages = c.pages.map { it.copy(items = strip(it.items)) }, dock = c.dock?.let(::strip))
+        return ApplyResult(out, out != c)
     }
 
     /** Replay ops in order; skipped ops (target gone, no room, duplicate, folder not recreated) are listed. */

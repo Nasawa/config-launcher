@@ -1,0 +1,10 @@
+<resources>
+    <!-- ux.md §1.1: the system wallpaper shows through home (#58). -->
+    <style name="Theme.ConfigLauncher" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>
