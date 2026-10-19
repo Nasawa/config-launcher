@@ -29,7 +29,7 @@ object StatusJson {
 
     fun encode(
         result: String, errors: List<String>, hash: String?, ms: Long,
-        backupError: String? = null, conflictFiles: List<String> = emptyList(),
+        backupError: String? = null, conflictFiles: List<String> = emptyList(), folder: String? = null,
     ): ByteArray = buildJsonObject {
         put("result", result)
         put("errors", JsonArray(errors.map { JsonPrimitive(it) }))
@@ -39,5 +39,7 @@ object StatusJson {
         put("backupError", backupError)
         // OQ-21: never loaded, merged or deleted; listed so the agent/user can clean up.
         put("conflictFiles", JsonArray(conflictFiles.map { JsonPrimitive(it) }))
+        // #57: where this launcher.json is, so you can tell it's the active one.
+        put("folder", folder)
     }.toString().plus("\n").toByteArray(Charsets.UTF_8)
 }

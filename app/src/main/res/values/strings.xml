@@ -82,6 +82,11 @@
     <string name="search_no_match">No apps match \"%1$s\".</string>
     <string name="dock_empty">Dock: long-press an app and drop it here</string>
     <string name="close">Close</string>
+    <!-- Config folder (ux.md §8, #57) -->
+    <string name="menu_config_folder">Config folder</string>
+    <string name="folder_app_only">Layout stored on this phone only</string>
+    <string name="copy">Copy</string>
+    <string name="copied">Copied</string>
     <string name="apps">Apps</string>
     <string name="cancel">Cancel</string>
 

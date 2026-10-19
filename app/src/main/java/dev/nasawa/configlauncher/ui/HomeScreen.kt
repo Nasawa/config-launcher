@@ -52,6 +52,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var askMerge by remember { mutableStateOf(vm.store.prefs.askBeforeMerging) }
     var keyboardOnOpen by remember { mutableStateOf(vm.store.prefs.drawerKeyboard) }
     var menuOpen by remember { mutableStateOf(false) }
+    var folderInfo by remember { mutableStateOf<String?>(null) }   // "" = app-only
     val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }) { vm.store.edit(it) } }
     var cloudUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var onboarded by remember { mutableStateOf(vm.store.prefs.onboarded) }
@@ -113,6 +114,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     Box {
                         TextButton({ menuOpen = true }) { Text("⋮") }
                         DropdownMenu(menuOpen, { menuOpen = false }) {
+                            DropdownMenuItem({ Text(stringResource(R.string.menu_config_folder)) }, { menuOpen = false; folderInfo = vm.store.engine.source.location ?: "" })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_pick_folder)) }, { menuOpen = false; moving = true; pickFolder.launch(null) })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_use_phone_storage)) }, { menuOpen = false; vm.store.useAppStorage() })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_label_backdrop)) }, {
@@ -156,6 +158,22 @@ fun HomeScreen(vm: HomeViewModel) {
 
         cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }, { cloudUri = null; pickFolder.launch(null) }) }
         moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it) }, { moveAsk = null }) }
+
+        folderInfo?.let { path ->
+            AlertDialog(
+                onDismissRequest = { folderInfo = null },
+                title = { Text(stringResource(R.string.menu_config_folder)) },
+                text = { androidx.compose.foundation.text.selection.SelectionContainer { Text(path.ifEmpty { stringResource(R.string.folder_app_only) }) } },
+                confirmButton = {
+                    if (path.isNotEmpty()) TextButton({
+                        ctx.getSystemService(android.content.ClipboardManager::class.java)
+                            ?.setPrimaryClip(android.content.ClipData.newPlainText("launcher.json", path))
+                        toast(res.getString(R.string.copied))
+                    }) { Text(stringResource(R.string.copy)) }
+                },
+                dismissButton = { TextButton({ folderInfo = null }) { Text(stringResource(R.string.close)) } },
+            )
+        }
 
         openFolder?.let { folder ->
             AlertDialog(

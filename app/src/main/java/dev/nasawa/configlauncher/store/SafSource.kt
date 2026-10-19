@@ -15,6 +15,7 @@ import java.io.IOException
 class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : ConfigSource {
     private val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
     override val displayName = "Folder: " + rootDocId.substringAfterLast(':').ifEmpty { rootDocId }
+    override val location = FolderPath.launcherJson(treeUri.authority, rootDocId, treeUri.toString())
 
     private data class Child(val docId: String, val mime: String, val modified: Long, val size: Long)
 

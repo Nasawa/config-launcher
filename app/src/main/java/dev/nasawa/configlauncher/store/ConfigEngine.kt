@@ -443,7 +443,7 @@ class ConfigEngine(
         val key = "$result|$hash|${errors.hashCode()}|$backupError|$conflictFiles"
         if (key == lastStatusKey) return
         try {
-            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles))
+            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles, source.location))
             lastStatusKey = key
         } catch (_: Exception) { /* folder may be read-only or gone; the banner already says so */ }
     }
