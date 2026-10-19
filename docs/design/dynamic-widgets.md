@@ -1,6 +1,8 @@
 # Dynamic widgets: AI-assisted dashboard cards
 
 **Status:** draft for review (Christopher / Claw / Pragma / Sprite).  
+**Claw review folded in** (PR #117 comment at 313ab26): structural `data.file`, exact-host `hosts`, tap example, Q-C7/Q-C3 recommendations, `ui.reload` + relative time, narrowing ceiling model.
+
 **Opened with:** product reframe from Christopher (via Grok Bot), screenshots in `/workspace/cl-input/` (not committed), Pragma UX [#116](https://github.com/Nasawa/config-launcher/pull/116) (`docs/ux.md` §17), schema answers Q-A1–Q-A8 on that PR.  
 **Related:** [docs/research/widgets.md](../research/widgets.md) (updated by this PR where superseded), [docs/design/title-bar.md](title-bar.md), elements container (#112, merged), Stage 1 cell reservation.
 
@@ -47,13 +49,14 @@ Responsive: up to 3 `layouts` keyed by `"WxH"` with a **lowercase** `x` (e.g. `"
 | `list` | Rows from a data **array**; leading dot/icon, primary, trailing |
 | `icon` | Named Material symbol or installed app icon (no bitmap-with-text) |
 | `progress` | 0–1 bar (or ring at 1×1) |
-| `button` | Label; runs a declared **Open** action only in v1 |
+| `button` | Label; runs a declared action (`ui.openUrl`, `ui.openApp`, or `ui.reload`) |
 
 **Card chrome (automatic):** title + `as of` from data `updatedAt`; `stale` after `staleAfter`.
 
 ### Templating and binding
 
 - Reuse title-bar token grammar where useful (`{time:…}`, `{date:…}`, `{page}`, …).
+- **Relative time (cards):** `{relative:data.path}` or `{relative}` against the data file's `updatedAt` — renders like `5 min ago` / `as of 08:38` companion; closed formatter, no scripts. Title bar may stay absolute-only in v1.
 - Data: `{data:path}` with a **strict JSON-path subset** (dot keys + `[index]`). Nothing is evaluated.
 - Missing path → `—` (never throw). Lists require arrays.
 
@@ -67,8 +70,8 @@ Responsive: up to 3 `layouts` keyed by `"WxH"` with a **lowercase** `x` (e.g. `"
 
 ### Local (v1 of dynamic widgets)
 
-- **One file per widget:** `.configlauncher/widgets-data/<elementId>.json`.
-- Why not one shared blob: prevents cross-widget reads (confused deputy), matches `data.file` capability target 1:1, simpler consent.
+- **One file per widget, structurally:** always `.configlauncher/widgets-data/<elementId>.json`. The path is **derived from the element `id`** — there is no free `path` field. Capability is `{ "kind": "data.file" }` only.
+- Why: prevents cross-widget reads by construction (confused deputy); agents cannot point card A at card B's file.
 - Size cap (proposal): 256 KiB per file; UTF-8 JSON only.
 - Agent writes → phone polls / reload (same spirit as `launcher.json`; exact interval later).
 - Root may include `updatedAt` (ISO-8601). Element may set `staleAfter` (ISO-8601 duration).
@@ -82,9 +85,9 @@ Responsive: up to 3 `layouts` keyed by `"WxH"` with a **lowercase** `x` (e.g. `"
 - **HTTP client:** one isolated client per element id (no shared cache, no cookies, fixed `User-Agent` naming Config Launcher).
 - **Redirects:** follow only if the next hop stays on the **same pinned origin**; otherwise fail the fetch.
 - **`net.fetch` request URLs are literals** in the element (fixed under a pinned origin). They must **not** be built from `{data:…}`.
-- **`ui.openUrl` tap `url` MAY use `{data:…}`** (Outer Shell needs this for "latest post"). At tap time the launcher resolves the template and **opens only if** the resulting URL's host is in that element's approved `hosts`, scheme is `https` (or `http` only if Christopher allows via Q-C7), and there is no `userinfo`. If the host does not match, the tap is ignored and a `status.json` warning is written. Data from fetch responses must not feed a host outside the allowlist.
+- **`ui.openUrl` tap `url` MAY use `{data:…}`** (Outer Shell needs this for "latest post"). At tap time resolve the template, normalise the host (IDNA/punycode/lowercase), and **open only if** it **exactly** matches an approved `hosts` entry (no subdomain inference), scheme is `https` or an approved `http` origin policy (Q-C7), and there is no `userinfo`. Else snackbar + warning. Data must not open a host outside the allowlist.
 - **Connect-time IP check:** on every connection, resolve and refuse RFC1918 / link-local / metadata addresses unless that exact origin was approved under the private-origin allow flow. **DNS rebinding:** re-check the connected IP on each request, not only at approval time.
-- **Cleartext / LAN:** v1 `net.fetch` is HTTPS-only in the public case. Homelab `http://192.168.x` and self-signed TLS are an open question for Christopher (Q-C7) — default deny until decided.
+- **Cleartext / LAN (recommendation, Christopher has final word):** users own what they knowingly approve. `http://` is allowed **per origin when that exact origin string (including `http://`) is approved** — show `http://` in the prompt; **no silent https→http downgrade**. Self-signed: prefer **TOFU certificate pinning per origin** (pin on first approve / explicit re-pin) over disabling TLS validation. Private IPs still need an explicit approved origin; agent-written local JSON remains the simplest LAN path.
 - **Secrets:** never in synced files. Device Keystore / encrypted prefs, entered on phone, scoped to `(elementId, origin)`. Agents declare that a secret slot exists; user fills it. **When the pinned origin set changes, delete secrets for origins that were removed** before any new fetch runs.
 
 ### What stays out of the synced folder
@@ -97,7 +100,8 @@ Normative kinds (Archimedes; supersede §17.11 sample names):
 
 | kind | targets | UX tier | v1? |
 |---|---|---|---|
-| `data.file` | path under `.configlauncher/widgets-data/` (no `..`) | Show | yes |
+| `data.file` | *(none — file is always `widgets-data/<elementId>.json`)* | Show | yes |
+| `ui.reload` | *(none)* — tap re-reads this widget's data file | Show | yes |
 | `ui.openApp` | package name(s) | Open | yes |
 | `ui.openUrl` | hostname(s) | Open (**prompts** — phishing; see note) | yes |
 | `net.fetch` | exact HTTPS origin(s) | Internet | later stage |
@@ -112,24 +116,45 @@ Prefer **kind-specific keys**, not a generic `targets` array (easier for schema 
 
 | kind | Fields |
 |---|---|
-| `data.file` | `path` (filename under `widgets-data/`, usually `<elementId>.json`) |
+| `data.file` | *(no fields)* — path derived from element `id` |
+| `ui.reload` | *(no fields)* |
 | `ui.openApp` | `packages` (string array) |
 | `ui.openUrl` | `hosts` (string array of hostnames) |
 | `net.fetch` | `origins` (string array of exact `https://host[:port]`) |
 
 Fingerprint serializes `kind` + those fields (sorted). Pragma's illustrative `targets` is **not** the schema shape.
 
+
+### `ui.openUrl.hosts` matching (exact)
+
+- Compare **exact host** only after normalisation: Unicode → lowercase ASCII / **punycode** (IDNA); no port in `hosts` (port only via full origin on `net.fetch`).
+- **No implied subdomains:** approving `anigeek.com` does **not** allow `blog.anigeek.com` (list both). Approving `blog.anigeek.com` does not allow `anigeek.com`.
+- The consent prompt shows the **punycode / normalised** form the phone will enforce (so lookalikes are visible).
+- At tap time, resolve `{data:…}` then compare the URL host the same way; mismatch → snackbar + `warn_tap_host` (Pragma #116).
+
 **Tap actions** on a node: `{ "kind": "ui.openUrl", "url": "…" }` or `{ "kind": "ui.openApp", "package": "…" }`. The `url` / `package` must be allowed by a declared capability on the same element.
 
-**Open-tier split (Pragma #116):** `ui.openApp` stays **silent** (installing an app is already a user act). `ui.openUrl` **always prompts** on first enable / host broaden, even though the UX sentence sits in the Open tier — agent-written links are a phishing risk. Christopher confirms via Pragma Q-D5. Show-tier `data.file` stays silent.
+**Open-tier split (Pragma #116):** `ui.openApp` stays **silent** (installing an app is already a user act). `ui.openUrl` **always prompts** on first enable / host broaden, even though the UX sentence sits in the Open tier — agent-written links are a phishing risk. Christopher confirms via Pragma Q-D5. Show-tier `data.file` and `ui.reload` stay silent.
 **Never offered** (absent from schema entirely): SMS, calls, contacts, messages, mic, camera, location, VPN/tunnels, run code.
 
 ### Fingerprint and prompts
 
 - Fingerprint = canonical sorted **capabilities + targets only** (not layout/style/`author`/span).
 - File load **never** opens a dialog (Pragma §17.2). Broadened → dashed consent tile `Needs your OK` / `Needs your OK again`, content not rendered, cells kept.
-- Proper **subset** of approved → silent. Return to exact approved fingerprint → silent re-enable.
-- Same-tier data-source change (path already allowed) → info dot + `Changed` list, stays live.
+- See **Narrowing model** below.
+- Same-tier cosmetic / data-shape change with capabilities unchanged → info dot + `Changed` if useful; stays live.
+
+### Narrowing model (unambiguous)
+
+The device stores the **approved fingerprint set** for an element id (capabilities + targets at approval time). That stored set **does not shrink** when the file narrows.
+
+- **File fingerprint ⊆ stored approved set** → stay live, **no prompt** (narrowing or identical). The stored set is left as-is (it does not shrink to the narrower file).
+- **File fingerprint has anything outside the stored set** (new kind or new target) → `needsApprovalAgain`.
+- **Return to a fingerprint that is ⊆ stored set** (including reverting after a broaden that was never approved) → live without prompt.
+- **Turn off** clears or ignores the stored set for that id until the user approves again (Pragma §17.6).
+
+So: approval is a **ceiling** the file may use up to; narrowing never re-prompts and never deletes the ceiling.
+
 - Approvals **device-local**, keyed by `elementId + capabilityFingerprint`.
 - Optional `author` string (≤40): quoted in UI (`says "Claw"`), **never** trusted for auto-approve.
 
@@ -176,7 +201,7 @@ APK-level `INTERNET` is coarse (see §7). Capability approval is the real contro
 | **SSRF to LAN** (homelab monitors) | Default **deny** RFC1918, link-local, metadata IPs for `net.fetch` unless user enables a stern "allow private origin" pin per origin; document that agent-written **local** JSON is the preferred path for LAN data |
 | **DNS rebinding** (public name → LAN IP later) | Re-validate the connected peer IP on **every** connection, not only when the origin was approved |
 | **Stale secret after origin edit** | Delete Keystore entries for origins removed from the capability before the next fetch |
-| Cross-widget data read | One file per element id; `data.file` cannot name another id's file |
+| Cross-widget data read | File path derived from element id only — no `path` field to misuse |
 | Secret leakage across widgets | Keystore entries keyed by element id + origin |
 | OpenURL phishing | Host allowlist in capability; tap targets must match |
 | Refresh DoS against homelab | Min interval + jitter; cap concurrent fetches |
@@ -193,7 +218,7 @@ Honest holes in "local files + opt-in URL fetch + per-widget manifest":
 5. **Approvals don't sync** (correct for security) → every tablet re-consents (Pragma). Accept the friction.
 6. **"Phone data" tier** without v1 kinds: keep the UX tier for later; don't invent battery/SMS "just in case."
 7. **System notifications need `POST_NOTIFICATIONS` on Android 13+.** Prefer launcher-only signals for v1 (B9 + ⋮ badge + consent tile). A system notification is optional later and needs its own permission prompt.
-8. **Homelab cleartext / self-signed TLS** conflicts with "HTTPS origins only." Resolve via Q-C7; until then private cleartext is denied.
+8. **Homelab cleartext / self-signed:** follow §3 recommendation (`http://` visible in prompt; TOFU pins). Still easy to click through — keep copy stern.
 9. **`widgets-data/` git policy:** agents may want these files synced; they can contain semi-sensitive status text. Document in README whether to commit or gitignore (proposal: commit is OK if no secrets; never put tokens there).
 
 ## 8. HA Q-C5 revised
@@ -226,11 +251,11 @@ We still recommend **against** a built-in HA API client with broad rights. Claw 
 
 - **Q-C1:** Is adding `INTERNET` to the APK acceptable if gated by per-widget `net.fetch` approval?
 - **Q-C2:** Ship dynamic widgets **local-data-only** first (stage 3), with fetch in a later release?
-- **Q-C3:** Private LAN origins: default deny + explicit allow, or prefer "agent writes local JSON only" with no private fetch ever?
+- **Q-C3:** *(direction from Christopher via Claw)* Users own what they knowingly approve — explicit per-origin allow including private/`http://`, with clear prompt labelling. Confirm or tighten.
 - **Q-C4:** Is `author` useful enough to keep, knowing it is only a quote?
 - **Q-C5:** (revised HA) Confirm companion widgets + agent JSON is enough for v1 of (b).
-- **Q-C6:** Any capability missing for Outer Shell besides `data.file` + `ui.openUrl`?
-- **Q-C7:** Should `net.fetch` ever allow `http://` or private IPs / self-signed certs for homelab monitors, or must LAN data always arrive via agent-written local JSON?
+- **Q-C6:** *(decided for parity)* Add Show-tier `ui.reload` (re-read data file) and a `{relative:…}` / `updatedAt` relative-time token. Confirm naming with Pragma.
+- **Q-C7:** *(recommendation in §3)* Allow `http://` per approved origin name; TOFU pin for self-signed; no silent downgrade. Confirm. Local JSON still recommended for LAN monitors.
 
 ### For Pragma
 
@@ -255,7 +280,7 @@ See answers on [#116](https://github.com/Nasawa/config-launcher/pull/116#issueco
   "author": "Claw",
   "surface": "auto",
   "capabilities": [
-    { "kind": "data.file", "path": "w-anigeek.json" },
+    { "kind": "data.file" },
     { "kind": "ui.openUrl", "hosts": ["anigeek.com", "blog.anigeek.com"] }
   ],
   "data": { "staleAfter": "PT30M" },
@@ -267,7 +292,7 @@ See answers on [#116](https://github.com/Nasawa/config-launcher/pull/116#issueco
       { "type": "tile", "children": [
         { "type": "text", "role": "caption", "text": "Latest on blog.anigeek.com" },
         { "type": "text", "role": "body", "text": "{data:blog.title}", "maxLines": 2 }
-      ], "tap": { "kind": "ui.openUrl", "host": "blog.anigeek.com", "url": "{data:blog.url}" } },
+      ], "tap": { "kind": "ui.openUrl", "url": "{data:blog.url}" } },
       { "type": "row", "children": [
         { "type": "metric", "label": "PicSpin site", "value": "{data:picspin.value}", "status": "{data:picspin.status}" },
         { "type": "metric", "label": "letmeaithatforyou", "value": "{data:lmaitfy.value}", "status": "{data:lmaitfy.status}", "priority": 4 },
@@ -279,4 +304,4 @@ See answers on [#116](https://github.com/Nasawa/config-launcher/pull/116#issueco
 }
 ```
 
-Data file: `.configlauncher/widgets-data/w-anigeek.json` (agent-written). First load prompts for `ui.openUrl` (phishing rule) when that capability is present; Show-only cards with just `data.file` go live with no prompt. The sample tap uses `{data:blog.url}` — allowed because the host must match `hosts` after resolution.
+Data file: `.configlauncher/widgets-data/w-anigeek.json` (agent-written). First load prompts for `ui.openUrl` (phishing rule) when that capability is present; Show-only cards with just `data.file` go live with no prompt. The sample tap uses `{data:blog.url}` only (no redundant `host` field) — allowed when the resolved host **exactly** matches `hosts`.
