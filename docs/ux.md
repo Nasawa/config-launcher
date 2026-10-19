@@ -97,7 +97,7 @@ Gestures and taps (home):
 | Tap folder | Open folder (§3) |
 | Tap dimmed item | Nothing launches. A hint sheet says why: `Not installed`, `Shortcut no longer available`, `Work apps are paused`, `Turn on "Include work apps in config" to use this.` (tap → system unpause prompt) or `Set as Home to use shortcuts`, with **`Remove from layout`** (one write). `Open store page` comes later |
 | Long-press app, shortcut or folder | Item sheet showing the **real app name and package** (so a label override can't disguise an app), plus `Edit layout`, `App info`, `Remove from home`. Folder: header `Folder, 5 apps` (plural `Folder, 1 app`), no `App info`. Dimmed (not installed): header `Not installed · <package>`, no `App info` (§14) |
-| Long-press empty space (empty cells only; items open their sheet) | Home menu: `Edit layout`, `Pages` (only with ≥ 2 pages; opens the §1.3 sheet), `Wallpaper` (system wallpaper picker), `Reload layout`, `Settings`. In app-only mode also `Choose folder` |
+| Long-press empty space (empty cells only; items open their sheet) | Home menu: `Edit layout`, `Pages` (only with ≥ 2 pages; opens the §1.3 sheet), `Widgets` (later, §16), `Wallpaper` (system wallpaper picker), `Reload layout`, `Settings`. In app-only mode also `Choose folder` |
 | Swipe up anywhere / tap `Apps` | Open the drawer (§1.4) |
 | Swipe left/right | Change page |
 | Tap the page label (≥ 2 pages) | Page list, jump to a page (§1.3) |
@@ -721,6 +721,99 @@ Resources (character positions are 1-based, like line and column):
 ```
 Counts in the messages above (the maxima) are always ≥ 2, so they don't need plurals. `status.json` uses the same English
 text so agents and the phone say the same thing. The contrast ratio is formatted with one decimal, locale-independent (`2.1`).
+
+## 16. Widgets (later, first post-MVP) — draft for #110
+UX side of Archimedes' recommendation in [`docs/research/widgets.md`](research/widgets.md) (#110): grow the #81
+`elements[]` model with a grid-placed `appWidget` (then `text` and `clock`). Bind consent always starts from a user tap,
+never from a file load. Skipped grid elements still reserve their cells. Answers Q-W1–Q-W6. Not a v1 gate.
+
+**Architecture (accepted for UX planning).** Portable record = `provider` + `profile` + `page`/`x`/`y`/`w`/`h`. The
+phone keeps `filesDir/widgets/bindings.json` (element ID → appWidgetId), never synced. File loads never open bind or
+configure dialogs. Out-of-bounds sizes render at the file's size and add a `status.json` warning. Stage order: container
+with cell reservation → `appWidget` host → first-party `text`/`clock`.
+
+### 16.1 Adding a widget (Q-W1)
+- **Entry:** home long-press menu → `Widgets` (after `Pages`, empty cells only, §1.1). Also available from edit mode's
+  top bar as `+ Widget`. Both open the same picker. Not in the drawer (drawer is apps).
+- **Picker:** a full-screen sheet titled `Widgets`. Search field at the top (hint `Search widgets`), then groups by
+  app (app icon + label as a sticky header). Each provider is a row: `previewImage` or `previewLayout` when available
+  (else a grey rectangle with the app icon), provider label, and size chip `2 × 1`. Long-press a row for `App info`.
+- **Work profile:** after personal widgets, a section `Work` with the work badge on each row. Shown only when
+  **Include work apps in config** is on; otherwise the section is hidden (widgets write a `profile: "work"` entry, same
+  gate as placing work apps).
+- **First-party (Stage 4):** a leading group `Config Launcher` with `Text` and `Clock` (no preview image; a simple
+  mock). They add a `text` / `clock` element, not an AppWidget.
+- Tap a provider → place at the first free rectangle that fits the provider's default cells on the current page, else
+  the next page, else a new page (max 20). Then enter edit mode with the new widget selected for resize. One write.
+
+### 16.2 Placeholders and copy (Q-W2)
+A placeholder fills the element's cells: rounded 12 dp frame, white 12 % fill, the provider's app icon (48 dp) centred,
+label below (12 sp, one line), then a one-line reason (11 sp, secondary). Tap runs the next step for that state;
+long-press opens the item sheet (`Edit layout`, `Remove from home`, and `App info` when the package is installed).
+TalkBack: `<Label>, widget, <reason>`.
+
+| State | Reason (exact) | Tap |
+|---|---|---|
+| Not bound yet (from the file, or after reinstall) | `Tap to set up` | Start the bind flow (§16.3) |
+| Provider not installed | `Not installed` | Hint sheet with `Remove from layout` (same as dimmed apps) |
+| Bind denied / cancelled | `Tap to allow` | Retry the bind flow |
+| Configure cancelled (required configure) | `Tap to finish setup` | Re-open the configure activity |
+| Provider crashed / host view failed | `Can't show this widget` | `Retry` (rebind); long-press sheet adds `Remove from home` |
+| Provider uninstalled after bind | `Not installed` | Same as not installed |
+| Work profile paused | `Work apps are paused` | System unpause prompt (same as dimmed work apps) |
+| Size out of range (§16.5) | *(live widget still shows; cue below)* | — |
+
+### 16.3 Bind explanation (Q-W3)
+Shown **once per provider package** (DataStore set of packages), immediately before `ACTION_APPWIDGET_BIND`, and only
+when `bindAppWidgetIdIfAllowed` returned false. Skipped when: the launcher already has always-allow for this provider,
+or the user has dismissed this explanation for that package.
+
+- Title: `Allow this widget?`
+- Body: `Android will ask you to let Config Launcher create a <App> widget. Your layout file only names the widget; the
+  phone still needs your OK, once per app.`
+- Buttons: `Continue` (primary) · `Not now` (stays on the placeholder, `Tap to allow`).
+- After Continue, the system dialog runs. Cancel → placeholder `Tap to allow`, `deleteAppWidgetId`. Allow → if a
+  required configure activity exists, open it; cancel there → `Tap to finish setup`. Optional configure is skipped
+  until the user picks `Reconfigure` from the item sheet.
+- Reconfigure (when `reconfigurable`): item sheet → `Reconfigure` → the provider's configure activity. No explanation
+  sheet (already bound). Failure keeps the previous config.
+
+### 16.4 Resize (Q-W4)
+- **Edit mode only.** Selecting a widget shows a white 24 % frame and four edge handles (and corners if both axes are
+  allowed). Drag a handle; size snaps to whole cells. Soft haptic at each cell step. Release → one write (`w`/`h`).
+- **Occupied cells:** the drag **stops** at the last free rectangle (red outline on the blocked edge; with reduced
+  motion, the outline only). No reflow, no auto-move of other items (matches §4.2 "no automatic reflow", and
+  Christopher's keep-it-simple). Dropping onto an occupied cell is refused.
+- **Min/max:** handles won't cross the provider's min/max cells (derived at runtime). The file can still hold an
+  out-of-range size from an agent (§16.5).
+- **TalkBack:** custom action `Resize…` opens a sheet with Width and Height steppers (current, min, max shown as
+  `Width, 2 of 4`), `Done` writes once. Also `Move to…` (existing) and `Remove from home`.
+
+### 16.5 Out-of-range size cue (Q-W5)
+Warning only is not enough on the home screen. **Also a visual cue:** a 2 dp amber outline around the live widget (or
+placeholder) and a small ▲ badge at the top-end corner. TalkBack appends `, size may be wrong`. The error sheet's
+Warnings section and `status.json` carry the path message (same style as §15.1), e.g.
+`elements[3]: size 1×1 is below the provider's minimum 2×1. Shown at 1×1 anyway.` No auto-resize, no banner.
+
+### 16.6 Text and clock in the picker (Q-W6)
+- Appear under `Config Launcher` in the picker (§16.1). Defaults: `text` → `{page}` at 2×1; `clock` → `{time}` at 2×1.
+  Templates use the title-bar token grammar.
+- **Phone styling (preset-only, like the title bar):** size `small`/`medium`/`large`, colour `light`/`dark`, backdrop
+  `auto`/`none`/`scrim`. Anything else (custom hex, weight, padding, raw templates beyond the three shorthands) shows
+  as read-only `Custom (set in the file)` with the same replace note as §15. The phone never invents style the file
+  didn't ask for.
+
+### 16.7 Sync: one write, what the agent sees
+| Phone action | File write | Agent sees |
+|---|---|---|
+| Add from picker | One write: new element with `provider`, `profile`, `page`, `x`, `y`, `w`, `h` | Bound on this phone only; other phones show `Tap to set up` until tapped |
+| Move / resize | One write of `x`/`y`/`w`/`h` | Same |
+| Remove | One write removing the element; binding deleted privately | Gone |
+| Bind / configure / reconfigure | **No file write** (device-local) | Unchanged; `status.json` may list warnings |
+| Unbound / missing provider | No write | Element stays; `status.json` warning e.g. `elements[3]: widget not set up on this phone` or `… provider not installed` |
+
+`apps.json` / `AGENTS.md` are unrelated. Bindings never appear in the synced folder.
+
 
 ## Open questions for Christopher
 
