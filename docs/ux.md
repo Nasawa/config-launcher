@@ -828,7 +828,7 @@ used below. The §17.11 JSON stays illustrative, and **Archimedes owns the schem
 element, `elements[]`, `requires`/feature level, `style`, skip-and-keep, Stage 1 cell reservation, `{data:…}`,
 `status.json`, the Warnings section.
 
-**v1 capability kinds (closed list, Q-A1):** `data.file` (Show), `ui.openApp` and `ui.openUrl` (Open), `net.fetch`
+**v1 capability kinds (closed list, Q-A1, #117):** `data.file` and `ui.reload` (Show), `ui.openApp` and `ui.openUrl` (Open), `net.fetch`
 (Internet, feature level 5). Phone data and Act tiers have **no kinds in v1**. Their UX below is kept ready for later.
 Never-offered kinds aren't in the schema at all. On the phone, an unknown `kind` **skips only that element** (skip-and-keep,
 cells kept, consent tile `Update Config Launcher to show this`, §17.3). It doesn't B2-reject the whole file. `validate.py`/CI
@@ -838,7 +838,8 @@ Assumptions A1–A5, all **✅ resolved** in the [#116 comment](https://github.c
 - ✅ **A1** Approval is **device-local** (like `bindings.json`, §16) and never stored in the synced folder, so nothing that
   writes `launcher.json`, whether an agent, a sync or a git merge, can approve its own widget.
 - ✅ **A2** Approval is keyed by **element `id` + a capability fingerprint**: a canonical serialization of the
-  capabilities only: each `kind` plus its kind-specific field (`path`, `packages`, `hosts`, `origins`), sorted. Layout, text, style, span and `author` are left
+  capabilities only: each `kind` plus its kind-specific field (`packages`, `hosts`, `origins`; `data.file` and
+  `ui.reload` have none), sorted. Layout, text, style, span and `author` are left
   out, so editing them never prompts (Q-A2). It's compared against the widget's **approved set**, which never shrinks
   (§17.2, Claw #3).
 - ✅ **A3** Capabilities are **enforced, not just shown**: a widget can't use anything it didn't declare, because the
@@ -856,10 +857,11 @@ The prompt groups capabilities by what they mean to a person, not by API. Each t
 
 | Tier | v1 kind (field) | Examples | Prompt line (exact shape) | Needs OK? |
 |---|---|---|---|---|
-| **Show** | `data.file` (`path`: a file under `.configlauncher/widgets-data/`) | Static text, `{time}`/`{date}`/`{page}`, the widget's own data file | `Show data from widgets-data/w-anigeek.json in your config folder` | **No.** It's listed in the review screen, but on its own it never prompts (Q-D1). The folder is already yours, and displaying data can't reach anything |
+| **Show** | `data.file` (no fields: the file is always `.configlauncher/widgets-data/<elementId>.json`, from the element `id`, so a card can't point at another card's file) | Static text, `{time}`/`{date}`/`{page}`, the widget's own data file | `Show data from widgets-data/w-anigeek.json in your config folder` | **No.** It's listed in the review screen, but on its own it never prompts (Q-D1). The folder is already yours, and displaying data can't reach anything |
+| **Show** | `ui.reload` (no fields) | A tap or button that re-reads this widget's own data file now | `Reload its data when you tap it` | **No** (#117: Show tier, silent). It only re-reads a file the card can already show (§17.9) |
 | **Open** | `ui.openApp` (`packages`) | Tap to open an app, or a launcher target (drawer, page list) | `Open Signal when you tap it` (the app label; the package if it isn't installed) | **No**, same rule as title-bar tap targets |
-| **Open** | `ui.openUrl` (`hosts`: a bare hostname = https only; `http://host` = plain http allowed for that host) | Tap to open a link in the browser | `Open links to anigeek.com when you tap it`. An http entry is written literally, `Open links to http://nas.lan when you tap it`, followed by the note `Links to http://nas.lan aren't private. Others on your network could see or change them.` | **Yes, always**: on first enable and whenever a host is added. It's in the Open tier, but a file-written link is the phishing path. Documented as the Open-tier split in #117 (`ui.openApp` silent, `ui.openUrl` prompts). Christopher confirms in Q-D5 |
-| **Internet** (feature level 5, only if Q-D3 says yes) | `net.fetch` (`origins`: exact `https://host[:port]` by default, or `http://host[:port]` if the user approves it by name; literal URLs only) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (https hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable). An http origin is always written in full, `Connect to http://nas.lan:3001`, followed by the note `The connection to http://nas.lan:3001 isn't private. Others on your network could see or change it.` | **Yes** |
+| **Open** | `ui.openUrl` (`hosts`: a bare hostname such as `anigeek.com` = https only; scheme-qualified `https://nas.lan` or `http://nas.lan` = that scheme for that host. No ports) | Tap to open a link in the browser | `Open links to anigeek.com when you tap it`. An http entry is written literally, `Open links to http://nas.lan when you tap it`, followed by the note `Links to http://nas.lan aren't private. Others on your network could see or change them.` | **Yes, always**: on first enable and whenever a host is added. It's in the Open tier, but a file-written link is the phishing path. Documented as the Open-tier split in #117 (`ui.openApp` silent, `ui.openUrl` prompts). Christopher confirms in Q-D5 |
+| **Internet** (feature level 5, only if Q-D3 says yes) | `net.fetch` (`origins`: full `https://host[:port]` or `http://host[:port]`, approved by name; literal URLs only) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (https hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable). An http origin is always written in full, `Connect to http://nas.lan:3001`, followed by the note `The connection to http://nas.lan:3001 isn't private. Others on your network could see or change it.` | **Yes** |
 | **Phone data** (later, no v1 kinds) | — (future `phone.*`) | Calendar, next alarm, battery, notification counts | `Read your calendar` · `See notification counts` | **Yes.** After `Allow`, Android may ask for its own permission too |
 | **Act** (later, no v1 kinds) | — | Write back to the data file, toggles, webhooks. In v1 buttons only Open | `Change values in widgets-data/w-anigeek.json` | **Yes** |
 | **Never offered** | — (not in the schema) | Send SMS, place calls, read contacts or messages, mic, camera, location, VPN or tunnel control, run code | — | The schema has no kind for these (the iappyx lesson: one bridge for every widget). One written anyway is an unknown kind: the phone skips that element (§17.3), and `validate.py` reports it |
@@ -868,8 +870,10 @@ The prompt groups capabilities by what they mean to a person, not by API. Each t
 allowed only for a host or origin the user approves **by name**, shown literally as `http://…` with the not-private
 note, so the choice is visible. There's **no silent downgrade**: approving `anigeek.com` (https) doesn't cover
 `http://anigeek.com`, and a widget that switches a host to http is broadened (`Needs your OK again`). Hosts match
-**exactly**: `anigeek.com` covers neither `blog.anigeek.com` nor `anigeek.com.evil.net`, so each subdomain is listed.
-Non-ASCII hosts are shown in punycode (`xn--…`) in the prompt and the detail. A user name or password in a URL
+**exactly**, after normalising (IDNA → lowercase ASCII / punycode, #117). There are no implied subdomains:
+`anigeek.com` doesn't cover `blog.anigeek.com` (list both), `blog.anigeek.com` doesn't cover `anigeek.com`, and neither
+covers `anigeek.com.evil.net`. `hosts` entries carry no port (ports only via a full `net.fetch` origin). The prompt and
+the detail show the normalised punycode form (`xn--…`) the phone enforces, so lookalikes are visible. A user name or password in a URL
 (`https://anigeek.com@evil.net`) is never allowed.
 
 **Combination line (later).** When a widget asks for **Phone data** *and* **Internet**, the prompt adds a final line in
@@ -889,16 +893,18 @@ will say so when write-back ships.
 Rule inherited from §16 (research §5.3): **a file load never opens a dialog.** A file change only *marks* a widget, and
 the prompt opens from a tap.
 
-**One approval model (Claw #3).** Each widget `id` has one stored **approved set** on this phone: every capability line
-(each kind with each of its `path` / `packages` / `hosts` / `origins` entries) the user has allowed for it. `Allow` adds
+**One approval model (Claw #3; adopted by Archimedes as the approval *ceiling*, Q-A9).** Each widget `id` has one
+stored **approved set** on this phone, a **cumulative union** that approvals at different times add to: every capability line
+(each kind with each of its `packages` / `hosts` / `origins` entries; `data.file` and `ui.reload` are a line each) the user has allowed for it. `Allow` adds
 the lines the prompt showed. The set **never shrinks** when the file narrows; only `Remove from home` or the element
 leaving the file (GC) clears it. On every load:
 - **Everything the widget declares is within the approved set → live, no prompt, no badge, no dot.** This covers
   narrowing, returning to an earlier version, and any mix of approved lines.
 - **Anything beyond it → `Needs your OK again`** (or `Needs your OK` when the set is empty). Only the lines outside the
   set are marked `New`.
-- The one exception (later): a combination that triggers the §17.1 combination line asks once even when each line was
-  approved separately.
+- The one exception (later): the **first time** a widget has both Phone data and Internet, the combination prompt
+  (§17.1 combination line) shows once, even if each was approved on its own earlier. After `Allow` the pair joins the
+  set like any other line.
 
 `Turn off` (§17.6) is separate from the approved set. It's a sticky off switch that wins until the user picks `Allow`
 again, and it leaves the set unchanged.
@@ -910,7 +916,7 @@ again, and it leaves the set unchanged.
 | **Broadened** (a new kind, or a new entry inside one: a new origin, hostname, package or file, or https → http for a host) | Reload: a line outside the approved set → `needsApprovalAgain` | **Disabled** with `Needs your OK again`. The old version isn't kept running (its definition is gone) | `"<Title>" wants more access` (§17.5), new lines first |
 | **Narrowed, or back to an earlier version** (everything still within the approved set) | Reload | Stays (or becomes) live. No dot, no badge. The approved set is unchanged | None. A quiet history entry in the widget detail (`10:42 · No longer asks to connect to status.anigeek.com`) |
 | **Data bindings changed** (different `{data:…}` paths, a new layout, same capabilities) | Reload | Stays live (not consent-relevant, since layout isn't in the fingerprint) | None, and no history entry |
-| **Element `id` changed** | Reload | Treated as a new widget: `Needs your OK`. Its data file path changes too (`widgets-data/<newId>.json`), so the agent must rename it | As "Added in the file". The old approval is dropped at the next GC (like widget bindings) |
+| **Element `id` changed** | Reload | Treated as a new widget: `Needs your OK`. Its data file changes too, because the path comes from the `id` (`widgets-data/<newId>.json`), so the agent must rename it | As "Added in the file". The old approval is dropped at the next GC (like widget bindings) |
 | **Same file, another device** (tablet) | First load there | `Needs your OK` (approvals don't sync, A1) | As "Added in the file" (Q-D6) |
 
 **Who changed it.** The launcher can't know who edited the file, so it never claims to. It only knows **"on this
@@ -1037,6 +1043,10 @@ prompt (§17.2).
 <string name="cap_show_file">Show data from %1$s in your config folder</string>
 <string name="cap_open_app">Open %1$s when you tap it</string>
 <string name="cap_net">Connect to %1$s</string>
+<string name="cap_reload">Reload its data when you tap it</string>
+<string name="reload_in_progress">Reloading…</string>
+<string name="reload_a11y_updated">Updated</string>
+<string name="reload_a11y_same">No new data</string>
 <string name="tap_link_blocked">This link isn\'t allowed for this widget.</string>
 <string name="warn_tap_host">%1$s: the tap link\'s host \"%2$s\" isn\'t in this widget\'s approved hosts, so the tap was ignored.</string>
 <string name="warn_tap_scheme">%1$s: the tap link uses http, but \"%2$s\" is approved for https only, so the tap was ignored.</string>
@@ -1157,7 +1167,7 @@ glyph for warn ▲ and error ■.
 | `list` | Rows from a data array: leading dot/icon, primary text, trailing caption (`down`). `maxItems` or `auto` (as many as fit) | `auto` shows what fits plus `+2 more` | Empty → `emptyText` (default `Nothing to show`) | `Unhealthy monitors, list, 1 item. Label Printer, down` |
 | `icon` | Material symbol or app icon, `icon`/`icon.l` | Dropped by priority | — | Its `label`, or skipped if decorative |
 | `progress` | Bar (or ring at 1×1), value 0–1, label + percentage (the ctx/5h/7d case, done right) | Label drops before the bar | `—` and an empty track | `ctx, 18 percent` |
-| `button` | Label (+ icon), runs a declared Open action (`ui.openApp` / `ui.openUrl`; Act kinds later) | Icon-only at compact, label kept in TalkBack | Action not allowed → hidden, never greyed-and-tappable | `<Label>, button` |
+| `button` | Label (+ icon), runs a declared action (`ui.openApp` / `ui.openUrl` / `ui.reload`; Act kinds later) | Icon-only at compact, label kept in TalkBack | Action not allowed → hidden, never greyed-and-tappable | `<Label>, button` |
 
 **Card chrome (automatic, always drawn; Claw #4).** Every config widget gets a header row with the title (`title` role)
 and its source: `as of 08:38` (caption) when the data has `updatedAt`, otherwise a 12 dp `dashboard` glyph that marks it as
@@ -1178,8 +1188,8 @@ first ever load shows `—`. A data file that's missing or unreadable keeps the 
 
 **Taps with data-built links (`ui.openUrl`).** A tap `url` may contain `{data:…}` (e.g. the latest blog post). At tap
 time the launcher resolves it, then runs the host check **on the resolved URL**: it opens only if the host matches an
-approved `hosts` entry **exactly** (§17.1), the scheme matches that entry (https for a bare host, http only for an
-approved `http://host` entry, never a silent downgrade), and there's no user name or password in it. Otherwise:
+approved `hosts` entry **exactly** after the same normalisation (§17.1), the scheme matches that entry (https for a bare host, http only for an
+approved `http://host` entry; `https://host` means the same as the bare host; never a silent downgrade), and there's no user name or password in it. Otherwise:
 - **Nothing opens**, and the widget doesn't change. A short snackbar (4 s, no action) says
   `This link isn't allowed for this widget.` TalkBack announces the same text. It shows once per tap, never a dialog,
   and there's no "open anyway".
@@ -1189,6 +1199,17 @@ approved `http://host` entry, never a silent downgrade), and there's no user nam
 - If the binding has no value, the tap is ignored the same way, with the warning
   `elements[4]: the tap link {data:blog.url} has no value, so the tap was ignored.`
 - Allowing a new host is a capability change (`hosts` broadened → `Needs your OK again`). The snackbar never offers it.
+
+**Reload taps (`ui.reload`).** A tap or `button` with `{ "kind": "ui.reload" }` re-reads this widget's data file
+right away instead of waiting for the next poll. It doesn't ask the agent for new data; it only re-reads the file.
+- **Feedback:** the header's `as of` swaps to `Reloading…` (caption) for as long as the read takes, at least 400 ms
+  (instant swap with reduced motion). No snackbar. Then the header shows the file's `updatedAt` as usual.
+  TalkBack (polite) says `Updated` when the content changed, or `No new data` when it didn't.
+- **No lying about freshness:** if the file is still older than `staleAfter`, the header keeps `· stale` ▲ after the
+  reload. Reload never resets the stale clock, because only a new `updatedAt` does that.
+- **Rate:** one re-read per widget every 2 s at most (the §5 poll interval). Extra taps in that window do nothing. A
+  missing or unreadable file follows the data states above (last values kept, ▲, `status.json` warning).
+- TalkBack: the button reads `<Label>, button`. A tile with a reload tap adds the custom action `Reload`.
 
 ### 17.10 Phone → tablet (and any span change)
 The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may give it its own grid).
@@ -1217,8 +1238,9 @@ The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may
   "author": "Claw",
   "surface": "auto",
   "capabilities": [
-    { "kind": "data.file", "path": "w-anigeek.json" },
-    { "kind": "ui.openUrl", "hosts": ["anigeek.com", "blog.anigeek.com"] }
+    { "kind": "data.file" },
+    { "kind": "ui.reload" },
+    { "kind": "ui.openUrl", "hosts": ["anigeek.com", "blog.anigeek.com", "http://nas.lan"] }
   ],
   "data": { "staleAfter": "PT30M" },
   "layouts": {
@@ -1233,7 +1255,9 @@ The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may
         { "type": "metric", "label": "letmeaithatforyou", "value": "{data:lmaitfy.value}", "status": "{data:lmaitfy.status}", "priority": 4 },
         { "type": "metric", "label": "Homelab monitors", "value": "{data:monitors.summary}", "status": "{data:monitors.status}" }
       ] },
-      { "type": "list", "label": "Unhealthy monitors", "items": "{data:unhealthy}", "maxItems": "auto", "emptyText": "All monitors up" }
+      { "type": "list", "label": "Unhealthy monitors", "items": "{data:unhealthy}", "maxItems": "auto", "emptyText": "All monitors up",
+        "tap": { "kind": "ui.openUrl", "url": "http://nas.lan/status" } },
+      { "type": "button", "label": "Reload", "icon": "refresh", "priority": 2, "tap": { "kind": "ui.reload" } }
     ]
   }
 }
@@ -1241,14 +1265,15 @@ The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may
 Normative names from the [#116 comment](https://github.com/Nasawa/config-launcher/pull/116#issuecomment-6270653131): the kinds `data.file` / `ui.openApp` / `ui.openUrl` / `net.fetch`, `author`,
 `minSpan` `{w,h}`, `layouts` keyed `"WxH"` with a **lowercase `x`** (confirmed, e.g. `"4x3"`, pattern `^[1-9][0-9]*x[1-9][0-9]*$`; max 3), `priority` 0–9, `showIn`, `staleAfter` (ISO-8601 duration), and
 `updatedAt` (ISO-8601) at the root of the data file. Capability entries use kind-specific fields, matching #117:
-`data.file` → `path`, `ui.openApp` → `packages`, `ui.openUrl` → `hosts`, `net.fetch` → `origins` (exact
-`https://host[:port]`, or `http://` when approved by name). Taps are `{ "kind": "ui.openUrl", "url": "…" }` or `{ "kind": "ui.openApp", "package": "…" }`.
+`data.file` and `ui.reload` → no fields, `ui.openApp` → `packages`, `ui.openUrl` → `hosts`, `net.fetch` → `origins` (exact
+`https://host[:port]`, or `http://` when approved by name). Taps are `{ "kind": "ui.openUrl", "url": "…" }`, `{ "kind": "ui.openApp", "package": "…" }` or `{ "kind": "ui.reload" }`.
 `net.fetch` URLs are literals and never use `{data:…}`. A `ui.openUrl` tap `url` may use `{data:…}`: the host check runs on the
-**resolved** URL at tap time, so the data file can only choose among approved hosts (§17.9). The `data.file` `path` is relative to `.configlauncher/widgets-data/`, so this card reads
+**resolved** URL at tap time, so the data file can only choose among approved hosts (§17.9). `data.file` has no `path`: the file comes from the element `id`, so this card reads
 `.configlauncher/widgets-data/w-anigeek.json`, which the agent writes, e.g.
 `{ "updatedAt": "2026-10-19T08:38:00-06:00", "picspin": { "value": "up · 96 ms", "status": "ok" }, "unhealthy": [ … ] }`.
-Prompt: `ui.openUrl` only (`Open links to anigeek.com and blog.anigeek.com when you tap it`). Without the `tap`, the
-card would be Show-only and go live with no prompt (Q-D1). `requires: 4` is the card + local-data level. Adding
+Prompt: `ui.openUrl` only (`Open links to anigeek.com, blog.anigeek.com and http://nas.lan when you tap it`, with the
+not-private note under `http://nas.lan`). `data.file` and `ui.reload` are Show-tier lines and don't prompt. Without the
+`ui.openUrl` taps, the card would be Show-only and go live with no prompt (Q-D1). `requires: 4` is the card + local-data level. Adding
 `net.fetch` would make it 5.
 
 ### 17.12 Build checklist additions (Sprite, when scheduled)
@@ -1312,8 +1337,8 @@ Dashboard capability model (§17): all eight are answered in the [#116 comment](
 
 | Q | Resolution |
 |---|---|
-| ~~Q-A1~~ | ✅ Closed kinds: `data.file` (Show), `ui.openApp` / `ui.openUrl` (Open), `net.fetch` (Internet). No `phone.*` or Act kinds in v1. Never-offered kinds aren't in the schema |
-| ~~Q-A2~~ | ✅ Fingerprint = each `kind` + its field (`path` / `packages` / `hosts` / `origins`) only, sorted. Refined by Claw #3 (§17.2): compared against a per-widget approved set that never shrinks; anything within it is silent, anything beyond → `needsApprovalAgain` (see Q-A9) |
+| ~~Q-A1~~ | ✅ Closed kinds: `data.file` and `ui.reload` (Show, no fields; the data file comes from the element `id`), `ui.openApp` / `ui.openUrl` (Open), `net.fetch` (Internet). No `phone.*` or Act kinds in v1. Never-offered kinds aren't in the schema |
+| ~~Q-A2~~ | ✅ Fingerprint = each `kind` + its field (`packages` / `hosts` / `origins`; none for `data.file` / `ui.reload`) only, sorted. Refined by Claw #3 and Q-A9 (§17.2): compared against a per-widget approval ceiling (a cumulative union that never shrinks); anything within it is silent, anything beyond → `needsApprovalAgain` |
 | ~~Q-A3~~ | ✅ `status.json` `consent` map keyed by element id: `state` (`needsApproval` / `needsApprovalAgain` / `off` / `allowed`) + optional `warning`. No approval secret in it |
 | ~~Q-A4~~ | ✅ Real optional field `author` (string, max 40). Quoted, never trusted |
 | ~~Q-A5~~ | ✅ `{data:…}` with dots + `[index]` only, `list` binds to an array, `updatedAt` at the data file root, `staleAfter` on the element. One file per widget: `.configlauncher/widgets-data/<elementId>.json` |
@@ -1321,11 +1346,10 @@ Dashboard capability model (§17): all eight are answered in the [#116 comment](
 | ~~Q-A7~~ | ✅ Only APIs in the approved manifest are granted. **Revised:** an unknown `kind` skips only that element (warning, cells kept). New kinds ship with a feature-level bump, and elements using them set `requires`. `validate.py`/CI may stay strict |
 | ~~Q-A8~~ | ✅ Hosted AppWidgets stay outside; listed as read-only `Allowed by Android` |
 
-- **Q-A9 (open)** http by name (§17.1, Christopher via Claw on #116): `hosts` entries need a way to say plain http
-  (proposed: `"http://nas.lan"` next to bare hostnames = https), and `origins` should accept `http://host[:port]`. This
-  replaces #117's "https only / Q-C7 default deny" for hosts the user approves by name. The approved-set model in §17.2
-  (it never shrinks, anything within it is live) also replaces "subset of one approved fingerprint / exact return" in
-  Q-A2. Please align #117.
+- ~~Q-A9~~ ✅ Adopted in full in the [#116 comment](https://github.com/Nasawa/config-launcher/pull/116#issuecomment-6271078404) and #117 at db580c4: `hosts` takes bare hostnames (https only) or
+  scheme-qualified `http://host` / `https://host`; `origins` take full `http://` / `https://` origins. The prompt shows
+  `http://` when it applies, and there's no silent https → http downgrade. Approval is a cumulative per-widget ceiling
+  (a union that never shrinks), and the Phone data + Internet combination prompts once (§17.1, §17.2).
 
 ~~Follow-up (Pragma): an unknown `kind` rejecting the whole file~~ ✅ Resolved in the [#116 follow-up](https://github.com/Nasawa/config-launcher/pull/116) and [#117](https://github.com/Nasawa/config-launcher/pull/117): on the phone it skips
 only that element (§17.3 tile `Update Config Launcher to show this`). New kinds bump the feature level and set
