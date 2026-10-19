@@ -34,7 +34,7 @@ CATEGORIES = {"game", "audio", "video", "image", "social", "news", "maps", "prod
 MAX_ELEMENTS = 32
 MAX_OVERRIDES = 32
 FEATURE_LEVEL = 2          # Elements.kt: 1 = #79 container release, 2 = title bar
-ELEMENT_TYPES = {"titleBar": 2}   # known element types (name -> level that introduced them)
+ELEMENT_TYPES = {}         # known element types, name -> class (Elements.types); filled below the classes
 PLACEMENT = ("page", "x", "y", "w", "h")
 TYPE = re.compile(r"^[a-zA-Z][a-zA-Z0-9]{0,31}$")
 SCHEMA = pathlib.Path(__file__).resolve().parent.parent / "schema" / "launcher-config.v1.schema.json"
@@ -280,8 +280,8 @@ class Run:
         for i, e in enumerate(self.arr(o, "elements", "", mx=MAX_ELEMENTS) or []):
             self.element(e, f"elements[{i}]")
         for k, vp, vo in self.override_entries:
-            if self.shown_ids.get(k) == "titleBar":
-                TitleBar.override(self, vo, vp)
+            if k in self.shown_ids:
+                ELEMENT_TYPES[self.shown_ids[k]].override(self, vo, vp)
         if self.items > MAX_ITEMS:
             self.err("", f"{self.items} items in total, at most {MAX_ITEMS} allowed")
         if "unsorted" in o:
@@ -316,11 +316,13 @@ class Run:
         self.placement(o, path)
         if t is None or skip(o) is not None or t not in ELEMENT_TYPES:
             return
-        if t in self.singles:
-            self.err(path, f"only one {t} is allowed ({self.singles[t]} is already one).")
-        else:
-            self.singles[t] = path
-        TitleBar.validate(self, o, path)
+        kind = ELEMENT_TYPES[t]
+        if kind.SINGLE:
+            if t in self.singles:
+                self.err(path, f"only one {t} is allowed ({self.singles[t]} is already one).")
+            else:
+                self.singles[t] = path
+        kind.validate(self, o, path)
         if _is_str(o.get("id")):
             self.shown_ids.setdefault(o["id"], t)
 
@@ -635,6 +637,8 @@ class Template:
 
 
 class TitleBar:
+    """TitleBar.kt: the first element type (feature level 2). Widgets will register the same way."""
+    LEVEL, SINGLE = 2, True
     KEYS = ("id", "type", "requires", "enabled", "anchor", "content", "style")
     SLOTS = ("start", "center", "end")
     STYLE_KEYS = ("size", "weight", "color", "align", "padding", "backdrop")
@@ -824,6 +828,9 @@ class TitleBar:
         return [f"{path}.style.color: contrast {t // 10}.{t % 10}:1 on the backdrop (4.5:1 recommended). Shown anyway."]
 
 
+ELEMENT_TYPES["titleBar"] = TitleBar
+
+
 def _requires(o):
     v = o.get("requires")
     return int(v) if isinstance(v, Num) and v.is_int() else None
@@ -851,7 +858,7 @@ def warnings(tree):
         elif s:
             out.append(f'elements[{i}]: type "{s[1]}" isn\'t supported by this Config Launcher, so it was skipped. It stays in the file.')
         elif e.get("type") in ELEMENT_TYPES:
-            out.extend(TitleBar.warnings(e, f"elements[{i}]"))
+            out.extend(ELEMENT_TYPES[e["type"]].warnings(e, f"elements[{i}]"))
     ids = {e["id"] for e in els if _is_str(e.get("id"))}
     for j, p in enumerate(tree["pages"]):
         for k in p.get("overrides") or {}:
@@ -1006,7 +1013,7 @@ def canonical(tree):
         out["drawer"] = do
     if "elements" in tree:
         # File order; a shown title bar in canonical key order, anything skipped verbatim (#79).
-        out["elements"] = [TitleBar.canonical(e) if skip(e) is None and e.get("type") in ELEMENT_TYPES else e
+        out["elements"] = [ELEMENT_TYPES[e["type"]].canonical(e) if skip(e) is None and e.get("type") in ELEMENT_TYPES else e
                            for e in tree["elements"]]
     out.update(_x(tree))
     return dump(out) + "\n"
