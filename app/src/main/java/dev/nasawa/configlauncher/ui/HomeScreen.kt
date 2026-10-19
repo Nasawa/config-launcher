@@ -69,6 +69,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var folderInfo by remember { mutableStateOf<String?>(null) }   // "" = app-only
     // ux.md §4.1 edit mode: entered from `Edit layout` or a drag; left on Done, Back, Home or 30 s idle.
     var editing by remember { mutableStateOf(false) }
+    var pageList by remember { mutableStateOf(false) }
     var sheetFor by remember { mutableStateOf<ResolvedItem?>(null) }
     var homeMenu by remember { mutableStateOf(false) }
     var drawerSheet by remember { mutableStateOf<InstalledApp?>(null) }
@@ -263,16 +264,28 @@ fun HomeScreen(vm: HomeViewModel) {
                 drag.grid = ui.layout.grid
                 drag.dockCount = ui.layout.dock.size
                 CompositionLocalProvider(LocalLabelBackdrop provides backdrop) {
+                PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true }
+                val listPages = stringResource(R.string.pages_action)
                 val openAppList = stringResource(R.string.a11y_open_drawer)
                 HorizontalPager(
                     pager, Modifier.weight(1f).fillMaxWidth()
-                        // §1.4: TalkBack custom action on the home grid.
-                        .semantics { customActions = listOf(CustomAccessibilityAction(openAppList) { drawerOpen = true; true }) }, key = { pages.getOrNull(it)?.id ?: it },
+                        // §1.4 "Open app list" and §1.3 "List pages" (≥ 2 pages) custom actions on the home grid.
+                        .semantics {
+                            customActions = listOfNotNull(
+                                CustomAccessibilityAction(openAppList) { drawerOpen = true; true },
+                                if (pages.size >= 2) CustomAccessibilityAction(listPages) { pageList = true; true } else null,
+                            )
+                        }, key = { pages.getOrNull(it)?.id ?: it },
                     userScrollEnabled = drag.dragged == null,
                 ) { index ->
                     pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true }) }
                 }
-                if (pages.size > 1) PageDots(pages.size, pager.currentPage)
+                if (pages.size > 1) PageDots(pages.size, pager.settledPage)
+                // ux.md §1.3: page label → page list → jump. Nothing is written.
+                if (pageList) PageListSheet(PageList.rows(pages, pager.settledPage), onPick = { i ->
+                    pageList = false
+                    if (i != pager.settledPage) scope.launch { if (ReducedMotion.on(ctx)) pager.scrollToPage(i) else pager.animateScrollToPage(i) }
+                }, onDismiss = { pageList = false })
                 }
                 Dock(ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y)
                 ui.load.merge?.let { m ->
@@ -508,7 +521,6 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = grid.rows
     Column(Modifier.fillMaxSize().padding(8.dp)) {
-        page.title?.let { Text(it, style = MaterialTheme.typography.titleSmall, color = Color.LightGray, modifier = Modifier.padding(4.dp)) }
         val body: @Composable ColumnScope.() -> Unit = {
             for (y in 0 until rows) {
                 Row(Modifier.fillMaxWidth().weight(1f)) {
@@ -538,7 +550,10 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
 
 @Composable
 private fun PageDots(count: Int, current: Int) {
-    Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.Center) {
+    // §1.3: not tappable. §12 "Page 2 of 3", announced politely after a jump.
+    val desc = stringResource(R.string.page_of, current + 1, count)
+    Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = desc; liveRegion = LiveRegionMode.Polite }.padding(4.dp),
+        horizontalArrangement = Arrangement.Center) {
         repeat(count) { i ->
             Box(Modifier.padding(3.dp).size(6.dp).background(if (i == current) Color.White else Color.DarkGray, RoundedCornerShape(3.dp)))
         }

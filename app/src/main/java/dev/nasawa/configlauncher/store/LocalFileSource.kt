@@ -35,6 +35,11 @@ class LocalFileSource(val dir: File, val sidecars: Boolean = true) : ConfigSourc
     // App-only mode: sync-conflict notices don't apply (§18.5).
     override fun siblingNames(): List<String> = if (sidecars) dir.list()?.toList().orEmpty() else emptyList()
 
+    override fun readSidecar(subdir: String, name: String, maxBytes: Int): ByteArray? {
+        if (!sidecars) throw UnsupportedOperationException("app-only mode has no .configlauncher folder (§18.5)")
+        return File(File(File(dir, ".configlauncher"), subdir), name).takeIf { it.isFile }?.inputStream()?.use { it.readCapped(maxBytes) }
+    }
+
     override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
         if (!sidecars) throw UnsupportedOperationException("app-only mode has no .configlauncher folder (§18.5)")
         val d = File(File(dir, ".configlauncher"), subdir)
