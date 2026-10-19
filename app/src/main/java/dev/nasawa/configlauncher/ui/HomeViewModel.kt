@@ -32,11 +32,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             installed.value = apps.load()
             apps.changes().collect { installed.value = apps.load() }
         }
-        // #54: keep .configlauncher/apps.json current on app changes and after a source switch.
+        // #54: keep .configlauncher/apps.json current on app changes and after a source switch;
+        // #72: also when drawer.hidden or the Include hidden apps setting changes.
         viewModelScope.launch(Dispatchers.IO) {
-            combine(installed, store.state.map { it.sourceName }.distinctUntilChanged()) { inst, _ -> inst }
-                .filter { it.isNotEmpty() }
-                .collect { store.engine.writeApps(it) }
+            combine(installed, store.state.map { it.sourceName to it.config.drawer?.hidden }.distinctUntilChanged(), store.includeHiddenApps) { inst, _, incl -> inst to incl }
+                .filter { it.first.isNotEmpty() }
+                .collect { (inst, incl) -> store.engine.writeApps(inst, includeHidden = incl) }
         }
     }
 }

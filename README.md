@@ -182,7 +182,8 @@ Shape in brief:
   noticed. **Read this to find out why your edit was rejected** without picking up the phone.
 - `apps.json`: every launchable app the drawer shows (`package`, `activity`, `label`, `profile`, `installTime`), rewritten
   when apps are installed, removed or changed. Use it to place apps by their real package and activity. Work apps are
-  listed only when *Include work apps in config* is on.
+  listed only when *Include work apps in config* is on. Apps hidden from the drawer (`drawer.hidden`) are left out unless *Include hidden
+  apps in apps.json* is on (default off), and it's rewritten when either changes.
 - `launcher.json.tmp`: the write-verify copy (above).
 - `broken/`: copies of invalid files saved before a phone edit replaced them.
 - `backup/`: originals saved before an *Upgrade now* (as `launcher.v{N}.{timestamp}.json`), *Restore last working version* or *Start fresh*.

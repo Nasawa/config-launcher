@@ -76,6 +76,10 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
 
     fun undoMerge() { scope.launch(Dispatchers.IO) { engine.undoMerge() } }
 
+    /** #72: drives the apps.json rewrite (HomeViewModel) when toggled; silent, no snackbar. */
+    val includeHiddenApps = kotlinx.coroutines.flow.MutableStateFlow(prefs.includeHiddenApps)
+    fun setIncludeHiddenApps(v: Boolean) { prefs.includeHiddenApps = v; includeHiddenApps.value = v }
+
     fun setAskBeforeMerging(v: Boolean) { prefs.askBeforeMerging = v; engine.askBeforeMerge = v }
 
     fun useFile() { scope.launch(Dispatchers.IO) { engine.resolveUseFile() } }
