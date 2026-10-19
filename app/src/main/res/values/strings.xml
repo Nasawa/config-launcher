@@ -95,6 +95,7 @@
     <string name="not_now">Not now</string>
     <string name="apps">Apps</string>
     <string name="a11y_open_drawer">Open app list</string>
+    <string name="a11y_open_drawer_hint">open app list</string>
     <string name="cancel">Cancel</string>
 
     <!-- First run (ux.md §7, §18.2) -->

@@ -28,10 +28,22 @@ class SwipeUpTest {
     @Test fun rule() {
         assertTrue(SwipeUp.opens(Offset(10f, -200f), 100f))
         assertFalse("not far enough", SwipeUp.opens(Offset(0f, -50f), 100f))
-        assertFalse("diagonal", SwipeUp.opens(Offset(150f, -200f), 100f))
+        assertTrue("|dy| > 1.5 × |dx|", SwipeUp.opens(Offset(120f, -200f), 100f))
+        assertFalse("|dy| = 1.5 × |dx| is not enough", SwipeUp.opens(Offset(200f, -300f), 100f))
         assertFalse("down", SwipeUp.opens(Offset(0f, 200f), 100f))
-        assertTrue(SwipeUp.isHorizontal(Offset(40f, -10f), 16f))
-        assertFalse(SwipeUp.isHorizontal(Offset(10f, -40f), 16f))
+    }
+
+    @Test fun axisLock() {
+        assertNull(SwipeUp.axis(Offset(5f, -5f), 16f))
+        assertEquals(SwipeUp.Axis.HORIZONTAL, SwipeUp.axis(Offset(20f, -10f), 16f))
+        assertEquals(SwipeUp.Axis.UP, SwipeUp.axis(Offset(5f, -20f), 16f))
+        assertEquals(SwipeUp.Axis.DOWN, SwipeUp.axis(Offset(5f, 20f), 16f))
+    }
+
+    @Test fun fling() {
+        assertTrue(SwipeUp.flings(Offset(0f, -20f), -1500f, 16f, 1000f))
+        assertFalse("too short", SwipeUp.flings(Offset(0f, -10f), -1500f, 16f, 1000f))
+        assertFalse("too slow", SwipeUp.flings(Offset(0f, -40f), -800f, 16f, 1000f))
     }
 
     private fun opened(swipe: androidx.compose.ui.test.TouchInjectionScope.() -> Unit, enabled: Boolean = true): Int {
@@ -60,5 +72,21 @@ class SwipeUpTest {
         rule.onNodeWithTag("tile").performTouchInput { swipeUp() }
         rule.waitForIdle()
         assertEquals(1, opens); assertEquals(0, launches); assertEquals(0, sheets)
+    }
+
+    @Test fun bottomGestureStripIsIgnored() {
+        var opens = 0
+        rule.setContent { Box(Modifier.size(400.dp).testTag("home").swipeUpToOpen({ true }, { 100_000f }) { opens++ }) }
+        rule.onNodeWithTag("home").performTouchInput { swipeUp() }
+        rule.waitForIdle()
+        assertEquals(0, opens)
+    }
+
+    @Test fun holdThenSwipeIsALongPressNotASwipe() {
+        var opens = 0
+        rule.setContent { Box(Modifier.size(400.dp).testTag("home").swipeUpToOpen({ true }) { opens++ }) }
+        rule.onNodeWithTag("home").performTouchInput { down(center); advanceEventTime(1000); moveBy(Offset(0f, -300f)); up() }
+        rule.waitForIdle()
+        assertEquals(0, opens)
     }
 }
