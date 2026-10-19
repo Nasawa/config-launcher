@@ -1,8 +1,10 @@
 # Dynamic widgets: AI-assisted dashboard cards
 
-**Status:** draft for review (Pragma / Sprite; product Qs from Christopher landed).  
-**Christopher settled Q-C1–C5, Q-C7** (2026-10-19); **Q-C6 already decided**. PR stays draft — product answers only; Sprite schema work is not unblocked solely by this.  
-**Q-A9 (Pragma #116 / Claw):** http in `hosts`/`origins`; approval ceiling = cumulative union. **Claw review folded in** (PR #117 comment at 313ab26): structural `data.file`, exact-host `hosts`, tap example, Q-C7/Q-C3 recommendations, `ui.reload` + relative time, narrowing ceiling model.
+**Status:** on main via [#117](https://github.com/Nasawa/config-launcher/pull/117) (`971c2eb`); Archimedes follow-ups below.  
+**Christopher settled Q-C1–C5, Q-C7** (2026-10-19); **Q-C6 already decided**.  
+**Q-A9 (Pragma #116 / Claw):** http in `hosts`/`origins`; approval ceiling = cumulative union. **Claw review folded in** (PR #117): structural `data.file`, exact-host `hosts`, tap example, Q-C7/Q-C3, `ui.reload` + relative time, narrowing ceiling model.  
+**Archimedes (this revision):** **Turn off** keeps the approval ceiling; **Forget approval** (widget detail) clears it; stage-5 TOFU **certificate changed** pauses `net.fetch` and shows last-good data stale.  
+**Pragma S3-C:** consent strings settled at [#116](https://github.com/Nasawa/config-launcher/pull/116) tip / §17.13 — Sprite may build from that branch. C3 http disclosure + C4 hide-author applied.
 
 **Opened with:** product reframe from Christopher (via Grok Bot), screenshots in `/workspace/cl-input/` (not committed), Pragma UX [#116](https://github.com/Nasawa/config-launcher/pull/116) (`docs/ux.md` §17), schema answers Q-A1–Q-A8 on that PR.  
 **Related:** [docs/research/widgets.md](../research/widgets.md) (updated by this PR where superseded), [docs/design/title-bar.md](title-bar.md), elements container (#112, merged), Stage 1 cell reservation.
@@ -88,7 +90,7 @@ Responsive: up to 3 `layouts` keyed by `"WxH"` with a **lowercase** `x` (e.g. `"
 - **`net.fetch` request URLs are literals** in the element (fixed under a pinned origin). They must **not** be built from `{data:…}`.
 - **`ui.openUrl` tap `url` MAY use `{data:…}`** (Outer Shell needs this for "latest post"). At tap time resolve the template, normalise the host (IDNA/punycode/lowercase), and **open only if** it **exactly** matches an approved `hosts` entry (no subdomain inference), scheme+host match an approved `hosts` entry (bare = https only; `http://…` entry required for cleartext), and there is no `userinfo`. Else snackbar + warning. Data must not open a host outside the allowlist.
 - **Connect-time IP check:** on every connection, resolve and refuse RFC1918 / link-local / metadata addresses unless that exact origin was approved under the private-origin allow flow. **DNS rebinding:** re-check the connected IP on each request, not only at approval time.
-- **Cleartext / LAN (decided — Q-C3 / Q-C7, Christopher 2026-10-19):** users own what they knowingly approve. `http://` is allowed when the user approves an `http://host` host entry or `http://…` origin by name — show `http://` in the prompt; **no silent https→http downgrade**. Disclosure / consent copy must say that **http is less secure**, that some local setups make https difficult for little gain, and that **the user is responsible for what they approve**. Self-signed: **TOFU certificate pinning per origin** (pin on first approve / explicit re-pin if the cert changes; stern copy about remembering the pin) — not disabling TLS validation. Private IPs still need an explicit approved origin; agent-written local JSON remains the simplest LAN path.
+- **Cleartext / LAN (decided — Q-C3 / Q-C7, Christopher 2026-10-19):** users own what they knowingly approve. `http://` is allowed when the user approves an `http://host` host entry or `http://…` origin by name — show `http://` in the prompt; **no silent https→http downgrade**. Disclosure / consent copy must say that **http is less secure**, that some local setups make https difficult for little gain, and that **the user is responsible for what they approve**. Self-signed: **TOFU certificate pinning per origin** (pin on first approve / explicit re-pin if the cert changes; stern copy about remembering the pin) — not disabling TLS validation. **Certificate changed (stage 5):** while a re-pin / "certificate changed" prompt is unanswered, **pause `net.fetch`** for that origin (and that widget's fetches that need it); keep showing **last-good data marked stale**. **Never** silently accept the new cert. Private IPs still need an explicit approved origin; agent-written local JSON remains the simplest LAN path.
 - **Secrets:** never in synced files. Device Keystore / encrypted prefs, entered on phone, scoped to `(elementId, origin)`. Agents declare that a secret slot exists; user fills it. **When the pinned origin set changes, delete secrets for origins that were removed** before any new fetch runs.
 
 ### What stays out of the synced folder
@@ -163,7 +165,9 @@ The device stores one **approved capability set** per element id: a union of eve
 - The stored set **never shrinks** on file edits (narrowing does not delete lines).
 - **File is live with no prompt** iff every declared `(kind, target)` in the file is ∈ the stored set (file ⊆ ceiling).
 - **Anything outside the ceiling** → prompt only for the **new** lines (`needsApproval` / `needsApprovalAgain`); on approve, union them into the ceiling.
-- **Turn off** is a sticky device-local switch: the widget stays off and **keeps** the approval ceiling. **Allow** turns it back on with the same set (no re-prompt if the file is still ⊆ ceiling). Explicit revoke in Widget permissions is what clears the set.
+- **Turn off** is a sticky device-local switch: the widget stays off and **keeps** the approval ceiling. **Allow** turns it back on with the same set (no re-prompt if the file is still ⊆ ceiling).
+- **Forget approval** is a separate action on the widget **detail** page (Widget permissions → detail): it **clears** the approval ceiling; the widget stays **off**; the next **Allow** is a **fresh** full prompt. (Aligns with Pragma #116 — there is no single "Forget" on the list row; Turn off alone does not clear the set.)
+- Approvals are also **GC'd** when the element leaves the file (unchanged).
 
 **Exception — Phone data + Internet combo:** even if `phone.*` and `net.fetch` were each approved alone earlier, the first time a widget declares **both**, show the combination prompt once (Pragma §17.1). After that combo approval, the pair is in the ceiling.
 
@@ -174,16 +178,20 @@ This replaces a single “fingerprint equality / subset of last fingerprint” m
 
 ### `status.json`
 
+Consent map shape (per element id). **Never** store the approval secret / ceiling in `status.json` — only a display state agents can read:
+
 ```json
 "consent": {
-  "w-anigeek": {
+  "<elementId>": {
     "state": "needsApproval" | "needsApprovalAgain" | "off" | "allowed",
     "warning": "optional §15.1-style sentence"
   }
 }
 ```
 
-Enforcement: runtime can only perform APIs listed in the **approved** manifest for that id. Unknown `capabilities[].kind` on this launcher → **skip that element** with a warning (consent tile / "Update Config Launcher" or "Can't show", cells kept) — **not** a whole-file B2 reject. Writers of a new kind MUST bump the feature level and set `requires` on every element that uses it so older phones hit the requires-skip path cleanly. `validate.py` / CI at the current feature level may still treat unknown kinds as errors so agents fail fast on typos. Undeclared use at runtime is impossible by construction.
+Normative warning **name keys** (English sentences built in code; Pragma §17.13): `warn_consent_pending`, `warn_consent_again`, `warn_consent_off`, `warn_data_missing` (missing/unreadable `widgets-data/<id>.json` — **not** a consent state). Capability-skip and tap failures reuse the same status channel as elsewhere (`warn_capability_kind`; tap `warn_tap_host` / `warn_tap_scheme` already named above).
+
+Enforcement: runtime can only perform APIs listed in the **approved** manifest for that id. Unknown `capabilities[].kind` on this launcher → **skip that element** with a warning (consent tile / "Update Config Launcher" or "Can't show", cells kept; `warn_capability_kind`) — **not** a whole-file B2 reject. Writers of a new kind MUST bump the feature level and set `requires` on every element that uses it so older phones hit the requires-skip path cleanly. `validate.py` / CI at the current feature level may still treat unknown kinds as errors so agents fail fast on typos. Undeclared use at runtime is impossible by construction.
 
 ### Hosted AppWidgets
 
@@ -214,6 +222,7 @@ APK-level `INTERNET` is coarse (see §7). Capability approval is the real contro
 | Tracking pixels / beacon `icon` URLs | v1: no arbitrary image URLs; icons = Material / installed app only |
 | **SSRF to LAN** (homelab monitors) | Default **deny** RFC1918, link-local, metadata IPs for `net.fetch` unless user enables a stern "allow private origin" pin per origin; document that agent-written **local** JSON is the preferred path for LAN data |
 | **DNS rebinding** (public name → LAN IP later) | Re-validate the connected peer IP on **every** connection, not only when the origin was approved |
+| **TOFU cert change / MITM** (stage 5) | Pin on approve; on change show re-pin prompt — **pause `net.fetch`** for that origin until answered; show last-good data **stale**; never silently accept the new cert |
 | **Stale secret after origin edit** | Delete Keystore entries for origins removed from the capability before the next fetch |
 | Cross-widget data read | File path derived from element id only — no `path` field to misuse |
 | Secret leakage across widgets | Keystore entries keyed by element id + origin |
@@ -232,7 +241,7 @@ Honest holes in "local files + opt-in URL fetch + per-widget manifest":
 5. **Approvals don't sync** (correct for security) → every tablet re-consents (Pragma). Accept the friction.
 6. **"Phone data" tier** without v1 kinds: keep the UX tier for later; don't invent battery/SMS "just in case."
 7. **System notifications need `POST_NOTIFICATIONS` on Android 13+.** Prefer launcher-only signals for v1 (B9 + ⋮ badge + consent tile). A system notification is optional later and needs its own permission prompt.
-8. **Homelab cleartext / self-signed:** follow §3 (decided Q-C3/C7: `http://` visible in prompt; TOFU pins; disclosure that http is less secure and the user owns the choice). Still easy to click through — keep copy stern.
+8. **Homelab cleartext / self-signed:** follow §3 (decided Q-C3/C7: `http://` visible in prompt; TOFU pins; disclosure that http is less secure and the user owns the choice). On cert change, pause fetch + show stale last-good until re-pin (never silent accept). Still easy to click through — keep copy stern.
 9. **`widgets-data/` git policy:** agents may want these files synced; they can contain semi-sensitive status text. Document in README whether to commit or gitignore (proposal: commit is OK if no secrets; never put tokens there).
 
 ## 8. HA Q-C5 (decided, Christopher 2026-10-19)
@@ -269,7 +278,7 @@ Honest holes in "local files + opt-in URL fetch + per-widget manifest":
 - **Q-C4:** *(decided)* **Keep** `author` as optional/recommended (cheap quote signal). If omitted, **hide** it — do not crash or show empty chrome.
 - **Q-C5:** *(decided)* **Yes** — companion AppWidgets + agent-written local JSON are enough for v1 of (b). No tight HA coupling; own HA-reading widgets are advanced. Distant optional first-class in-app widgets OK as a far goal, not v1.
 - **Q-C6:** *(decided)* Show-tier `ui.reload`; token `{relative}` → `5 min ago` / `just now`, no pattern. Pragma OK.
-- **Q-C7:** *(decided)* Scheme-qualified `http://` in `hosts`/`origins` when approved by name; **TOFU** for self-signed (stern pin-on-approve / re-pin-on-change copy); no silent downgrade.
+- **Q-C7:** *(decided)* Scheme-qualified `http://` in `hosts`/`origins` when approved by name; **TOFU** for self-signed (stern pin-on-approve / re-pin-on-change copy); no silent downgrade. **Archimedes:** while the re-pin prompt is unanswered, pause `net.fetch` for that origin and show last-good data stale.
 
 ### For Pragma
 
