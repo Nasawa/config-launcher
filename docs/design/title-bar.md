@@ -53,17 +53,18 @@ Pragma's default preset, as the phone would write it when the user turns the bar
     "content": { "slots": { "center": "{page}" } } }
 ]
 ```
-A customized bar:
+A customized bar (light text on a 54 % black backdrop: 4.59:1 over a white wallpaper, 21:1 over black, the lowest
+opacity that passes 4.5:1 in both worst cases; see ux.md §15):
 ```json
 "elements": [
   { "id": "t-main", "type": "titleBar", "anchor": "top",
     "content": { "slots": { "start": "{date:EEE d MMM}", "center": "{page}", "end": "{time:HH:mm}" } },
     "style": {
       "size": 20, "weight": 600,
-      "color": { "light": "#1B1B1F", "dark": "#F1F0F4" },
+      "color": "light",
       "align": { "start": "start", "center": "center", "end": "end" },
       "padding": { "horizontal": 16, "vertical": 6 },
-      "backdrop": { "color": "#000000", "opacity": 35, "radius": 12 }
+      "backdrop": { "color": "#000000", "opacity": 54, "radius": 12 }
     } }
 ],
 "pages": [

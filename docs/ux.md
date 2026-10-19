@@ -654,6 +654,19 @@ from size + padding, and grid rows share the rest. Never overlaps icons.
 
 **Contrast.** Light text always gets the label shadow; dark text doesn't. With `auto` + `Label backdrop` on, or
 `scrim`, the 60 % scrim gives ≥ 5.7:1 for white (§12). With a custom backdrop, the launcher measures text vs backdrop.
+A see-through backdrop is measured over both worst-case wallpapers, pure white and pure black, and the lower ratio
+counts. For the custom example in title-bar.md (black backdrop, white `light` text; the old example used dark text,
+which fails over a black wallpaper):
+
+| Backdrop opacity | Over white wallpaper | Over black wallpaper | Passes 4.5:1? |
+|---|---|---|---|
+| 35 % (old example) | 2.44:1 | 21.0:1 | No |
+| 53 % | 4.42:1 | 21.0:1 | No |
+| **54 % (new example, lowest that passes)** | **4.59:1** | **21.0:1** | **Yes** |
+| 60 % (`scrim`) | 5.74:1 | 21.0:1 | Yes |
+
+The `{light, dark}` variant `#F1F0F4` would need 57 % (4.52:1), so the example uses the `light` token. Ratios are WCAG
+2.x, sRGB composited at the given opacity, label shadow ignored, matching #115's check.
 **Below 4.5:1 it renders anyway** and adds a warning (Q-T2): in `status.json` and in the error detail view's
 **Warnings** section only. **No snackbar or banner**: the person editing the file chose the colours, and the agent sees it
 in `status.json`. With `none` nothing is measured (the wallpaper is unknown).
@@ -692,6 +705,12 @@ Showing the last working layout.`). Warnings never raise a banner.
 | Unknown element type | Warning | `elements[2]: type "appWidget" isn't supported by this Config Launcher, so it was skipped. It stays in the file.` |
 | `requires` too high | Warning | `elements[2] needs feature level 3, but this Config Launcher supports up to 2, so it was skipped. It stays in the file. Update the app to show it.` |
 | Override for a missing element | Warning | `pages[1].overrides: "t-clock" doesn't match any element, so it was ignored.` |
+| Pattern on a token that has none | Error | `elements[0].content.slots.center: {page:x} doesn't take a pattern. Only {time} and {date} do.` |
+| Empty pattern | Error | `elements[0].content.slots.end: {time:} has an empty pattern. Write {time} for the default format.` |
+| Line break in a template | Error | `elements[0].content.slots.center: A template is one line. Remove the line break.` |
+| Bad size | Error | `elements[0].style.size must be small, medium or large, or a number from 10 to 40.` |
+| Pattern letter run too long | Error | `elements[0].content.slots.start: MMMMMM is too long. Use at most 4 letters, like MMMM.` |
+| Unclosed quote in a pattern | Error | `elements[0].content.slots.start: A ' quote isn't closed. Add a closing ' after the text.` |
 | Low contrast | Warning | `elements[0].style.color: contrast 2.1:1 on the backdrop (4.5:1 recommended). Shown anyway.` |
 
 Resources (character positions are 1-based, like line and column):
@@ -704,6 +723,12 @@ Resources (character positions are 1-based, like line and column):
 <string name="err_tokens_many">%1$s has %2$d tokens; the maximum is %3$d.</string>
 <string name="err_template_long">%1$s is %2$d characters; the maximum is %3$d.</string>
 <string name="err_titlebar_twice">%1$s: only one titleBar is allowed (%2$s is already one).</string>
+<string name="err_token_no_pattern">%1$s: %2$s doesn\'t take a pattern. Only {time} and {date} do.</string>
+<string name="err_pattern_empty">%1$s: {%2$s:} has an empty pattern. Write {%2$s} for the default format.</string>
+<string name="err_template_multiline">%1$s: A template is one line. Remove the line break.</string>
+<string name="err_size">%1$s must be small, medium or large, or a number from 10 to 40.</string>
+<string name="err_pattern_run">%1$s: %2$s is too long. Use at most %3$d letters, like %4$s.</string>
+<string name="err_pattern_quote">%1$s: A \' quote isn\'t closed. Add a closing \' after the text.</string>
 <string name="warn_element_type">%1$s: type \"%2$s\" isn\'t supported by this Config Launcher, so it was skipped. It stays in the file.</string>
 <string name="warn_element_level">%1$s needs feature level %2$d, but this Config Launcher supports up to %3$d, so it was skipped. It stays in the file. Update the app to show it.</string>
 <string name="warn_override_missing">%1$s: \"%2$s\" doesn\'t match any element, so it was ignored.</string>
