@@ -158,6 +158,7 @@ Single Gradle module **`:app`**, `applicationId` and `namespace` **`dev.nasawa.c
 | `dev.nasawa.configlauncher.config` | JSON codec (canonical serializer), validator, migrations, hashing | None (pure Kotlin + kotlinx.serialization) |
 | `dev.nasawa.configlauncher.store` | `ConfigStore`: SAF access, poller + observer, load pipeline, write-back queue/debounce, self-write guard, last-good/history, status.json | SAF, DataStore |
 | `dev.nasawa.configlauncher.consent` | Dashboard-card approvals (#138): capability lines/fingerprint, per-widget approval ceiling, Turn off / Forget approval, Q-D5 Always-allow sites; device-local store in app-private files | None (pure Kotlin) |
+| `dev.nasawa.configlauncher.widgetdata` | Card data files (#139): `widgets-data/<id>.json` parse (256 KiB, strict JSON), `updatedAt` / `staleAfter`, `{data:…}` lookup, consent-gated polling with last values kept | None (pure Kotlin) |
 | `dev.nasawa.configlauncher.apps` | `AppRepository`: LauncherApps, profiles, shortcuts, icon cache, pin requests, launching | LauncherApps |
 | `dev.nasawa.configlauncher.ui` | `MainActivity`, Compose screens: home pager, dock, drawer, folder sheet, drag-and-drop, banners, onboarding; `PinShortcutActivity` | Compose |
 | `dev.nasawa.configlauncher.settings` | Settings screen, folder picker, home-role request, restore/history, DataStore prefs | Compose, DataStore |

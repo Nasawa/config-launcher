@@ -45,8 +45,9 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         pollJob = scope.launch(Dispatchers.IO) {
             syncSchemaCopy()   // §20.2: after an app update the bundled schema may be newer
             runCatching { engine.poll(force = true) } // resume always hashes (§17 Q5)
+            runCatching { engine.pollWidgets(force = true) } // #139: data files too
             // §18.5: app-only mode doesn't poll; nothing external writes there (debug adb edits use the FileObserver).
-            if (!appOnly) while (isActive) { delay(2_000); runCatching { engine.poll() } }
+            if (!appOnly) while (isActive) { delay(2_000); runCatching { engine.poll() }; runCatching { engine.pollWidgets() } }
         }
     }
 

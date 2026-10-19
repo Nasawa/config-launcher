@@ -40,6 +40,12 @@ class LocalFileSource(val dir: File, val sidecars: Boolean = true) : ConfigSourc
         return File(File(File(dir, ".configlauncher"), subdir), name).takeIf { it.isFile }?.inputStream()?.use { it.readCapped(maxBytes) }
     }
 
+    override fun sidecarStamp(subdir: String, name: String): Stamp? {
+        if (!sidecars) return null
+        val f = File(File(File(dir, ".configlauncher"), subdir), name)
+        return if (f.isFile) Stamp(f.path, f.lastModified(), f.length()) else null
+    }
+
     override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
         if (!sidecars) throw UnsupportedOperationException("app-only mode has no .configlauncher folder (§18.5)")
         val d = File(File(dir, ".configlauncher"), subdir)
