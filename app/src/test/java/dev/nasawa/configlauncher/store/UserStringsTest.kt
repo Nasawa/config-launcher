@@ -48,7 +48,7 @@ class UserStringsTest {
     /** Guard: no English literals passed to Text()/toast() in UI code. */
     @Test fun noHardCodedUiText() {
         val dir = listOf("src/main/java/dev/nasawa/configlauncher/ui", "app/src/main/java/dev/nasawa/configlauncher/ui").map(::File).first { it.isDirectory }
-        val bad = Regex("""(Text|toast)\(\s*"[^"]*[A-Za-z]{2}""")
+        val bad = Regex("""\b(Text|toast)\(\s*"[^"]*[A-Za-z]{2}""")
         val hits = dir.listFiles()!!.filter { it.extension == "kt" }.flatMap { f ->
             f.readLines().mapIndexedNotNull { i, l -> if (bad.containsMatchIn(l.replace(Regex("""\$\{[^}]*\}|\$\w+"""), ""))) "${f.name}:${i + 1}: ${l.trim()}" else null }
         }

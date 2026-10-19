@@ -469,7 +469,7 @@ class ConfigEngine(
         val key = "$result|$hash|$statusRevision|${errors.hashCode()}|$backupError|$conflictFiles"
         if (key == lastStatusKey) return
         try {
-            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles, revision = statusRevision))
+            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles, source.location, revision = statusRevision))
             lastStatusKey = key
         } catch (_: Exception) { /* folder may be read-only or gone; the banner already says so */ }
     }

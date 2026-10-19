@@ -10,6 +10,8 @@ interface ConfigSource {
     val displayName: String
     /** False for app storage: there is no folder grant to reconnect, so B4 hides "Reconnect". */
     val reconnectable: Boolean get() = true
+    /** #57: full location of launcher.json for people and agents; null for app storage. */
+    val location: String? get() = null
     /** null when launcher.json does not exist. */
     fun stamp(): Stamp?
     /** null when launcher.json does not exist. Must enforce [maxBytes]. */
