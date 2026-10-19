@@ -1,5 +1,6 @@
 package dev.nasawa.configlauncher.model
 
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -37,6 +38,18 @@ sealed interface Edit {
      * meanwhile isn't listed, so a replay onto its file never deletes it.
      */
     data class DropPages(val ids: List<String>) : Edit
+    /**
+     * #79 (title-bar.md §8): add a new root element, e.g. the title bar preset when the user turns it on. Skipped when
+     * the ID is taken, or when the type allows one per file and the file already has one (shown or skipped).
+     */
+    data class AddElement(val element: JsonObject) : Edit
+    /**
+     * #79 `SetElement(id, fields)`: set the value at [path] inside element [id] (`["enabled"]`,
+     * `["content", "slots", "end"]`, …); null removes the key, and objects left empty are removed too (defaults are
+     * omitted). Skipped when the file no longer has that element. Other keys, including ones the phone can't edit,
+     * stay as they are.
+     */
+    data class SetElement(val id: String, val path: List<String>, val value: JsonElement?) : Edit
 }
 
 data class ApplyResult(val config: LauncherConfig, val applied: Boolean, val folder: FolderSkip? = null)
@@ -66,6 +79,41 @@ object Edits {
         is Edit.Unhide -> unhide(c, e)
         is Edit.Restore -> restore(c, e)
         is Edit.DropPages -> dropPages(c, e)
+        is Edit.AddElement -> addElement(c, e)
+        is Edit.SetElement -> setElement(c, e)
+    }
+
+    private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+    private fun addElement(c: LauncherConfig, e: Edit.AddElement): ApplyResult {
+        val id = e.element.str("id") ?: return ApplyResult(c, false)
+        val type = e.element.str("type")
+        val els = c.elements.orEmpty()
+        if (els.any { it.str("id") == id } || c.allItems().any { it.id == id } || c.pages.any { it.id == id } ||
+            c.drawer?.rules.orEmpty().any { (it as? JsonObject)?.str("id") == id }) return ApplyResult(c, false)
+        if (dev.nasawa.configlauncher.config.Elements.types[type]?.single == true && els.any { it.str("type") == type }) return ApplyResult(c, false)
+        return ApplyResult(c.copy(elements = els + e.element), true)
+    }
+
+    private fun setElement(c: LauncherConfig, e: Edit.SetElement): ApplyResult {
+        val els = c.elements ?: return ApplyResult(c, false)
+        val i = els.indexOfFirst { it.str("id") == e.id }
+        if (i < 0 || e.path.isEmpty()) return ApplyResult(c, false)
+        val updated = set(els[i], e.path, e.value) ?: return ApplyResult(c, false)
+        if (updated == els[i]) return ApplyResult(c, false)
+        return ApplyResult(c.copy(elements = els.toMutableList().also { it[i] = updated }), true)
+    }
+
+    /** [o] with [path] set to [v] (null = removed, then empty parents dropped); null if a parent isn't an object. */
+    private fun set(o: JsonObject, path: List<String>, v: JsonElement?): JsonObject? {
+        val k = path[0]
+        val next: JsonElement? = if (path.size == 1) v else {
+            val child = o[k] ?: if (v == null) return o else JsonObject(emptyMap())
+            set(child as? JsonObject ?: return null, path.drop(1), v)?.takeIf { it.isNotEmpty() }
+        }
+        val m = LinkedHashMap(o)
+        if (next == null) m.remove(k) else m[k] = next
+        return JsonObject(m)
     }
 
     /** The [Edit.Restore] that undoes removing top-level item [id] from [c], or null if it isn't on a page or in the dock. */

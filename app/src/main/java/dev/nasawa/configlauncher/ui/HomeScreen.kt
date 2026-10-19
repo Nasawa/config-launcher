@@ -4,6 +4,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import dev.nasawa.configlauncher.R
 import dev.nasawa.configlauncher.model.TitleBarModel
+import dev.nasawa.configlauncher.model.TitleBarEdits
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
@@ -70,6 +71,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var agentSnack by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var folderInfo by remember { mutableStateOf<String?>(null) }   // "" = app-only
+    var titleBarSheet by remember { mutableStateOf(false) }
     // ux.md §4.1 edit mode: entered from `Edit layout` or a drag; left on Done, Back, Home or 30 s idle.
     var editing by remember { mutableStateOf(false) }
     var pageList by remember { mutableStateOf(false) }
@@ -223,6 +225,9 @@ fun HomeScreen(vm: HomeViewModel) {
                     Box {
                         TextButton({ menuOpen = true }) { Text("⋮") }
                         DropdownMenu(menuOpen, { menuOpen = false }) {
+                            // #79: on/off and slot preset; hidden when the file's title bar is one this version can't show.
+                            if (TitleBarEdits.state(ui.load.config) != TitleBarEdits.State.Unavailable)
+                                DropdownMenuItem({ Text(stringResource(R.string.titlebar_title)) }, { menuOpen = false; titleBarSheet = true })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_config_folder)) }, { menuOpen = false; folderInfo = vm.store.engine.source.location ?: "" })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_pick_folder)) }, { menuOpen = false; moving = true; pickFolder.launch(null) })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_use_phone_storage)) }, { menuOpen = false; vm.store.useAppStorage() })
@@ -388,6 +393,15 @@ fun HomeScreen(vm: HomeViewModel) {
                 }
             }, onDismiss = { sheetFor = null })
         }
+
+        if (titleBarSheet) TitleBarSheet(TitleBarEdits.state(ui.load.config),
+            onToggle = { on -> TitleBarEdits.toggle(vm.store.engine.state.value.config, on)?.let(vm.store::edit) },
+            onPick = { slot, choice ->
+                (TitleBarEdits.state(vm.store.engine.state.value.config) as? TitleBarEdits.State.Present)?.let { p ->
+                    TitleBarEdits.pick(p.id, slot, choice)?.let(vm.store::edit)
+                }
+            },
+            onDismiss = { titleBarSheet = false })
 
         folderInfo?.let { path ->
             AlertDialog(
