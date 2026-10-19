@@ -1114,14 +1114,16 @@ the prompt opens from a tap.
 **One approval model (Claw #3; adopted by Archimedes as the approval *ceiling*, Q-A9).** Each widget `id` has one
 stored **approved set** on this phone, a **cumulative union** that approvals at different times add to: every capability line
 (each kind with each of its `packages` / `origins` entries, plus the approved `source`; `data.file` and `ui.reload`
-are a line each) the user has allowed for it. `Allow` adds the lines the prompt showed. The set **never shrinks** when
+are a line each) the user has allowed for it, plus the silent lines (no OK needed) recorded while it was live. `Allow`
+adds the lines the prompt showed. The set **never shrinks** when
 the file narrows. Only `Forget approval` (§17.6), `Remove from home` or the element leaving the file (GC) clears it.
 Sites the user ticked `Always allow` for on the tap confirm sheet live in a **separate device-local list** per element
 id ([#146](https://github.com/Nasawa/config-launcher/pull/146)): not ceiling lines, not in the fingerprint, never synced or written to the folder or `status.json`. The
 user can `Remove` one (§17.6); `Forget approval` and GC clear the list too. On every load:
 - **Everything the widget declares is within the approved set → live, no prompt, no badge, no dot.** This covers
   narrowing, returning to an earlier version, and any mix of approved lines.
-- **Anything beyond it → `Needs your OK again`** (or `Needs your OK` when the set is empty). Only the lines outside the
+- **Anything beyond it → `Needs your OK again`** when the set is non-empty (including silent lines recorded while it
+  was live), or `Needs your OK` when the set is empty. It's the set that decides, not whether the user ever tapped `Allow`. Only the lines outside the
   set are marked `New`.
 - The one exception (later): the **first time** a widget has both Phone data and Internet, the combination prompt
   (§17.1 combination line) shows once, even if each was approved on its own earlier. After `Allow` the pair joins the
@@ -1174,8 +1176,8 @@ the §16.2 placeholder so every non-live widget looks like the same family:
 
 | State | Reason (exact) | Tap |
 |---|---|---|
-| New, never allowed | `Needs your OK` | Prompt (§17.5) |
-| Broadened | `Needs your OK again` | Broadened prompt |
+| Asks for OK, empty ceiling (e.g. new) | `Needs your OK` | Prompt (§17.5) |
+| Asks for more than a non-empty ceiling (including silent lines recorded while it was live) | `Needs your OK again` | Broadened prompt |
 | User chose `Keep off` on a prompt | Unchanged (`Needs your OK` / `Needs your OK again`) | Prompt again |
 | User revoked it | `Turned off` | Same |
 | Above this launcher's feature level (`requires`, e.g. `net.fetch` at 5 on a level-4 phone) | `Update Config Launcher to show this` | Hint sheet. Same skip-and-keep rule as §15, but it **keeps its cells and shows the tile**, because a dashboard card going missing looks broken |
@@ -1255,9 +1257,11 @@ A bottom sheet (not a dialog, so it can scroll and show a preview), opened only 
   **closes with no decision** (recommended for S3-C: the tile shows the new state and the next tap opens a fresh
   prompt), or **rebuilds visibly** with the new lines, and in that case nothing is approved by a tap that started
   before the rebuild. A cosmetic-only change (not in the fingerprint) leaves an open sheet alone. The store enforces this
-  on its own as well: `allow(id, shownFingerprint)` **refuses a mismatch** and changes nothing, and lines that are still
-  outside the ceiling stay `needsApprovalAgain` (`needsApproval` if nothing was ever approved), so the UI can't approve
-  lines the user never saw, even by accident.
+  on its own as well: `allow(id, shown, current)` **refuses, and changes nothing, unless the card in the current
+  launcher.json still has exactly the `shown` fingerprint**; a card that has left the file (or is skipped) is refused
+  too. After a refusal the card keeps its state: `needsApprovalAgain` when its ceiling is non-empty (including silent
+  lines recorded while it was live), `needsApproval` when the ceiling is empty, `off` if turned off (e.g. after
+  `Forget approval`). So the UI can't approve lines the user never saw, even by accident.
 - After `Allow`, Android runtime permissions follow if needed, one system dialog per permission, but only those that
   are missing. If one is denied, the widget is live, the affected bindings show `—`, and the detail shows `Android
   permission off: Calendar` with `Open settings`.
@@ -1530,7 +1534,7 @@ time, with the not-private note, until the user ticks `Always allow http://nas.l
 - [ ] Consent store (device-local), approved-set check on every load (it never shrinks), the states in §17.2, no dialog from a load.
 - [ ] Consent tile (§17.3), B9 + count chip + menu badges (§17.4), review list, prompt sheet with preview, detail with
   Turn off + Undo, Forget approval (confirm, no Undo), `status.json` consent fields.
-- [ ] `allow(id, shownFingerprint)`: refuse a mismatch; an open prompt closes (or rebuilds visibly) when the fingerprint changes (§17.5).
+- [ ] `allow(id, shown, current)`: refuse (no change) unless the card in the current launcher.json still has exactly the `shown` fingerprint, and refuse a card that has left the file or is skipped; an open prompt closes (or rebuilds visibly) when the fingerprint changes (§17.5).
 - [ ] Name fallback: the element `id` wherever there's no `title` (§17.2).
 - [ ] Link taps (§17.9): blocked schemes / user info, source match opens, confirm sheet otherwise, `Always allow` adds
   to the device-local Always-allow list, `Always allowed sites` with Remove + Undo.
