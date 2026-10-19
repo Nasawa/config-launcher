@@ -57,7 +57,9 @@ object TitleBarLayout {
      * index) never gets less than [pageMin] (or its own width, if less), so its tap target can't disappear. Only on a bar
      * too narrow for all of that do the fixed slots and the page button shrink, in proportion to what they need.
      */
-    fun widths(w: Int, start: Int, center: Int, end: Int, fixed: Set<Int> = emptySet(), page: Int? = null, pageMin: Int = 0): Triple<Int, Int, Int> {
+    fun widths(w: Int, start: Int, center: Int, end: Int, fixed: Set<Int> = emptySet(), page: Int? = null, pageMin: Int = 0, gap: Int = 0): Triple<Int, Int, Int> {
+        // ux.md §15 (#154): the [gap] between adjacent non-empty slots is reserved first, like the ▾; see [gaps].
+        if (gap > 0) gaps(start, center, end, gap).let { (a, b) -> return widths((w - a - b).coerceAtLeast(0), start, center, end, fixed, page, pageMin) }
         if (w <= 0) return Triple(0, 0, 0)
         val want = intArrayOf(start, center.coerceAtLeast(0), end)
         // What each slot can't go below: a fixed slot its whole width, the page button pageMin.
@@ -82,6 +84,16 @@ object TitleBarLayout {
         val s = (rest / 2).coerceIn(min[0], rest - min[2])
         return Triple(s, c, rest - s)
     }
+
+    /** ux.md §15 (#154, Refs #149): the minimum space between adjacent non-empty slots, reserved before widths are shared. */
+    const val GAP_DP = 8
+
+    /**
+     * Gap after start and after center, in px: [gap] between adjacent non-empty slots only (ux.md §15, #154). An
+     * empty slot takes no gap; with no centre, start and end are adjacent.
+     */
+    fun gaps(start: Int, center: Int, end: Int, gap: Int): Pair<Int, Int> =
+        (if (start > 0 && (center > 0 || end > 0)) gap else 0) to (if (center > 0 && end > 0) gap else 0)
 
     /** #149: the smallest a `{page}` button slot gets: the ▾, its 4 dp gap and an ellipsis at the default size. */
     const val PAGE_MIN_DP = 32
@@ -207,13 +219,16 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
             val fixed = Slot.entries.filter { bar.slots[it]?.let(TitleBarModel::clockOnly) == true }.map { it.ordinal }.toSet()
             // #149: the {page} button keeps room for its ▾ and an ellipsis; Compose widens its touch area to 48 dp.
             val page = if (tappable) Slot.entries.firstOrNull { bar.slots[it]?.let(TitleBarModel::hasPage) == true }?.ordinal else null
-            val (sw, cw, ew) = TitleBarLayout.widths(w, want[0], if (bar.slots[Slot.CENTER] == null) 0 else want[1], want[2], fixed,
-                page, TitleBarLayout.PAGE_MIN_DP.dp.roundToPx())
+            val cWant = if (bar.slots[Slot.CENTER] == null) 0 else want[1]
+            val (g0, g1) = TitleBarLayout.gaps(want[0], cWant, want[2], TitleBarLayout.GAP_DP.dp.roundToPx())
+            val (sw, cw, ew) = TitleBarLayout.widths(w, want[0], cWant, want[2], fixed,
+                page, TitleBarLayout.PAGE_MIN_DP.dp.roundToPx(), TitleBarLayout.GAP_DP.dp.roundToPx())
             val ps = listOf(sw, cw, ew).mapIndexed { k, width -> ms[k].measure(Constraints.fixedWidth(width.coerceAtLeast(0)).copy(minHeight = 0, maxHeight = cs.maxHeight)) }
             val h = ps.maxOf { it.height }
             layout(w, h) {
                 var x = 0
-                ps.forEach { p -> p.placeRelative(x, (h - p.height) / 2); x += p.width }
+                val after = intArrayOf(g0, g1, 0)
+                ps.forEachIndexed { k, p -> p.placeRelative(x, (h - p.height) / 2); x += p.width + after[k] }
             }
         }
     }
