@@ -151,7 +151,7 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
             ) {
                 // The text takes what's left after the ▾, so truncation ellipsizes the text and never clips the ▾.
                 Text(text, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Text(" ▾", style = style.copy(fontSize = (size * 12f / 14f).sp), maxLines = 1, softWrap = false)
+                Text(" ▾", style = style.copy(fontSize = 12.sp), maxLines = 1, softWrap = false)
             }
         }
     }
