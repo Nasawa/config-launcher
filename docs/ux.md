@@ -675,12 +675,16 @@ in `status.json`. With `none` nothing is measured (the wallpaper is unknown).
 known on the device, because of dynamic colour and light/dark theme. The **phone** measures them with the same rules
 (worst-case wallpaper for see-through backdrops): at load, and again whenever the system theme (light/dark) or the
 wallpaper colours change (`onConfigurationChanged` / `WallpaperColors` updates). It **doesn't** re-measure on every
-frame. Results are **phone-only warnings**: in `status.json` they're marked as checked on this phone (proposed
-`"checkedOn": "phone"`; Archimedes owns the key), and they appear in the Warnings list like any other. A theme change
-that fixes or causes one updates `status.json` silently, with no snackbar, the same as Q-T2. `validate.py` can't measure
-them, so it prints **one** info line per run (not per colour) and doesn't count it as a warning:
-- `status.json` (draft): `elements[0].style.color: contrast 3.2:1 for the theme colour primary on the backdrop (4.5:1 recommended), checked on this phone with the current theme. Shown anyway.`
-- `validate.py` (draft): `info: theme colours (primary, secondary, onSurface, surface) are only checked on the phone; see .configlauncher/status.json.`
+frame. The phone only has the theme that's showing, so it checks **only the light or dark variant currently shown**
+and says which one. The other variant is checked after the next theme switch. Results are **phone-only warnings**: in
+`status.json` `warnings` (a string array) they're marked by the words `checked on this phone`, with no separate key.
+They appear in the Warnings list like any other. The path names the key that holds the theme token
+(`style.color`, `style.color.dark`, `style.backdrop.color`). A theme change that fixes or causes one updates
+`status.json` silently, with no snackbar, the same as Q-T2. `validate.py` can't measure them, so it prints **one**
+info line per run (not per colour), only when a shown bar's contrast depends on a theme colour, and doesn't count it as
+a warning. Final strings (#132):
+- `status.json`: `elements[0].style.color: contrast 3.2:1 on the backdrop (4.5:1 recommended), checked on this phone in dark theme. Shown anyway.` (`in light theme` when light is showing)
+- `validate.py`: `info: theme colours (primary, secondary, onSurface, surface) are only checked on the phone; see "checked on this phone" in .configlauncher/status.json.`
 
 **Skipped elements (Q-T4).** Nothing on home: no placeholder, banner or snackbar (an element is decoration and must
 never make the home screen look broken). If the skipped element was the title bar, the §1.3 page label shows instead.
@@ -698,7 +702,7 @@ list** dialog:
   as `status.json` (phone-only theme warnings included). The list scrolls, and ▲ is a glyph, not colour alone.
 - Buttons `Copy` (file name + header + every line to the clipboard, then the snackbar `Warnings copied.`) and `Close`.
 - **Hidden while a problem banner (B1–B7) is up.** The screen is showing the last working layout then, and its warnings
-  would mislead. The status line shows the problem instead. When the banner clears, warnings **come back silently**
+  would mislead. The `Layout loaded · N warnings` line isn't shown then. When the banner clears, warnings **come back silently**
   (no snackbar, no badge).
 - TalkBack: the status line reads `Layout loaded, 2 warnings, button`. The dialog reads the header, then each line.
 - **Later:** this list moves into §6.2's full-screen page as its Warnings section, with `Copy errors` covering both, and
@@ -720,6 +724,38 @@ the text and never clips or pushes out the ▾. RTL mirrors it (trailing = left)
 action. TalkBack reads it as a button (above); the ▾ itself isn't read.
 If no visible slot holds `{page}` (including an override that hides it), the page list is still reachable through the
 `List pages` action and a `Pages` item in the home long-press menu.
+
+### 15.2 Title bar settings (#130, interim)
+Until Settings exists, the controls live in the ⋮ menu (R10).
+- **⋮ item `Title bar`** (`titlebar_title`). Hidden when the file's title bar is one this version skips (`requires`
+  too high): the phone leaves that bar alone and offers no edits.
+- **Sheet** (`ModalBottomSheet`), title `Title bar` (a TalkBack heading):
+  - Switch row `Show title bar` (`titlebar_show`), whole row toggles, ≥ 48 dp (56 dp used), `Role.Switch`. **Off**
+    writes `enabled: false` and never deletes the bar or its custom keys. **On** removes `enabled`; with no bar in the
+    file it writes the §15 preset as `t-main` (`t-main-2`, … if the ID is taken). No snackbar either way: the bar
+    appearing or disappearing is the feedback.
+  - With the bar on, one radio group per slot, in layout order. **Slot labels are what the user sees**: `Left`,
+    `Center`, `Right`, swapped to `Right`, `Center`, `Left` in right-to-left layouts (the `start` slot is on the right
+    there). The file keeps `start` / `center` / `end`. Each label is a TalkBack heading. With the bar off, the groups
+    are hidden.
+  - Options `Page title`, `Clock`, `Date`, `None` (`{page}`, `{time}`, `{date}`, slot removed), ≥ 48 dp rows,
+    `Role.RadioButton`, one write per pick. A slot holding anything else first shows the selected, read-only
+    `Custom (set in the file)` row with the raw template in monospace and `Picking another option replaces it.` (§15
+    Q-T1, Q-W6). It's read-only, **not disabled**: TalkBack reads `Custom (set in the file), <template>, selected`,
+    never "disabled".
+```xml
+<string name="titlebar_title">Title bar</string>
+<string name="titlebar_show">Show title bar</string>
+<string name="titlebar_slot_left">Left</string>
+<string name="titlebar_slot_center">Center</string>
+<string name="titlebar_slot_right">Right</string>
+<string name="titlebar_page">Page title</string>
+<string name="titlebar_clock">Clock</string>
+<string name="titlebar_date">Date</string>
+<string name="titlebar_none">None</string>
+```
+Pick `titlebar_slot_left`/`_right` from the slot and `LocalLayoutDirection` (LTR: start → Left, end → Right; RTL:
+start → Right, end → Left).
 
 ### 15.1 Copy: token errors and warnings (Q-T5)
 Same style as §6.3: path first, then what's wrong, then the fix. Errors are B2 problems (`launcher.json has 2 problems.
@@ -788,7 +824,10 @@ Resources (character positions are 1-based, like line and column):
     <item quantity="one">Layout loaded · %d warning</item>
     <item quantity="other">Layout loaded · %d warnings</item>
 </plurals>
-<string name="warn_contrast_theme">%1$s: contrast %2$s:1 for the theme colour %3$s on the backdrop (4.5:1 recommended), checked on this phone with the current theme. Shown anyway.</string>
+<!-- %3$s = theme_light or theme_dark. status.json uses the English text. -->
+<string name="warn_contrast_theme">%1$s: contrast %2$s:1 on the backdrop (4.5:1 recommended), checked on this phone in %3$s. Shown anyway.</string>
+<string name="theme_light">light theme</string>
+<string name="theme_dark">dark theme</string>
 <string name="warnings_copied">Warnings copied.</string>
 <string name="titlebar_custom">Custom (set in the file)</string>
 <string name="titlebar_custom_note">Picking another option replaces it.</string>
