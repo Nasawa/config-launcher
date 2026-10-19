@@ -61,6 +61,9 @@ fun HomeScreen(vm: HomeViewModel) {
     var sheetFor by remember { mutableStateOf<ResolvedItem?>(null) }
     var homeMenu by remember { mutableStateOf(false) }
     var drawerSheet by remember { mutableStateOf<InstalledApp?>(null) }
+    var hiddenSheet by remember { mutableStateOf(false) }
+    // ux.md §14 R3/R8: one Undo snackbar at a time (folder removed, app hidden).
+    var undoSnack by remember { mutableStateOf<UndoSnack?>(null) }
     var moveFor by remember { mutableStateOf<ResolvedItem?>(null) }
     val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }, onStart = { editing = true }) { vm.store.edit(it) } }
     var cloudUri by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -136,6 +139,21 @@ fun HomeScreen(vm: HomeViewModel) {
     }
 
     val onLong: (ResolvedItem) -> Unit = { sheetFor = it }
+    // §14 R4/R5: every way out of edit mode saves pending edits and drops empty pages in that write.
+    val leaveEdit = { if (editing) { editing = false; vm.store.leaveEditMode() } }
+    LaunchedEffect(editing, ui.load.config) { if (editing) { kotlinx.coroutines.delay(30_000); if (drag.dragged == null) leaveEdit() } }
+    androidx.activity.compose.BackHandler(editing) { leaveEdit() }
+    // §14 R3: a folder goes with one write and an Undo snackbar, no confirm dialog (sheet and TalkBack action alike).
+    val removeItem = { r: ResolvedItem ->
+        val undo = (r.item as? FolderItem)?.let { Edits.undoRemove(vm.store.engine.state.value.config, it.id) }
+        vm.store.edit(Edit.Remove(r.item.id))
+        if (undo != null) undoSnack = UndoSnack(res.getString(R.string.removed_folder, Labels.clean(r.title)), undo, Labels.clean(r.title))
+    }
+    // §14 R8: Hide gets an Undo snackbar.
+    val hideApp = { pkg: String, label: String ->
+        vm.store.edit(Edit.Hide(pkg))
+        undoSnack = UndoSnack(res.getString(R.string.app_hidden, label), Edit.Unhide(pkg), label)
+    }
     // ux.md §12: drag-free editing through TalkBack custom actions, one write each.
     val a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction> = { r, place ->
         val pkg = (r.item as? AppItem)?.packageName
@@ -143,8 +161,8 @@ fun HomeScreen(vm: HomeViewModel) {
             when (a) {
                 TileAction.MOVE_TO -> CustomAccessibilityAction(res.getString(R.string.a11y_move_to)) { moveFor = r; true }
                 TileAction.MOVE_TO_DOCK -> CustomAccessibilityAction(res.getString(R.string.a11y_move_to_dock)) { vm.store.edit(Edit.MoveToDock(r.item.id, Int.MAX_VALUE)); true }
-                TileAction.REMOVE -> CustomAccessibilityAction(res.getString(R.string.action_remove_home)) { vm.store.edit(Edit.Remove(r.item.id)); true }
-                TileAction.HIDE -> CustomAccessibilityAction(res.getString(R.string.action_hide)) { vm.store.edit(Edit.Hide(pkg!!)); true }
+                TileAction.REMOVE -> CustomAccessibilityAction(res.getString(R.string.action_remove_home)) { removeItem(r); true }
+                TileAction.HIDE -> CustomAccessibilityAction(res.getString(R.string.action_hide)) { hideApp(pkg!!, Labels.clean(r.app?.label ?: r.title)); true }
             }
         }
     }
@@ -157,7 +175,7 @@ fun HomeScreen(vm: HomeViewModel) {
             Column(Modifier.fillMaxSize().systemBarsPadding()) {
                 if (editing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.editing_layout), color = Color.White, modifier = Modifier.weight(1f))
-                    TextButton({ editing = false }) { Text(stringResource(R.string.done)) }
+                    TextButton(leaveEdit) { Text(stringResource(R.string.done)) }
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (ui.load.reconnectable) stringResource(R.string.source_folder, ui.load.sourceName.removePrefix("Folder: ")) else stringResource(R.string.source_app_storage), style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
@@ -185,6 +203,14 @@ fun HomeScreen(vm: HomeViewModel) {
                 ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
+                // ux.md §1 / §14 R4: Home on home leaves edit mode (saving first), closes drawer and folder, goes to page 1.
+                LaunchedEffect(Unit) {
+                    vm.homePresses.collect {
+                        leaveEdit(); drawerOpen = false; openFolder = null; hiddenSheet = false
+                        sheetFor = null; homeMenu = false; drawerSheet = null
+                        if (pager.pageCount > 0) pager.animateScrollToPage(0)
+                    }
+                }
                 pages.getOrNull(pager.currentPage).let { p ->
                     drag.currentPageId = p?.id
                 }
@@ -203,6 +229,18 @@ fun HomeScreen(vm: HomeViewModel) {
                 ui.load.merge?.let { m ->
                     MergeSnackbar(m, onUndo = { vm.store.undoMerge() }.takeIf { m.undo && ui.load.mergeUndo },
                         onDismiss = { vm.store.engine.dismissMergeUndo() })
+                }
+                undoSnack?.let { u ->
+                    UndoSnackbar(u, onUndo = {
+                        undoSnack = null
+                        // Restore only fails when home has no room left; say so instead of doing nothing (Grace, #70).
+                        val cfg = vm.store.engine.state.value.config
+                        val undo = u.undo
+                        when {
+                            undo !is Edit.Restore || Edits.apply(cfg, undo).applied -> vm.store.edit(undo)
+                            cfg.allItems().none { it.id == undo.item.id } -> toast(res.getString(R.string.undo_no_room, u.label))
+                        }
+                    }, onDismiss = { if (undoSnack == u) undoSnack = null })
                 }
             }
         }
@@ -228,7 +266,7 @@ fun HomeScreen(vm: HomeViewModel) {
                         if (Edits.apply(cfg, Edit.AddToHome(item)).applied) { drawerOpen = false; vm.store.edit(Edit.AddToHome(item)) }
                         else toast(res.getString(R.string.home_full))
                     }
-                    DrawerAction.HIDE -> vm.store.edit(Edit.Hide(app.packageName))
+                    DrawerAction.HIDE -> hideApp(app.packageName, Labels.clean(app.label))
                     DrawerAction.APP_INFO -> if (!vm.apps.appInfo(app.packageName, app.activityName, app.profile)) toast(res.getString(R.string.open_failed, Labels.clean(app.label)))
                 }
             }, onDismiss = { drawerSheet = null })
@@ -261,7 +299,7 @@ fun HomeScreen(vm: HomeViewModel) {
                         val (pkg, act) = when (val i = r.item) { is AppItem -> i.packageName to (r.app?.activityName ?: i.activity); is ShortcutItem -> i.packageName to null; else -> null to null }
                         if (pkg == null || !vm.apps.appInfo(pkg, act, r.app?.profile ?: Profile.PERSONAL)) toast(res.getString(R.string.open_failed, Labels.clean(r.title)))
                     }
-                    ItemAction.REMOVE -> vm.store.edit(Edit.Remove(r.item.id))
+                    ItemAction.REMOVE -> removeItem(r)
                 }
             }, onDismiss = { sheetFor = null })
         }
@@ -281,6 +319,12 @@ fun HomeScreen(vm: HomeViewModel) {
             )
         }
 
+        if (hiddenSheet) {
+            val installed by vm.installedApps.collectAsStateWithLifecycle()
+            HiddenAppsSheet(HiddenApps.rows(ui.load.config, installed), vm.apps,
+                onUnhide = { vm.store.edit(Edit.Unhide(it)) }, onDismiss = { hiddenSheet = false })
+        }
+
         if (drawerOpen) {
             ModalBottomSheet({ drawerOpen = false }) {
                 var query by remember { mutableStateOf("") }
@@ -297,12 +341,23 @@ fun HomeScreen(vm: HomeViewModel) {
                 val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
                 // Scrolling the list hides the keyboard; tapping the field brings it back.
                 LaunchedEffect(gridState.isScrollInProgress) { if (gridState.isScrollInProgress) ime?.hide() }
+                Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
-                    query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp).focusRequester(focus),
+                    query, { query = it }, Modifier.weight(1f).padding(start = 12.dp).focusRequester(focus),
                     placeholder = { Text(stringResource(R.string.search_hint)) }, singleLine = true,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Go),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = { shown.firstOrNull()?.let { drawerOpen = false; launchApp(it) } }),
                 )
+                // §14 R8 interim: drawer ⋮ → Hidden apps (moves to Settings once that screen exists).
+                var drawerMenu by remember { mutableStateOf(false) }
+                Box {
+                    val more = stringResource(R.string.drawer_menu)
+                    TextButton({ drawerMenu = true }, Modifier.semantics { contentDescription = more }) { Text("⋮") }
+                    DropdownMenu(drawerMenu, { drawerMenu = false }) {
+                        DropdownMenuItem({ Text(stringResource(R.string.hidden_apps)) }, { drawerMenu = false; hiddenSheet = true })
+                    }
+                }
+                }
                 if (shown.isEmpty()) Text(stringResource(R.string.search_no_match, query.trim()), Modifier.padding(16.dp), color = Color.Gray)
                 LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxHeight(0.85f).padding(8.dp), state = gridState) {
                     items(shown, key = { it.key }) { app ->
@@ -443,7 +498,7 @@ fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, sh
 }
 
 @Composable
-private fun AppIconImage(app: InstalledApp?, apps: InstalledApps, sizeDp: Int) {
+internal fun AppIconImage(app: InstalledApp?, apps: InstalledApps, sizeDp: Int) {
     val bmp = remember(app) { app?.let { apps.icon(it, 144) } }
     if (bmp != null) Image(bmp.asImageBitmap(), null, Modifier.size(sizeDp.dp))
     else Box(Modifier.size(sizeDp.dp).background(Color.DarkGray, RoundedCornerShape(12.dp)))

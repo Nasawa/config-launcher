@@ -131,7 +131,7 @@ class EditsTest {
         val r = Edit.AddToHome(app("n")).on(full)
         assertTrue(r.applied)
         assertEquals(2, r.config.pages.size)
-        assertEquals(Triple("page-2", 0, 0), r.config.cell("n"))
+        assertEquals("§14 R9: lowest unused N", Triple("page-1", 0, 0), r.config.cell("n"))
         val atCap = full.copy(pages = (1..Edits.MAX_PAGES).map { Page("p$it", items = (0 until 6).map { j -> app("p${it}x$j", j % 3, j / 3) }) })
         assertFalse(Edit.AddToHome(app("n")).on(atCap).applied)
     }
@@ -140,5 +140,98 @@ class EditsTest {
         val r = Edit.Hide("p.x").on()
         assertEquals(listOf("p.x"), r.config.drawer!!.hidden)
         assertFalse(Edit.Hide("p.x").on(r.config).applied)
+    }
+
+    // ux.md §14 rulings.
+    private fun folder(x: Int, y: Int) = FolderItem("f", label = "Work", x = x, y = y, items = listOf(app("f1"), app("f2")))
+
+    @Test fun removeFolderThenRestorePutsItBackWithItsItems() {
+        val c = base.copy(pages = listOf(base.pages[0].copy(items = base.pages[0].items + folder(2, 1)), base.pages[1]))
+        val undo = Edits.undoRemove(c, "f")!!
+        val removed = Edit.Remove("f").on(c).config
+        val r = undo.on(removed)
+        assertTrue(r.applied)
+        assertEquals(c, r.config)
+        assertFalse("already back: Undo is skipped, not duplicated", undo.on(r.config).applied)
+    }
+
+    @Test fun restoreRecreatesADeletedPageAtItsIndex() {
+        val c = base.copy(pages = listOf(base.pages[0], Page("two", items = listOf(folder(1, 1)))))
+        val undo = Edits.undoRemove(c, "f")!!
+        val removed = Edit.Remove("f").on(c).config
+        val gone = Edit.DropPages(Edits.emptyPageIds(removed)).on(removed).config
+        assertEquals(listOf("home"), gone.pages.map { it.id })
+        val back = undo.on(gone).config
+        assertEquals(listOf("home", "two"), back.pages.map { it.id })
+        assertEquals(Triple("two", 1, 1), back.cell("f"))
+    }
+
+    @Test fun restoreIntoATakenCellUsesTheNextFreeOne() {
+        val c = base.copy(pages = listOf(base.pages[0].copy(items = base.pages[0].items + folder(2, 0))))
+        val undo = Edits.undoRemove(c, "f")!!
+        val taken = Edit.MoveToCell("a", "home", 2, 0).on(Edit.Remove("f").on(c).config).config
+        assertEquals("next free cell in reading order (Edits.freeCell)", Triple("home", 0, 1), undo.on(taken).config.cell("f"))
+    }
+
+    @Test fun restoreDockItemAtItsIndex() {
+        val undo = Edits.undoRemove(base, "d1")!!
+        assertEquals(listOf("d1", "d2"), undo.on(Edit.Remove("d1").on().config).config.dock!!.map { it.id })
+    }
+
+    @Test fun dropPagesKeepsTheLastOne() {
+        val r = Edit.DropPages(Edits.emptyPageIds(base)).on()
+        assertTrue(r.applied); assertEquals(listOf("home"), r.config.pages.map { it.id })
+        assertFalse("nothing to drop", Edit.DropPages(Edits.emptyPageIds(r.config)).on(r.config).applied)
+        val allEmpty = base.copy(pages = listOf(Page("x"), Page("y")))
+        assertEquals(listOf("x"), Edit.DropPages(listOf("x", "y")).on(allEmpty).config.pages.map { it.id })
+    }
+
+    // Grace's #70 blocker: an empty page an agent adds while DropPages is pending must survive the replay.
+    @Test fun dropPagesReplayKeepsAnAgentsNewEmptyPage() {
+        val ours = Edit.DropPages(Edits.emptyPageIds(base))            // ["two"], recorded at edit-mode exit
+        val file = base.copy(pages = base.pages + Page("agent-empty", title = "Agent"))
+        val r = Edits.replay(file, listOf(ours))
+        assertEquals(listOf("home", "agent-empty"), r.config.pages.map { it.id })
+    }
+
+    @Test fun dropPagesSkipsAPageThatGotItemsMeanwhile() {
+        val ours = Edit.DropPages(listOf("two"))
+        val file = base.copy(pages = listOf(base.pages[0], Page("two", items = listOf(app("z", 0, 0)))))
+        assertFalse(ours.on(file).applied)
+        assertEquals(listOf("home", "two"), Edits.replay(file, listOf(ours)).config.pages.map { it.id })
+    }
+
+    // Grace: R9 reuses the lowest unused page-N; a page that took the dropped page's ID must not get the folder.
+    @Test fun restoreDoesNotUseADifferentPageThatReusedTheId() {
+        val c = base.copy(pages = listOf(base.pages[0], Page("page-1", items = listOf(folder(1, 1)))))
+        val undo = Edits.undoRemove(c, "f")!!
+        val removed = Edit.Remove("f").on(c).config
+        val dropped = Edit.DropPages(Edits.emptyPageIds(removed)).on(removed).config
+        val full = dropped.copy(pages = listOf(dropped.pages[0].copy(items = (0 until 6).map { app("h$it", it % 3, it / 3) })))
+        val reused = Edit.AddToHome(app("n")).on(full).config
+        assertEquals(listOf("home", "page-1"), reused.pages.map { it.id })   // the new page took the old ID
+        val back = undo.on(reused).config
+        assertEquals(3, back.pages.size)
+        val folderPage = back.pages.first { p -> p.items.any { it.id == "f" } }
+        assertEquals("recreated at its old index", 1, back.pages.indexOf(folderPage))
+        assertTrue("not on the reused page", folderPage.items.none { it.id == "n" })
+        assertEquals(Triple(folderPage.id, 1, 1), back.cell("f"))
+    }
+
+    @Test fun restoreFailsOnlyWhenAllPagesAreFull() {
+        val c = base.copy(pages = listOf(base.pages[0].copy(items = base.pages[0].items + folder(2, 1))))
+        val undo = Edits.undoRemove(c, "f")!!
+        val atCap = base.copy(pages = (1..Edits.MAX_PAGES).map { Page("p$it", items = (0 until 6).map { j -> app("p${it}x$j", j % 3, j / 3) }) })
+        assertFalse(undo.on(atCap).applied)
+        val oneFree = atCap.copy(pages = atCap.pages.dropLast(1) + atCap.pages.last().let { it.copy(items = it.items.drop(1)) })
+        assertTrue("falls back to any free cell", undo.on(oneFree).applied)
+    }
+
+    @Test fun unhideUndoesHide() {
+        val hidden = Edit.Hide("p.x").on().config
+        val r = Edit.Unhide("p.x").on(hidden)
+        assertTrue(r.applied); assertEquals(emptyList<String>(), r.config.drawer!!.hidden)
+        assertFalse(Edit.Unhide("p.x").on(r.config).applied)
+        assertFalse(Edit.Unhide("p.x").on().applied)
     }
 }
