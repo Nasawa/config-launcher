@@ -109,4 +109,16 @@
     <string name="move_invalid">It has problems:\n%1$s\nIf you replace it, it is first copied to .configlauncher/backup/.</string>
     <string name="move_replace">Replace it with mine</string>
     <string name="move_use_folder">Use the folder\'s layout</string>
+
+    <!-- Long-press (ux.md §1.1, §4.1) -->
+    <string name="action_edit_layout">Edit layout</string>
+    <string name="action_app_info">App info</string>
+    <string name="action_remove_home">Remove from home</string>
+    <string name="sheet_not_installed">Not installed · %1$s</string>
+    <plurals name="sheet_folder_apps">
+        <item quantity="one">Folder, %d app</item>
+        <item quantity="other">Folder, %d apps</item>
+    </plurals>
+    <string name="editing_layout">Editing layout</string>
+    <string name="done">Done</string>
 </resources>
