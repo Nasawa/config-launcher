@@ -725,38 +725,6 @@ action. TalkBack reads it as a button (above); the ▾ itself isn't read.
 If no visible slot holds `{page}` (including an override that hides it), the page list is still reachable through the
 `List pages` action and a `Pages` item in the home long-press menu.
 
-### 15.2 Title bar settings (#130, interim)
-Until Settings exists, the controls live in the ⋮ menu (R10).
-- **⋮ item `Title bar`** (`titlebar_title`). Hidden when the file's title bar is one this version skips (`requires`
-  too high): the phone leaves that bar alone and offers no edits.
-- **Sheet** (`ModalBottomSheet`), title `Title bar` (a TalkBack heading):
-  - Switch row `Show title bar` (`titlebar_show`), whole row toggles, ≥ 48 dp (56 dp used), `Role.Switch`. **Off**
-    writes `enabled: false` and never deletes the bar or its custom keys. **On** removes `enabled`; with no bar in the
-    file it writes the §15 preset as `t-main` (`t-main-2`, … if the ID is taken). No snackbar either way: the bar
-    appearing or disappearing is the feedback.
-  - With the bar on, one radio group per slot, in layout order. **Slot labels are what the user sees**: `Left`,
-    `Center`, `Right`, swapped to `Right`, `Center`, `Left` in right-to-left layouts (the `start` slot is on the right
-    there). The file keeps `start` / `center` / `end`. Each label is a TalkBack heading. With the bar off, the groups
-    are hidden.
-  - Options `Page title`, `Clock`, `Date`, `None` (`{page}`, `{time}`, `{date}`, slot removed), ≥ 48 dp rows,
-    `Role.RadioButton`, one write per pick. A slot holding anything else first shows the selected, read-only
-    `Custom (set in the file)` row with the raw template in monospace and `Picking another option replaces it.` (§15
-    Q-T1, Q-W6). It's read-only, **not disabled**: TalkBack reads `Custom (set in the file), <template>, selected`,
-    never "disabled".
-```xml
-<string name="titlebar_title">Title bar</string>
-<string name="titlebar_show">Show title bar</string>
-<string name="titlebar_slot_left">Left</string>
-<string name="titlebar_slot_center">Center</string>
-<string name="titlebar_slot_right">Right</string>
-<string name="titlebar_page">Page title</string>
-<string name="titlebar_clock">Clock</string>
-<string name="titlebar_date">Date</string>
-<string name="titlebar_none">None</string>
-```
-Pick `titlebar_slot_left`/`_right` from the slot and `LocalLayoutDirection` (LTR: start → Left, end → Right; RTL:
-start → Right, end → Left).
-
 ### 15.1 Copy: token errors and warnings (Q-T5)
 Same style as §6.3: path first, then what's wrong, then the fix. Errors are B2 problems (`launcher.json has 2 problems.
 Showing the last working layout.`). Warnings never raise a banner.
@@ -851,6 +819,38 @@ message.
 
 The other counts in the messages above (the maxima) are always ≥ 2, so they don't need plurals. `status.json` uses the same English
 text so agents and the phone say the same thing. The contrast ratio is formatted with one decimal, locale-independent (`2.1`).
+
+### 15.2 Title bar settings (#130, interim)
+Until Settings exists, the controls live in the ⋮ menu (R10).
+- **⋮ item `Title bar`** (`titlebar_title`). Hidden when the file's title bar is one this version skips (`requires`
+  too high): the phone leaves that bar alone and offers no edits.
+- **Sheet** (`ModalBottomSheet`), title `Title bar` (a TalkBack heading):
+  - Switch row `Show title bar` (`titlebar_show`), whole row toggles, ≥ 48 dp (56 dp used), `Role.Switch`. **Off**
+    writes `enabled: false` and never deletes the bar or its custom keys. **On** removes `enabled`; with no bar in the
+    file it writes the §15 preset as `t-main` (`t-main-2`, … if the ID is taken). No snackbar either way: the bar
+    appearing or disappearing is the feedback.
+  - With the bar on, one radio group per slot, in layout order. **Slot labels are what the user sees**: `Left`,
+    `Center`, `Right`, swapped to `Right`, `Center`, `Left` in right-to-left layouts (the `start` slot is on the right
+    there). The file keeps `start` / `center` / `end`. Each label is a TalkBack heading. With the bar off, the groups
+    are hidden.
+  - Options `Page title`, `Clock`, `Date`, `None` (`{page}`, `{time}`, `{date}`, slot removed), ≥ 48 dp rows,
+    `Role.RadioButton`, one write per pick. A slot holding anything else first shows the selected, read-only
+    `Custom (set in the file)` row with the raw template in monospace and `Picking another option replaces it.` (§15
+    Q-T1, Q-W6). It's read-only, **not disabled**: TalkBack reads `Custom (set in the file), <template>, selected`,
+    never "disabled".
+```xml
+<string name="titlebar_title">Title bar</string>
+<string name="titlebar_show">Show title bar</string>
+<string name="titlebar_slot_left">Left</string>
+<string name="titlebar_slot_center">Center</string>
+<string name="titlebar_slot_right">Right</string>
+<string name="titlebar_page">Page title</string>
+<string name="titlebar_clock">Clock</string>
+<string name="titlebar_date">Date</string>
+<string name="titlebar_none">None</string>
+```
+Pick `titlebar_slot_left`/`_right` from the slot and `LocalLayoutDirection` (LTR: start → Left, end → Right; RTL:
+start → Right, end → Left).
 
 ## 16. Widgets (later, first post-MVP) — draft for #110
 UX side of Archimedes' recommendation in [`docs/research/widgets.md`](research/widgets.md) (#110): grow the #81
