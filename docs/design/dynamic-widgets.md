@@ -30,6 +30,7 @@ Dynamic widgets are type `card` (name TBD at schema time; UX §17 says `card`) i
 - No JavaScript, Lua, expressions-as-code, WebView, HTML, or downloadable script.
 - No `window.*` bridge, reflection, or "plugin APK".
 - No coordinates (`x`/`y`/dp/px/%) **inside** a widget (UX §17.8). Placement is only the element's grid `page,x,y,w,h`.
+- No arbitrary remote images in v1. If images arrive later: no SVG, with byte and dimension caps.
 
 ### Layout (flow only)
 
@@ -77,8 +78,13 @@ Responsive: up to 3 `layouts` keyed by `"WxH"` (minimum span). Launcher picks th
 - Capability `net.fetch` with **exact origin** pins (`https://host[:port]`).
 - Launcher fetches; widget never sees a socket.
 - **No cookies**, no shared `CookieJar`, no HTTP cache keying across element ids.
-- Caps: response bytes, timeout, min refresh interval; redirects must stay on the pinned origin.
-- **Secrets:** never in synced files. Device Keystore / encrypted prefs, entered on phone, scoped to `(elementId, origin)`. Agents declare that a secret slot exists; user fills it.
+- Caps: response bytes, timeout, min refresh interval.
+- **HTTP client:** one isolated client per element id (no shared cache, no cookies, fixed `User-Agent` naming Config Launcher).
+- **Redirects:** follow only if the next hop stays on the **same pinned origin**; otherwise fail the fetch.
+- **Request URLs are literals** in the element (or fixed under the pinned origin). They must **not** be built from `{data:…}`. Data from one origin must not be interpolated into `ui.openUrl` / fetch URLs for another (closes most path/query exfil).
+- **Connect-time IP check:** on every connection, resolve and refuse RFC1918 / link-local / metadata addresses unless that exact origin was approved under the private-origin allow flow. **DNS rebinding:** re-check the connected IP on each request, not only at approval time.
+- **Cleartext / LAN:** v1 `net.fetch` is HTTPS-only in the public case. Homelab `http://192.168.x` and self-signed TLS are an open question for Christopher (Q-C7) — default deny until decided.
+- **Secrets:** never in synced files. Device Keystore / encrypted prefs, entered on phone, scoped to `(elementId, origin)`. Agents declare that a secret slot exists; user fills it. **When the pinned origin set changes, delete secrets for origins that were removed** before any new fetch runs.
 
 ### What stays out of the synced folder
 
@@ -165,6 +171,9 @@ Honest holes in "local files + opt-in URL fetch + per-widget manifest":
 4. **Shared refresh schedules** can still DDoS a Pi. Enforce global and per-origin rate limits, not only per-widget.
 5. **Approvals don't sync** (correct for security) → every tablet re-consents (Pragma). Accept the friction.
 6. **"Phone data" tier** without v1 kinds: keep the UX tier for later; don't invent battery/SMS "just in case."
+7. **System notifications need `POST_NOTIFICATIONS` on Android 13+.** Prefer launcher-only signals for v1 (B9 + ⋮ badge + consent tile). A system notification is optional later and needs its own permission prompt.
+8. **Homelab cleartext / self-signed TLS** conflicts with "HTTPS origins only." Resolve via Q-C7; until then private cleartext is denied.
+9. **`widgets-data/` git policy:** agents may want these files synced; they can contain semi-sensitive status text. Document in README whether to commit or gitignore (proposal: commit is OK if no secrets; never put tokens there).
 
 ## 8. HA Q-C5 revised
 
