@@ -596,10 +596,18 @@ snackbars, the drawer, folders, the page list, Settings, the error detail view a
 wallpaper don't change: they stay white with the label shadow (and the 60 % scrim with `Label backdrop` on, §1.1), because
 the wallpaper doesn't change with the theme. Wallpaper (dynamic) colours aren't used in this release (Q-T7).
 
-**Override (proposed key, Archimedes owns the name and placement):** a top-level `"theme"` with `"system"` (default,
-also when the key is absent), `"light"` or `"dark"`. It's in the synced file, so it applies on every device that reads
-it. Any other value is a validation error like other bad enum values: `theme must be system, light or dark.` (B2, last
-good layout kept). There's no phone-side Settings row for it in this release.
+**Override (confirmed by Archimedes, Q-A10):** an optional **top-level** `"theme"` key (not nested), with `"system"`
+(default, also when the key is absent), `"light"` or `"dark"`. `"dynamic"` is reserved for Q-T7 and **not accepted
+yet**. It stays on **schemaVersion 1**, with no feature level. It's in the synced file, so it applies on every device
+that reads it. There's no phone-side Settings row for it in this release.
+- **`validate.py` / CI:** a non-string or unknown value is an error: `theme must be system, light or dark.`
+- **Phone:** a non-string value (`"theme": 1`) is a normal validation error (B2, last good layout kept) with the same
+  message. An **unknown string** (`"dynamic"`, a typo) does **not** reject the file: home follows the system setting,
+  and `status.json` gets the warning `warn_theme_value` (Warnings list too, no banner or snackbar):
+  `theme "dynamic" isn't supported by this Config Launcher, so home follows the system setting. Update the app, or
+  check for a typo.`
+- **Caveat:** builds from before `theme` existed have strict root keys, so they reject a file that has it (B2). That's
+  acceptable pre-release.
 
 **Live switching.** A system light/dark change, or a reload that changes `theme`, restyles everything in place: **no
 restart, no recreate, no flash**. Open sheets, the drawer and edit mode stay open, and the scroll position and focus are
@@ -859,8 +867,10 @@ Resources (character positions are 1-based, like line and column):
 <string name="theme_light">light theme</string>
 <!-- code, not strings.xml (status.json) -->
 <string name="theme_dark">dark theme</string>
-<!-- code, not strings.xml (status.json): validator error for the proposed top-level key (§12.1) -->
+<!-- code, not strings.xml (status.json): validator error for the top-level theme key (§12.1, Q-A10) -->
 <string name="err_theme">%1$s must be system, light or dark.</string>
+<!-- code, not strings.xml (status.json): phone warning for an unknown theme string; %1$s = the value as written -->
+<string name="warn_theme_value">theme \"%1$s\" isn\'t supported by this Config Launcher, so home follows the system setting. Update the app, or check for a typo.</string>
 <string name="warnings_copied">Warnings copied.</string>
 <string name="warnings_copy_done">Copied</string>
 <string name="titlebar_custom">Custom (set in the file)</string>
@@ -1785,9 +1795,11 @@ Dashboard capability model (§17): all eight are answered in the [#116 comment](
 only that element (§17.3 tile `Update Config Launcher to show this`). New kinds bump the feature level and set
 `requires`, and `validate.py`/CI may stay strict for typos.
 
-- **Q-A10 (open, home theme, §12.1)** Proposed top-level `"theme"`: `"system"` (default, also when absent) | `"light"` |
-  `"dark"`, with `"dynamic"` reserved for Q-T7. Please confirm the name and placement, whether it's schemaVersion 2 or
-  needs a feature level, and the error for a bad value (proposed `theme must be system, light or dark.`, B2).
+- ~~Q-A10~~ ✅ Resolved by Archimedes (home theme, §12.1): optional top-level `"theme"`, `"system"` (default when
+  absent) | `"light"` | `"dark"`; `"dynamic"` reserved for Q-T7, not accepted yet. schemaVersion 1, no feature level.
+  `validate.py`/CI: non-string or unknown → `theme must be system, light or dark.` Phone: non-string → B2; unknown
+  string → follows the system setting + `warn_theme_value`. Older strict-root builds reject a file with `theme` (B2),
+  acceptable pre-release.
 
 All seven are answered in ARCHITECTURE §16 and applied above:
 
