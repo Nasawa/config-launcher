@@ -553,7 +553,7 @@ def schema_errors(tree):
 class Template:
     NAMES = ("page", "pageNumber", "pageCount", "time", "date")
     SHORTHANDS = {"pageTitle": "page", "clock": "time", "date": "date"}
-    LETTERS = {"y": 19, "M": 4, "d": 2, "E": 5, "a": 1, "H": 2, "h": 2, "k": 2, "K": 2, "m": 2}
+    LETTERS = {"y": 19, "M": 5, "d": 2, "E": 5, "a": 1, "H": 2, "h": 2, "k": 2, "K": 2, "m": 2}
     PUNCTUATION = " .,:/-"
     MAX_TEMPLATE, MAX_TOKENS, MAX_PATTERN = 120, 8, 32
 
@@ -595,7 +595,7 @@ class Template:
                         return f"{path}: A ' quote isn't closed. Add a closing ' after the text."
                     if bad is not None and (len(bad) > 1 or bad in Template.LETTERS):
                         mx = Template.LETTERS[bad[0]]
-                        return f"{path}: {bad} is too long. Use at most {mx} letters, like {bad[:mx]}."
+                        return f"{path}: {bad} is too long. Use at most {mx}, like {bad[:mx]}."
                     if bad is not None:
                         return (f'{path}: "{bad}" isn\'t allowed in {{{inner}}}. '
                                 "Use y M d E a H h k K m; seconds and time zones aren't supported.")
