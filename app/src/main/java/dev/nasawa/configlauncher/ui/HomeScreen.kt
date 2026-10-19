@@ -4,6 +4,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import dev.nasawa.configlauncher.R
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -126,6 +128,9 @@ fun HomeScreen(vm: HomeViewModel) {
     }
     // Merge results use the in-app snackbar (ux.md §9.1); other one-shot notices are toasts.
     val res = androidx.compose.ui.platform.LocalResources.current
+    // §1.4: the part of the system-gesture inset not already covered by systemBarsPadding.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val gestureBottomPx = (WindowInsets.systemGestures.getBottom(density) - WindowInsets.navigationBars.getBottom(density)).coerceAtLeast(0).toFloat()
     LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it.resolve(res), Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
     val toast = { msg: String -> Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
     val launchApp = { app: InstalledApp -> if (!vm.apps.launch(app)) toast(res.getString(R.string.open_failed, Labels.clean(app.label))) }
@@ -179,7 +184,9 @@ fun HomeScreen(vm: HomeViewModel) {
     MaterialTheme(colorScheme = darkColorScheme()) {
         // Transparent over the system wallpaper (theme windowShowWallpaper, #58).
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
-            Column(Modifier.fillMaxSize().systemBarsPadding()) {
+            Column(Modifier.fillMaxSize().systemBarsPadding().swipeUpToOpen(
+                // §1.4: off in edit mode and while dragging; the bottom system-gesture strip belongs to the system.
+                { !editing && drag.dragged == null && !drawerOpen }, { gestureBottomPx }) { drawerOpen = true }) {
                 // #75: the edit bar takes the top row's place at the same height, so the grid doesn't jump under the finger.
                 Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
                 if (editing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -187,7 +194,9 @@ fun HomeScreen(vm: HomeViewModel) {
                     TextButton(leaveEdit) { Text(stringResource(R.string.done)) }
                 } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (ui.load.reconnectable) stringResource(R.string.source_folder, ui.load.sourceName.removePrefix("Folder: ")) else stringResource(R.string.source_app_storage), style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
-                    TextButton({ drawerOpen = true }) { Text(stringResource(R.string.apps)) }
+                    // §1.4: the Apps button is the tap path (hint "open app list"); hidden in edit mode.
+                    val hint = stringResource(R.string.a11y_open_drawer_hint)
+                    TextButton({ drawerOpen = true }, Modifier.semantics { onClick(label = hint) { drawerOpen = true; true } }) { Text(stringResource(R.string.apps)) }
                     Box {
                         TextButton({ menuOpen = true }) { Text("⋮") }
                         DropdownMenu(menuOpen, { menuOpen = false }) {
@@ -227,8 +236,11 @@ fun HomeScreen(vm: HomeViewModel) {
                 drag.grid = ui.layout.grid
                 drag.dockCount = ui.layout.dock.size
                 CompositionLocalProvider(LocalLabelBackdrop provides backdrop) {
+                val openAppList = stringResource(R.string.a11y_open_drawer)
                 HorizontalPager(
-                    pager, Modifier.weight(1f).fillMaxWidth(), key = { pages.getOrNull(it)?.id ?: it },
+                    pager, Modifier.weight(1f).fillMaxWidth()
+                        // §1.4: TalkBack custom action on the home grid.
+                        .semantics { customActions = listOf(CustomAccessibilityAction(openAppList) { drawerOpen = true; true }) }, key = { pages.getOrNull(it)?.id ?: it },
                     userScrollEnabled = drag.dragged == null,
                 ) { index ->
                     pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true }) }
