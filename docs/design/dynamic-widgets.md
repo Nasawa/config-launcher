@@ -1,6 +1,7 @@
 # Dynamic widgets: AI-assisted dashboard cards
 
-**Status:** draft for review (Christopher / Claw / Pragma / Sprite).  
+**Status:** draft for review (Pragma / Sprite; product Qs from Christopher landed).  
+**Christopher settled Q-C1–C5, Q-C7** (2026-10-19); **Q-C6 already decided**. PR stays draft — product answers only; Sprite schema work is not unblocked solely by this.  
 **Q-A9 (Pragma #116 / Claw):** http in `hosts`/`origins`; approval ceiling = cumulative union. **Claw review folded in** (PR #117 comment at 313ab26): structural `data.file`, exact-host `hosts`, tap example, Q-C7/Q-C3 recommendations, `ui.reload` + relative time, narrowing ceiling model.
 
 **Opened with:** product reframe from Christopher (via Grok Bot), screenshots in `/workspace/cl-input/` (not committed), Pragma UX [#116](https://github.com/Nasawa/config-launcher/pull/116) (`docs/ux.md` §17), schema answers Q-A1–Q-A8 on that PR.  
@@ -87,7 +88,7 @@ Responsive: up to 3 `layouts` keyed by `"WxH"` with a **lowercase** `x` (e.g. `"
 - **`net.fetch` request URLs are literals** in the element (fixed under a pinned origin). They must **not** be built from `{data:…}`.
 - **`ui.openUrl` tap `url` MAY use `{data:…}`** (Outer Shell needs this for "latest post"). At tap time resolve the template, normalise the host (IDNA/punycode/lowercase), and **open only if** it **exactly** matches an approved `hosts` entry (no subdomain inference), scheme+host match an approved `hosts` entry (bare = https only; `http://…` entry required for cleartext), and there is no `userinfo`. Else snackbar + warning. Data must not open a host outside the allowlist.
 - **Connect-time IP check:** on every connection, resolve and refuse RFC1918 / link-local / metadata addresses unless that exact origin was approved under the private-origin allow flow. **DNS rebinding:** re-check the connected IP on each request, not only at approval time.
-- **Cleartext / LAN (recommendation, Christopher has final word):** users own what they knowingly approve. `http://` is allowed when the user approves an `http://host` host entry or `http://…` origin by name — show `http://` in the prompt; **no silent https→http downgrade**. Self-signed: prefer **TOFU certificate pinning per origin** (pin on first approve / explicit re-pin) over disabling TLS validation. Private IPs still need an explicit approved origin; agent-written local JSON remains the simplest LAN path.
+- **Cleartext / LAN (decided — Q-C3 / Q-C7, Christopher 2026-10-19):** users own what they knowingly approve. `http://` is allowed when the user approves an `http://host` host entry or `http://…` origin by name — show `http://` in the prompt; **no silent https→http downgrade**. Disclosure / consent copy must say that **http is less secure**, that some local setups make https difficult for little gain, and that **the user is responsible for what they approve**. Self-signed: **TOFU certificate pinning per origin** (pin on first approve / explicit re-pin if the cert changes; stern copy about remembering the pin) — not disabling TLS validation. Private IPs still need an explicit approved origin; agent-written local JSON remains the simplest LAN path.
 - **Secrets:** never in synced files. Device Keystore / encrypted prefs, entered on phone, scoped to `(elementId, origin)`. Agents declare that a secret slot exists; user fills it. **When the pinned origin set changes, delete secrets for origins that were removed** before any new fetch runs.
 
 ### What stays out of the synced folder
@@ -169,7 +170,7 @@ The device stores one **approved capability set** per element id: a union of eve
 This replaces a single “fingerprint equality / subset of last fingerprint” model: the ceiling is cumulative across prompts.
 
 - Approvals **device-local**, keyed by `elementId + capabilityFingerprint`.
-- Optional `author` string (≤40): quoted in UI (`says "Claw"`), **never** trusted for auto-approve.
+- Optional / **recommended** `author` string (≤40): quoted in UI (`says "Claw"`), **never** trusted for auto-approve (Q-C4). If omitted, **hide** the author chrome — do not crash and do not show empty quote UI.
 
 ### `status.json`
 
@@ -192,7 +193,7 @@ Enforcement: runtime can only perform APIs listed in the **approved** manifest f
 
 Today §1: **No INTERNET** — launcher never fetches; security property against malicious config exfiltration.
 
-**Proposal (needs Christopher):** add `INTERNET` to the APK for the fetch runtime only.
+**Decided (Q-C1, Christopher 2026-10-19):** add `INTERNET` to the APK for **stage 5** (fetch runtime) only. He assumes it is necessary for `net.fetch`. Real control remains per-widget `net.fetch` approval (origin pins, no cookies, private-IP deny by default). Isolate fetch behind a feature flag / `requires`.
 
 | Path | Needs our INTERNET? |
 |---|---|
@@ -231,18 +232,18 @@ Honest holes in "local files + opt-in URL fetch + per-widget manifest":
 5. **Approvals don't sync** (correct for security) → every tablet re-consents (Pragma). Accept the friction.
 6. **"Phone data" tier** without v1 kinds: keep the UX tier for later; don't invent battery/SMS "just in case."
 7. **System notifications need `POST_NOTIFICATIONS` on Android 13+.** Prefer launcher-only signals for v1 (B9 + ⋮ badge + consent tile). A system notification is optional later and needs its own permission prompt.
-8. **Homelab cleartext / self-signed:** follow §3 recommendation (`http://` visible in prompt; TOFU pins). Still easy to click through — keep copy stern.
+8. **Homelab cleartext / self-signed:** follow §3 (decided Q-C3/C7: `http://` visible in prompt; TOFU pins; disclosure that http is less secure and the user owns the choice). Still easy to click through — keep copy stern.
 9. **`widgets-data/` git policy:** agents may want these files synced; they can contain semi-sensitive status text. Document in README whether to commit or gitignore (proposal: commit is OK if no secrets; never put tokens there).
 
-## 8. HA Q-C5 revised
+## 8. HA Q-C5 (decided, Christopher 2026-10-19)
 
 | Approach | Role |
 |---|---|
 | Host HA companion **AppWidgets** | Kind (a) — unchanged, no our INTERNET |
 | Agent writes HA-shaped JSON into `widgets-data/<id>.json` | Kind (b) v1 — **recommended** for Outer Shell–class cards |
-| `net.fetch` to HA URL + Keystore token | Kind (b) later — pinned origin, stern private-IP rules |
+| `net.fetch` to HA URL + Keystore token | Kind (b) later / **advanced** — pinned origin, stern private-IP rules |
 
-We still recommend **against** a built-in HA API client with broad rights. Claw (or any agent) owns the integration glue; the launcher owns safe display + consent.
+**Confirmed:** companion AppWidgets + agent-written local JSON are enough for v1 of kind (b). HA must **not** be tightly coupled to the launcher. Building your own HA-reading card (agent JSON or later `net.fetch`) is an advanced usage. Distant future: optional first-class widgets shipped in the app is OK as a far goal, not v1. Still **against** a built-in HA API client with broad rights. Claw (or any agent) owns the integration glue; the launcher owns safe display + consent.
 
 ## 9. Staged plan (schemaVersion 1 throughout)
 
@@ -256,19 +257,19 @@ We still recommend **against** a built-in HA API client with broad rights. Claw 
 | 5 | `net.fetch` + Keystore + INTERNET permission | 5 |
 | 6 | Optional path pins, private-origin allow, phone.* | later |
 
-**Hard gates:** Stage 0 before any skip of grid elements (met). Consent tile before any `card` renders data. Local data before fetch.
+**Hard gates:** Stage 0 before any skip of grid elements (met). Consent tile before any `card` renders data. Local data before fetch (**Q-C2 decided:** ship stage 3 local-data-only first; fetch is a later release).
 
 ## 10. Open questions
 
-### For Christopher / Claw
+### For Christopher / Claw — product answers landed (2026-10-19)
 
-- **Q-C1:** Is adding `INTERNET` to the APK acceptable if gated by per-widget `net.fetch` approval?
-- **Q-C2:** Ship dynamic widgets **local-data-only** first (stage 3), with fetch in a later release?
-- **Q-C3:** *(direction from Christopher via Claw)* Users own what they knowingly approve — explicit per-origin allow including private/`http://`, with clear prompt labelling. Confirm or tighten.
-- **Q-C4:** Is `author` useful enough to keep, knowing it is only a quote?
-- **Q-C5:** (revised HA) Confirm companion widgets + agent JSON is enough for v1 of (b).
+- **Q-C1:** *(decided)* **Yes** — APK `INTERNET` for stage 5, gated by per-widget `net.fetch` approval; assumed necessary for fetch.
+- **Q-C2:** *(decided)* **Yes** — ship dynamic widgets **local-data-only** first (stage 3); fetch in a later release.
+- **Q-C3:** *(decided)* **Yes** — users own what they knowingly approve; explicit per-origin allow including private/`http://`; clear prompt labelling. Consent/disclosure copy must note that http is less secure, that some local setups make https difficult for little gain, and that the user is responsible for their approvals.
+- **Q-C4:** *(decided)* **Keep** `author` as optional/recommended (cheap quote signal). If omitted, **hide** it — do not crash or show empty chrome.
+- **Q-C5:** *(decided)* **Yes** — companion AppWidgets + agent-written local JSON are enough for v1 of (b). No tight HA coupling; own HA-reading widgets are advanced. Distant optional first-class in-app widgets OK as a far goal, not v1.
 - **Q-C6:** *(decided)* Show-tier `ui.reload`; token `{relative}` → `5 min ago` / `just now`, no pattern. Pragma OK.
-- **Q-C7:** *(adopted Q-A9)* `http://` via scheme-qualified `hosts` / `origins` when approved by name; TOFU for self-signed; no silent downgrade. Still confirm TOFU UX copy.
+- **Q-C7:** *(decided)* Scheme-qualified `http://` in `hosts`/`origins` when approved by name; **TOFU** for self-signed (stern pin-on-approve / re-pin-on-change copy); no silent downgrade.
 
 ### For Pragma
 
