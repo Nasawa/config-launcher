@@ -30,9 +30,12 @@ object StatusJson {
     fun encode(
         result: String, errors: List<String>, hash: String?, ms: Long,
         backupError: String? = null, conflictFiles: List<String> = emptyList(), folder: String? = null, revision: Long? = null,
+        warnings: List<String> = emptyList(),
     ): ByteArray = buildJsonObject {
         put("result", result)
         put("errors", JsonArray(errors.map { JsonPrimitive(it) }))
+        // #79: never reject the file (skipped elements, overrides naming no element); ux.md §15.1.
+        put("warnings", JsonArray(warnings.map { JsonPrimitive(it) }))
         put("hash", hash)
         // #55: receipt only; the content hash stays the authority (decision 19). null when rejected.
         put("revision", revision)

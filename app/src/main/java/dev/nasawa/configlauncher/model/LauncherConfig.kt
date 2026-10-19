@@ -1,6 +1,7 @@
 package dev.nasawa.configlauncher.model
 
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /** Pure, immutable config model mirroring schema/launcher-config.v1.schema.json. No Android imports. */
 typealias Extras = Map<String, JsonElement>
@@ -62,6 +63,8 @@ data class Page(
     val title: String? = null,
     val items: List<Item> = emptyList(),
     val extras: Extras = emptyMap(),
+    /** #79 `pages[].overrides`, keyed by element ID. Kept verbatim (no element type reads it yet). */
+    val overrides: JsonObject? = null,
 )
 
 /** Drawer rules are kept as raw JSON for v1 (not yet interpreted by the UI). */
@@ -83,6 +86,11 @@ data class LauncherConfig(
     val dock: List<Item>? = null,
     val drawer: Drawer? = null,
     val extras: Extras = emptyMap(),
+    /**
+     * #79 root `elements[]` (title bar first, widgets later), kept verbatim in file order so an element this launcher
+     * can't show (unknown type, `requires` too high) survives every phone write. See [dev.nasawa.configlauncher.config.Elements].
+     */
+    val elements: List<JsonObject>? = null,
 ) {
     val effectiveGrid: Grid get() = grid ?: Grid()
 

@@ -17,24 +17,36 @@ object Validator {
 
     private enum class Ctx { PAGE, FOLDER, DOCK }
 
-    private class Run {
+    /** Checks an [Elements.ElementType] uses, so element types share the validator's paths and messages. */
+    interface Checks {
+        fun err(path: String, msg: String)
+        fun obj(e: JsonElement?, path: String): JsonObject?
+        fun keys(o: JsonObject, path: String, allowed: Set<String>, required: Set<String>, xKeys: Boolean = true)
+        fun str(o: JsonObject, k: String, path: String, max: Int? = null, min: Int = 0, re: Regex? = null): String?
+        fun int(o: JsonObject, k: String, path: String, min: Long, max: Long? = null): Long?
+        fun bool(o: JsonObject, k: String, path: String): Boolean?
+    }
+
+    private class Run : Checks {
         val errors = mutableListOf<String>()
         val ids = mutableMapOf<String, String>()
         var itemCount = 0
         var columns = 4
         var rows = 5
+        /** Page ID → occupied cells → path, so grid-placed elements are checked against items (#79 Stage 1). */
+        val pageCells = mutableMapOf<String, MutableMap<Pair<Long, Long>, String>>()
 
-        fun err(path: String, msg: String) { errors += if (path.isEmpty()) msg else "$path: $msg" }
+        override fun err(path: String, msg: String) { errors += if (path.isEmpty()) msg else "$path: $msg" }
 
-        fun obj(e: JsonElement?, path: String): JsonObject? =
+        override fun obj(e: JsonElement?, path: String): JsonObject? =
             e as? JsonObject ?: null.also { err(path, "must be an object") }
 
-        fun keys(o: JsonObject, path: String, allowed: Set<String>, required: Set<String>, xKeys: Boolean = true) {
+        override fun keys(o: JsonObject, path: String, allowed: Set<String>, required: Set<String>, xKeys: Boolean) {
             for (k in o.keys) if (k !in allowed && !(xKeys && k.startsWith("x-"))) err(path, "unknown key \"$k\"")
             for (k in required) if (k !in o) err(path, "missing required \"$k\"")
         }
 
-        fun str(o: JsonObject, k: String, path: String, max: Int? = null, min: Int = 0, re: Regex? = null): String? {
+        override fun str(o: JsonObject, k: String, path: String, max: Int?, min: Int, re: Regex?): String? {
             val v = o[k] ?: return null
             val s = (v as? JsonPrimitive)?.takeIf { it.isString }?.content
             if (s == null) { err("$path.$k", "must be a string"); return null }
@@ -45,13 +57,20 @@ object Validator {
             return s
         }
 
-        fun int(o: JsonObject, k: String, path: String, min: Long, max: Long? = null): Long? {
+        override fun int(o: JsonObject, k: String, path: String, min: Long, max: Long?): Long? {
             val v = o[k] ?: return null
             val p = v as? JsonPrimitive
             val n = if (p != null && !p.isString) p.content.toLongOrNull() else null
             if (n == null) { err("$path.$k", "must be an integer"); return null }
             if (n < min || (max != null && n > max)) err("$path.$k", "$n is out of range ${min}..${max ?: "∞"}")
             return n
+        }
+
+        override fun bool(o: JsonObject, k: String, path: String): Boolean? {
+            val v = o[k] ?: return null
+            val p = v as? JsonPrimitive
+            if (p == null || p.isString || (p.content != "true" && p.content != "false")) { err("$path.$k", "must be true or false"); return null }
+            return p.content == "true"
         }
 
         fun arr(o: JsonObject, k: String, path: String, max: Int? = null, min: Int = 0): JsonArray? {
@@ -64,7 +83,7 @@ object Validator {
 
         fun root(e: JsonElement) {
             val o = obj(e, "") ?: return
-            keys(o, "", setOf("\$schema", "schemaVersion", "revision", "grid", "pages", "dock", "drawer", "unsorted"), setOf("schemaVersion", "pages"))
+            keys(o, "", setOf("\$schema", "schemaVersion", "revision", "grid", "pages", "dock", "drawer", "elements", "unsorted"), setOf("schemaVersion", "pages"))
             str(o, "\$schema", "")
             o["schemaVersion"]?.let { if ((it as? JsonPrimitive)?.content != "1" || it.isString) err("schemaVersion", "must be 1") }
             int(o, "revision", "", 0)
@@ -78,6 +97,7 @@ object Validator {
             arr(o, "pages", "", max = 20, min = 1)?.forEachIndexed { i, p -> page(p, "pages[$i]") }
             arr(o, "dock", "", max = 7)?.forEachIndexed { i, it -> item(it, "dock[$i]", Ctx.DOCK) }
             o["drawer"]?.let { drawer(it) }
+            arr(o, "elements", "", max = Limits.MAX_ELEMENTS)?.forEachIndexed { i, e -> element(e, "elements[$i]") }
             if (itemCount > Limits.MAX_ITEMS) err("", "$itemCount items in total, at most ${Limits.MAX_ITEMS} allowed")
             o["unsorted"]?.let { u ->
                 obj(u, "unsorted")?.let { uo ->
@@ -94,12 +114,67 @@ object Validator {
             if (prev != null) err("$path.id", "duplicate id \"$s\" (also at $prev)")
         }
 
+        /**
+         * #79: `id`, `type` and `requires` are checked for every element. A skipped one (unknown type, `requires`
+         * above the feature level) gets nothing more: it's a warning ([Elements.warnings]), kept verbatim.
+         */
+        fun element(e: JsonElement, path: String) {
+            val o = obj(e, path) ?: return
+            for (k in listOf("id", "type")) if (k !in o) err(path, "missing required \"$k\"")
+            if ("id" in o) id(o, path)
+            val type = str(o, "type", path, re = Elements.TYPE)
+            int(o, "requires", path, 1)
+            placement(o, path)
+            if (type == null) return
+            Elements.typeOf(o)?.validate(o, path, this)
+        }
+
+        /**
+         * #79 Stage 1 (docs/research/widgets.md §5.1): the grid-placement base block, checked for **every** element
+         * before the type check, so a skipped element still reserves its cells and nothing can overlap them.
+         */
+        fun placement(o: JsonObject, path: String) {
+            val placed = Elements.PLACEMENT.filter { it in o }
+            str(o, "anchor", path, max = 32)
+            if ("anchor" in o && placed.isNotEmpty()) err(path, "has both \"anchor\" and a grid position; use one")
+            if (placed.isEmpty()) return
+            for (k in Elements.PLACEMENT) if (k !in o) err(path, "missing required \"$k\" (grid-placed elements need page, x, y, w and h)")
+            val page = str(o, "page", path, re = ID)
+            val x = int(o, "x", path, 0, 11); val y = int(o, "y", path, 0, 11)
+            val w = int(o, "w", path, 1, 12); val h = int(o, "h", path, 1, 12)
+            if (page == null || x == null || y == null || w == null || h == null) return
+            val cells = pageCells[page] ?: run { err("$path.page", "no page with id \"$page\""); return }
+            if (x + w > columns) err(path, "x $x + w $w is outside the grid ($columns columns)")
+            if (y + h > rows) err(path, "y $y + h $h is outside the grid ($rows rows)")
+            for (cy in y until minOf(y + h, rows.toLong())) for (cx in x until minOf(x + w, columns.toLong())) {
+                cells.put(cx to cy, path)?.let { other -> err(path, "overlaps $other at cell ($cx, $cy)"); return }
+            }
+        }
+
+        /** #79 `pages[].overrides`: element ID → any of `enabled`, `content`, `style`. A missing element is a warning. */
+        fun overrides(e: JsonElement, path: String) {
+            val o = obj(e, path) ?: return
+            if (o.size > Limits.MAX_OVERRIDES) err(path, "has ${o.size} entries, at most ${Limits.MAX_OVERRIDES} allowed")
+            for ((k, v) in o) {
+                if (!ID.matches(k)) { err(path, "\"$k\" is not a valid element id"); continue }
+                val vp = "$path.$k"
+                val vo = obj(v, vp) ?: continue
+                keys(vo, vp, setOf("enabled", "content", "style"), emptySet(), xKeys = false)
+                if (vo.isEmpty()) err(vp, "needs at least one of enabled, content or style")
+                bool(vo, "enabled", vp)
+                vo["content"]?.let { obj(it, "$vp.content") }
+                vo["style"]?.let { obj(it, "$vp.style") }
+            }
+        }
+
         fun page(e: JsonElement, path: String) {
             val o = obj(e, path) ?: return
-            keys(o, path, setOf("id", "title", "items"), setOf("id", "items"))
+            keys(o, path, setOf("id", "title", "items", "overrides"), setOf("id", "items"))
             id(o, path)
             str(o, "title", path, max = 40)
+            o["overrides"]?.let { overrides(it, "$path.overrides") }
             val cells = mutableMapOf<Pair<Long, Long>, String>()
+            (o["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.let { pageCells.putIfAbsent(it, cells) }
             arr(o, "items", path, max = 144)?.forEachIndexed { i, it ->
                 val ip = "$path.items[$i]"
                 item(it, ip, Ctx.PAGE)

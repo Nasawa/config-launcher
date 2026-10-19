@@ -8,4 +8,7 @@ object Limits {
     const val MAX_ITEMS = 2000
     const val MAX_STRING = 256
     const val MAX_TAGS = 16
+    /** #79 element model (docs/design/title-bar.md §8). */
+    const val MAX_ELEMENTS = 32
+    const val MAX_OVERRIDES = 32
 }

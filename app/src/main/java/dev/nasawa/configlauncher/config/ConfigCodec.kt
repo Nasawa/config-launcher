@@ -62,13 +62,14 @@ object ConfigCodec {
         grid = (o["grid"] as? JsonObject)?.let { Grid(it.i("columns") ?: 4, it.i("rows") ?: 5) },
         pages = o["pages"]!!.jsonArray.map { p ->
             val po = p.jsonObject
-            Page(po.s("id")!!, po.s("title"), po["items"]!!.jsonArray.map { item(it.jsonObject) }, po.extras())
+            Page(po.s("id")!!, po.s("title"), po["items"]!!.jsonArray.map { item(it.jsonObject) }, po.extras(), po["overrides"] as? JsonObject)
         },
         dock = (o["dock"] as? JsonArray)?.map { item(it.jsonObject) },
         drawer = (o["drawer"] as? JsonObject)?.let { d ->
             Drawer(d.s("sort"), (d["hidden"] as? JsonArray)?.map { it.jsonPrimitive.content }, (d["rules"] as? JsonArray)?.toList())
         },
         extras = o.extras(),
+        elements = (o["elements"] as? JsonArray)?.map { it.jsonObject },
     )
 
     private fun item(o: JsonObject): Item = when (o.s("type")) {
@@ -93,6 +94,7 @@ object ConfigCodec {
                 addJsonObject {
                     put("id", p.id); opt("title", p.title)
                     putJsonArray("items") { p.items.forEach { add(itemJson(it)) } }
+                    p.overrides?.let { put("overrides", it) }   // #79, verbatim
                     extras(p.extras)
                 }
             }
@@ -105,6 +107,8 @@ object ConfigCodec {
                 d.rules?.let { r -> put("rules", JsonArray(r.map(::canonicalRule))) }
             }
         }
+        // #79: verbatim, file order. A known element type will get canonical key order when it's added (title bar).
+        c.elements?.let { put("elements", JsonArray(it.map(Elements::canonical))) }
         extras(c.extras)
     }
 
