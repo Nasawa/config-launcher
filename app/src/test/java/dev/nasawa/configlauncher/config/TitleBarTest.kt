@@ -186,9 +186,10 @@ class TitleBarTest {
     }
 
     @Test fun slotsKeepAGapBetweenThem() {
-        // #149 (Pragma): 8 dp between adjacent slots, both sides of a centre so it stays centred.
+        // #149 (Pragma, ux.md §15): 8 dp between adjacent non-empty slots; an empty slot takes no gap.
         assertEquals(8 to 8, TitleBarLayout.gaps(100, 50, 100, 8))
-        assertEquals(8 to 8, TitleBarLayout.gaps(0, 50, 100, 8))
+        assertEquals(0 to 8, TitleBarLayout.gaps(0, 50, 100, 8))
+        assertEquals(8 to 0, TitleBarLayout.gaps(100, 50, 0, 8))
         assertEquals(0 to 0, TitleBarLayout.gaps(0, 50, 0, 8))
         assertEquals(8 to 0, TitleBarLayout.gaps(100, 0, 100, 8))
         assertEquals(0 to 0, TitleBarLayout.gaps(100, 0, 0, 8))

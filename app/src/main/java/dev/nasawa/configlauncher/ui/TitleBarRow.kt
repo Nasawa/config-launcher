@@ -87,14 +87,11 @@ object TitleBarLayout {
     const val GAP_DP = 8
 
     /**
-     * Gap after start and after center, in px. With a centre and anything beside it, the gap is kept on both sides of
-     * the centre so it stays centred; with no centre, one gap between start and end when both show.
+     * Gap after start and after center, in px: [gap] between adjacent non-empty slots only (ux.md §15, #154). An
+     * empty slot takes no gap; with no centre, start and end are adjacent.
      */
-    fun gaps(start: Int, center: Int, end: Int, gap: Int): Pair<Int, Int> = when {
-        center > 0 -> if (start > 0 || end > 0) gap to gap else 0 to 0
-        start > 0 && end > 0 -> gap to 0
-        else -> 0 to 0
-    }
+    fun gaps(start: Int, center: Int, end: Int, gap: Int): Pair<Int, Int> =
+        (if (start > 0 && (center > 0 || end > 0)) gap else 0) to (if (center > 0 && end > 0) gap else 0)
 
     /** #149: the smallest a `{page}` button slot gets: the ▾, its 4 dp gap and an ellipsis at the default size. */
     const val PAGE_MIN_DP = 32
