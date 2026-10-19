@@ -11,7 +11,7 @@ object Template {
     val NAMES = listOf("page", "pageNumber", "pageCount", "time", "date")
     val SHORTHANDS = mapOf("pageTitle" to "page", "clock" to "time", "date" to "date")
     /** Letters allowed in a pattern and the most of each in a row (more makes DateTimeFormatter throw). */
-    val LETTERS = mapOf('y' to 19, 'M' to 4, 'd' to 2, 'E' to 5, 'a' to 1, 'H' to 2, 'h' to 2, 'k' to 2, 'K' to 2, 'm' to 2)
+    val LETTERS = mapOf('y' to 19, 'M' to 5, 'd' to 2, 'E' to 5, 'a' to 1, 'H' to 2, 'h' to 2, 'k' to 2, 'K' to 2, 'm' to 2)
     const val PUNCTUATION = " .,:/-"
 
     sealed interface Part
@@ -41,7 +41,7 @@ object Template {
         is Problem.NoPattern -> "$path: ${p.token} doesn't take a pattern. Only {time} and {date} do."
         is Problem.EmptyPattern -> "$path: {${p.name}:} has an empty pattern. Write {${p.name}} for the default format."
         is Problem.PatternLong -> "$path: the pattern in {${p.name}:…} is ${p.length} characters; the maximum is ${TitleBar.MAX_PATTERN}."
-        is Problem.RunTooLong -> "$path: ${p.run} is too long. Use at most ${p.max} letters, like ${p.run.take(p.max)}."
+        is Problem.RunTooLong -> "$path: ${p.run} is too long. Use at most ${p.max}, like ${p.run.take(p.max)}."
         Problem.QuoteUnclosed -> "$path: A ' quote isn't closed. Add a closing ' after the text."
         is Problem.Letter -> "$path: \"${p.bad}\" isn't allowed in ${p.token}. Use y M d E a H h k K m; seconds and time zones aren't supported."
         is Problem.Unclosed -> "$path: the \"{\" at character ${p.at} isn't closed. For a literal brace, write {{."

@@ -402,7 +402,7 @@
   },
   "invalid/token-run.json": {
     "errors": [
-      "elements[0].content.slots.end: MMMMMM is too long. Use at most 4 letters, like MMMM."
+      "elements[0].content.slots.end: MMMMMM is too long. Use at most 5, like MMMMM."
     ]
   },
   "invalid/token-stray.json": {
