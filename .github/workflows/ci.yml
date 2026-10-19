@@ -15,6 +15,11 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6
+      - name: Fixtures match gen_fixtures.py (#100)
+        run: |
+          python3 test-fixtures/gen_fixtures.py
+          git diff --exit-code test-fixtures/
+          diff -r test-fixtures/configs app/src/test/resources/configs
       - name: validate.py agrees with the phone
         run: pip install jsonschema && python3 scripts/test_validate.py
       - name: Unit tests

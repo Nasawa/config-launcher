@@ -78,6 +78,9 @@ add(I,'label-1mb.json',m(lambda c:pg(c)[0].__setitem__('label','a'*(200*1024))),
 add(I,'profile-private.json',m(lambda c:pg(c)[0].__setitem__('profile','private')),'invalid, B2','both','§15 OQ-31','')
 add(I,'profile-numeric.json',m(lambda c:pg(c)[0].__setitem__('profile',10)),'invalid, B2','both','§15 OQ-29','')
 add(I,'revision-negative.json',m(lambda c:c.__setitem__('revision',-1)),'invalid, B2','both','schema','')
+# AF-2: `unsorted` is deprecated (accepted, type-checked, ignored; never written). Exactly one VALID fixture keeps the
+# block so "accepted and ignored" stays tested; no other generated fixture carries it (#100).
+add(V,'unsorted-deprecated.json',m(lambda c:c.__setitem__('unsorted',{'mode':'drawer','pageTitle':'Unsorted'})),'valid; deprecated unsorted block accepted and ignored (apps stay in the drawer; dropped on the next write)','both','A§18.5 AF-2, #100','the only fixture with a valid unsorted block')
 add(I,'unsorted-mode-bad.json',m(lambda c:c.__setitem__('unsorted',{'mode':'page2'})),'invalid, B2','both','§15 OQ-25','')
 def many(c):
     c['grid']={'columns':12,'rows':12}
@@ -109,6 +112,13 @@ def longstrings(c, xpad=0):
 add(V,'2000-items-long-strings.json',m(longstrings),'valid: 2000 items, 100-char packages, 152-char activities, 60-emoji labels, 64-char IDs (~1.46 MiB canonical)','both','§17 Q16','canonical form; the launcher can read back its own write')
 # Readable compact, but over the cap once canonicalised: any edit must be refused by the writer (B5).
 add(V,'writer-overflow-seed.json',(json.dumps(m(lambda c: longstrings(c, xpad=330)),ensure_ascii=False,separators=(',',':'))+"\n").encode(),'valid to read (compact, under 2 MiB); after any edit the canonical output is over 2 MiB, so the writer refuses with B5 "launcher.json would be over 2 MB." and keeps the edit in memory','store','§17 Q16','writer-refusal seed (WB-REFUSE)')
+# #89/#94 key-order fixture: hand-written layout (compact one-line items, rule keys out of canonical order).
+# Emitted as literal bytes so it stays byte-identical to Sprite's original.
+KEY_ORDER = (b'{\n  "schemaVersion": 1,\n  "pages": [{ "id": "home", "items": [] }],\n  "drawer": {\n    "rules": [\n'
+  b'      { "match": { "category": "game", "tag": "fun", "packagePrefix": "com.games.", "packages": ["com.example.chess"] }, "group": "Games", "id": "r-games" },\n'
+  b'      { "group": "Work", "id": "r-work", "match": { "tag": "work" } }\n    ]\n  }\n}\n')
+add(V,'drawer-rules-key-order.json',KEY_ORDER,'valid (rule keys rewritten as id, group, match)','both','§20.3','#89')
+
 add(I,'tags-17.json',m(lambda c:pg(c)[0].__setitem__('tags',[f't{i}' for i in range(17)])),'invalid, B2 (tags maxItems 16)','both','§17 Q1','')
 add(I,'activity-257-chars.json',m(lambda c:pg(c)[0].__setitem__('activity','a'*257)),'invalid, B2','both','§17 Q1','')
 add(I,'hidden-257-chars.json',m(lambda c:c['drawer'].__setitem__('hidden',['com.'+'a'*253])),'invalid, B2','both','§17 Q1','')
@@ -116,6 +126,19 @@ add(I,'package-prefix-257-chars.json',m(lambda c:c['drawer']['rules'][0]['match'
 add(I,'match-packages-257-chars.json',m(lambda c:c['drawer']['rules'][0]['match'].update(packages=['com.'+'a'*253])),'invalid, B2','both','§17 Q1','')
 
 add(I,'git-conflict-markers.json',b'{\n  "schemaVersion": 1,\n<<<<<<< HEAD\n  "pages": [{"id": "home", "items": []}]\n=======\n  "pages": [{"id": "work", "items": []}]\n>>>>>>> origin/main\n}\n','parse error, B1; with PR #21: "git merge conflict markers (line 3); finish the merge in git", last-good kept, no write','parser','A§18.1 git primary, CM-21, MG-4','')
+# ---- size assertions (#100): every size fixture on the right side of the 2 MiB cap ----
+def _size(name, d=V): return os.path.getsize(f'{d}/{name}')
+assert _size('size-257k.json') == 257*1024 < CAP
+assert _size('size-just-under-2mib.json') == CAP                       # inclusive cap: accepted
+assert _size('size-just-over-2mib.json', I) == CAP + 1                 # refused
+_li = _size('2000-items-long-strings.json'); assert 1.40*1024*1024 <= _li <= 1.55*1024*1024 and _li < CAP, _li
+_seed = open(f'{V}/writer-overflow-seed.json','rb').read()
+assert len(_seed) < CAP, len(_seed)                                     # readable
+assert len(dump(json.loads(_seed))) > CAP, len(dump(json.loads(_seed))) # canonical (2-space) form exceeds the cap -> B5
+assert _size('2016-items.json', I) < 256*1024
+SIZES = {'size-257k': _size('size-257k.json'), 'just-under': _size('size-just-under-2mib.json'), 'just-over': _size('size-just-over-2mib.json', I),
+         '2000-items': _li, 'seed-compact': len(_seed), 'seed-canonical-approx': len(dump(json.loads(_seed)))}
+
 RULES={'duplicate-id.json':'duplicate-ids','overlapping-cells.json':'overlapping-cells','cell-outside-grid.json':'cell-outside-grid','2016-items.json':'item-total','duplicate-key.json':'duplicate-keys','depth-9.json':'parser-depth','deep-nesting.json':'parser-depth','size-just-over-2mib.json':'byte-cap','nul-in-label.json':'nul-or-encoding','invalid-utf8.json':'nul-or-encoding','lone-surrogate.json':'nul-or-encoding','utf16.json':'nul-or-encoding'}
 for e in man:
     r=RULES.get(e['file'].split('/')[1])
