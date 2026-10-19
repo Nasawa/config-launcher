@@ -59,7 +59,7 @@ fun MoveDialog(ins: Inspection, onChoose: (Boolean) -> Unit, onDismiss: () -> Un
         Text(when (ins) {
             is Inspection.Valid -> stringResource(R.string.move_valid, pluralStringResource(R.plurals.move_pages, ins.pages, ins.pages), pluralStringResource(R.plurals.move_items, ins.items, ins.items))
             is Inspection.Invalid -> stringResource(R.string.move_invalid, ins.errors.take(3).joinToString("\n") { "• $it" })
-            Inspection.Empty -> ""
+            Inspection.Empty, is Inspection.Unreadable -> ""
         })
     },
     confirmButton = { TextButton({ onChoose(true) }) { Text(stringResource(R.string.move_replace)) } },
@@ -68,4 +68,29 @@ fun MoveDialog(ins: Inspection, onChoose: (Boolean) -> Unit, onDismiss: () -> Un
         if (ins is Inspection.Invalid) TextButton(onDismiss) { Text(stringResource(R.string.cancel)) }
         else TextButton({ onChoose(false) }) { Text(stringResource(R.string.move_use_folder)) }
     },
+)
+
+/** #74: what happens after a folder is picked and inspected. */
+object FolderPick {
+    enum class Next { CREATE, ASK, PROBLEM }
+
+    /**
+     * Empty → write our layout there (via moveTo(useMine = false), which adopts instead if a file appeared meanwhile).
+     * A readable file → ask. Unreadable → show the problem and change nothing (never write over what we couldn't read).
+     */
+    fun next(ins: Inspection): Next = when (ins) {
+        Inspection.Empty -> Next.CREATE
+        is Inspection.Valid, is Inspection.Invalid -> Next.ASK
+        is Inspection.Unreadable -> Next.PROBLEM
+    }
+}
+
+/** #74: the picked folder couldn't be read. Nothing was written; pick it again or another one. */
+@Composable
+fun FolderProblemDialog(problem: Inspection.Unreadable, onChooseAgain: () -> Unit, onDismiss: () -> Unit) = AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.folder_unreadable_title)) },
+    text = { Text(stringResource(R.string.folder_unreadable_body, problem.reason)) },
+    confirmButton = { TextButton(onChooseAgain) { Text(stringResource(R.string.choose_folder)) } },
+    dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } },
 )

@@ -92,14 +92,19 @@ fun HomeScreen(vm: HomeViewModel) {
     }
     // true: the pick moves the layout (first run, menu); false: Reconnect just re-grants the folder.
     var moving by remember { mutableStateOf(false) }
+    var folderProblem by remember { mutableStateOf<dev.nasawa.configlauncher.store.ConfigEngine.Inspection.Unreadable?>(null) }
     var moveAsk by remember { mutableStateOf<Pair<android.net.Uri, dev.nasawa.configlauncher.store.ConfigEngine.Inspection>?>(null) }
     val scope = rememberCoroutineScope()
     val proceed = { uri: android.net.Uri ->
         if (!moving) vm.store.useFolder(uri)
         else scope.launch {
             val ins = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vm.store.inspectFolder(uri) }
-            if (ins == null || ins is dev.nasawa.configlauncher.store.ConfigEngine.Inspection.Empty) { vm.store.moveToFolder(uri, useMine = true); onboarded = true }
-            else moveAsk = uri to ins
+            when (FolderPick.next(ins)) {
+                // #74: never useMine here; if a file showed up since the inspect, moveTo adopts it.
+                FolderPick.Next.CREATE -> { vm.store.moveToFolder(uri, useMine = false); onboarded = true }
+                FolderPick.Next.ASK -> moveAsk = uri to ins
+                FolderPick.Next.PROBLEM -> folderProblem = ins as dev.nasawa.configlauncher.store.ConfigEngine.Inspection.Unreadable
+            }
         }
         Unit
     }
@@ -115,7 +120,8 @@ fun HomeScreen(vm: HomeViewModel) {
             cancelled = pickCancelled,
         )
         cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }, { cloudUri = null; pickFolder.launch(null) }) }
-        moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it); onboarded = true }, { moveAsk = null }) }
+        moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it); onboarded = true }, { moveAsk = null; vm.store.forgetFolder(uri) }) }
+        folderProblem?.let { p -> FolderProblemDialog(p, { folderProblem = null; pickFolder.launch(null) }, { folderProblem = null }) }
         return
     }
     // Merge results use the in-app snackbar (ux.md §9.1); other one-shot notices are toasts.
@@ -248,7 +254,8 @@ fun HomeScreen(vm: HomeViewModel) {
         }
 
         cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }, { cloudUri = null; pickFolder.launch(null) }) }
-        moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it) }, { moveAsk = null }) }
+        moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it) }, { moveAsk = null; vm.store.forgetFolder(uri) }) }
+        folderProblem?.let { p -> FolderProblemDialog(p, { folderProblem = null; moving = true; pickFolder.launch(null) }, { folderProblem = null }) }
         if (homePrompt && !isHome) AlertDialog(
             onDismissRequest = { homePrompt = false },
             title = { Text(stringResource(R.string.home_role_title)) },

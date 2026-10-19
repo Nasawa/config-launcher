@@ -135,10 +135,14 @@ class ConfigEngine(
         data object Empty : Inspection
         data class Valid(val pages: Int, val items: Int) : Inspection
         data class Invalid(val errors: List<String>) : Inspection
+        /** #74: the folder couldn't be read. Its own outcome: never treated as Empty, never written over. */
+        data class Unreadable(val reason: String, val accessLost: Boolean) : Inspection
     }
 
     fun inspect(src: ConfigSource): Inspection {
-        val bytes = src.read(Limits.MAX_BYTES) ?: return Inspection.Empty
+        val bytes = try { src.read(Limits.MAX_BYTES) } catch (e: Exception) {
+            return Inspection.Unreadable(e.reason(), e is AccessLostException)
+        } ?: return Inspection.Empty
         return when (val r = ConfigCodec.decode(bytes)) {
             is ParseResult.Ok -> Inspection.Valid(r.config.pages.size, r.config.pages.sumOf { it.items.size } + r.config.dock.orEmpty().size)
             is ParseResult.Invalid -> Inspection.Invalid(r.errors)
