@@ -13,6 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.nasawa.configlauncher.R
 
@@ -21,6 +24,13 @@ object WarningsText {
     /** Plain text for the clipboard: file name, then one `▲` line per warning (same layout as problems). */
     fun copy(fileName: String, header: String, warnings: List<String>): String =
         (listOf(fileName, header) + warnings.map { "▲ $it" }).joinToString("\n")
+}
+
+/** ux.md §15: after Copy, the snackbar `Warnings copied.` (polite live region, 4 s). */
+@Composable
+fun WarningsCopiedSnackbar(onDismiss: () -> Unit) {
+    androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(4_000); onDismiss() }
+    androidx.compose.material3.Snackbar(Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite }) { Text(stringResource(R.string.warnings_copied)) }
 }
 
 /** The Warnings section: header `1 warning` / `3 warnings`, each warning with its path, ▲ instead of ■. */

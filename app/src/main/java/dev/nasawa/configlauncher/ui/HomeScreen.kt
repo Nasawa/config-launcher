@@ -74,6 +74,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var menuOpen by remember { mutableStateOf(false) }
     var folderInfo by remember { mutableStateOf<String?>(null) }   // "" = app-only
     var warningsOpen by remember { mutableStateOf(false) }
+    var warningsCopied by remember { mutableStateOf(false) }
     // ux.md §4.1 edit mode: entered from `Edit layout` or a drag; left on Done, Back, Home or 30 s idle.
     var editing by remember { mutableStateOf(false) }
     var pageList by remember { mutableStateOf(false) }
@@ -315,6 +316,7 @@ fun HomeScreen(vm: HomeViewModel) {
                         onDismiss = { vm.store.engine.dismissMergeUndo() })
                 }
                 if (agentSnack) AgentDocsSnackbar { agentSnack = false }
+                if (warningsCopied) WarningsCopiedSnackbar { warningsCopied = false }
                 undoSnack?.let { u ->
                     UndoSnackbar(u, onUndo = {
                         undoSnack = null
@@ -398,6 +400,7 @@ fun HomeScreen(vm: HomeViewModel) {
                 onDismissRequest = { folderInfo = null },
                 title = { Text(stringResource(R.string.menu_config_folder)) },
                 text = {
+                    val loadedSpoken = pluralStringResource(R.plurals.status_loaded_warnings_a11y, warnings.size, warnings.size)
                     Column {
                         androidx.compose.foundation.text.selection.SelectionContainer { Text(path.ifEmpty { stringResource(R.string.folder_app_only) }) }
                         // ux.md §15: a valid file with warnings says so here; tap → the Warnings list.
@@ -405,6 +408,8 @@ fun HomeScreen(vm: HomeViewModel) {
                             pluralStringResource(R.plurals.status_loaded_warnings, warnings.size, warnings.size),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 12.dp).heightIn(min = 48.dp)
+                                // §15: TalkBack reads "Layout loaded, 2 warnings, button" (comma, not the · glyph).
+                                .semantics { contentDescription = loadedSpoken }
                                 .clickable(role = Role.Button) { warningsOpen = true }.wrapContentHeight(),
                         )
                     }
@@ -422,7 +427,8 @@ fun HomeScreen(vm: HomeViewModel) {
 
         if (warningsOpen && warnings.isNotEmpty()) WarningsDialog(warnings, onCopy = { text ->
             ctx.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("launcher.json", text))
-            toast(res.getString(R.string.copied))
+            // §15: the snackbar "Warnings copied." Both dialogs close so it's visible on home.
+            warningsOpen = false; folderInfo = null; warningsCopied = true
         }, onDismiss = { warningsOpen = false })
 
         openFolder?.let { folder ->
