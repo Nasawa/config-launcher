@@ -97,7 +97,7 @@ Gestures and taps (home):
 | Tap folder | Open folder (§3) |
 | Tap dimmed item | Nothing launches. A hint sheet says why: `Not installed`, `Shortcut no longer available`, `Work apps are paused`, `Turn on "Include work apps in config" to use this.` (tap → system unpause prompt) or `Set as Home to use shortcuts`, with **`Remove from layout`** (one write). `Open store page` comes later |
 | Long-press app, shortcut or folder | Item sheet showing the **real app name and package** (so a label override can't disguise an app), plus `Edit layout`, `App info`, `Remove from home`. Folder: header `Folder, 5 apps` (plural `Folder, 1 app`), no `App info`. Dimmed (not installed): header `Not installed · <package>`, no `App info` (§14) |
-| Long-press empty space (empty cells only; items open their sheet) | Home menu: `Edit layout`, `Wallpaper` (system wallpaper picker), `Reload layout`, `Settings`. In app-only mode also `Choose folder` |
+| Long-press empty space (empty cells only; items open their sheet) | Home menu: `Edit layout`, `Pages` (only with ≥ 2 pages; opens the §1.3 sheet), `Wallpaper` (system wallpaper picker), `Reload layout`, `Settings`. In app-only mode also `Choose folder` |
 | Swipe up anywhere / tap `Apps` | Open the drawer (§1.4) |
 | Swipe left/right | Change page |
 | Tap the page label (≥ 2 pages) | Page list, jump to a page (§1.3) |
@@ -388,7 +388,9 @@ Shown on first launch, before the home screen. Each step is one full screen with
    - Body: `Pick a folder for launcher.json. A folder that a sync app (like Syncthing) or a git app keeps in sync lets you edit it from your computer, with history. Config Launcher also keeps a small .configlauncher folder there for status and backups.`
    - Button: `Choose folder` → system picker (`ACTION_OPEN_DOCUMENT_TREE`). Take a persistable read+write grant.
    - Secondary text button under it: `Skip for now` (Q-C1). See **Skip for now** below.
+   - Line under the body (folder mode only): `It also adds AGENTS.md, a short guide for AI agents that edit your layout. You can turn this off in Settings.` (§7.1)
    - Picker cancelled → stay on this screen and show a line above the buttons: `No folder chosen. You can skip this and connect one later in Settings.` Both buttons stay.
+   - **Folder can't be read** (#82, approved as built): a dialog, because first run has no banner area. Title `Can't read that folder`, body `Nothing was changed. Choose the folder again, or pick another one.`, the reason underneath in secondary text (e.g. the system error), buttons `Choose folder` (primary, reopens the picker) · `Cancel` (back to step 2, where `Skip for now` is still available). Nothing in the folder is written or overwritten.
    - **Cloud folder** (the picked folder's provider isn't local storage, `com.android.externalstorage.documents`): a soft warning before continuing: `Cloud folders can take a while to sync. A Syncthing or git folder works best.` Buttons: `Use anyway` · `Choose another folder`. Not blocked (§17 Q15). `Choose another folder` (reopens the picker) is approved as written (§18.4).
 3. **Folder result**
    - **Contains a valid `launcher.json`:** `Found launcher.json with 3 pages and 24 items.` Buttons: `Use this layout` · `Start fresh` (the existing file is first saved to `.configlauncher/backup/`).
@@ -422,6 +424,17 @@ Shown on first launch, before the home screen. Each step is one full screen with
 - Lost access is detected on every start (persisted grants are checked), on resume, and on any failed read or write.
 
 ---
+
+### 7.1 AGENTS.md in the config folder (#96)
+- When a folder is chosen or connected, with the setting on, the app writes `AGENTS.md` (the bundled guide) next to `launcher.json`. It never touches an `AGENTS.md` the user edited, and it never recreates one the user deleted.
+- **Setting:** `Agent instructions (AGENTS.md)`, a switch, default **on** (interim: a checkbox in the ⋮ menu, §14 R10). Off: nothing is written. Existing files are left alone.
+- **Action** in the ⋮ menu (folder mode only):
+  - No `AGENTS.md` in the folder: `Add agent instructions`. Writes the current version.
+  - `AGENTS.md` present: `Update agent instructions` (replaces `Add agent instructions again`).
+    - The file is unchanged since the app wrote it (its hash matches a shipped version): replaced silently, then the snackbar `Agent instructions updated.`
+    - The user edited it (any other content): confirm `Replace your AGENTS.md?` / `Your edits will be saved to .configlauncher/backup/.` [`Cancel`] [`Replace`]. Replace copies the old file to `.configlauncher/backup/AGENTS.<timestamp>.md`, then writes the new one.
+- **App-only mode:** the setting, the action and the first-run line are hidden.
+- `AGENTS.md` is written with the same temp, verify and restore path as `launcher.json`.
 
 ## 8. Settings (MVP, minimal)
 
@@ -580,6 +593,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 - [ ] Snackbars (§9) with Undo where listed.
 - [ ] Accessibility (§12): labels, custom actions for every drag action, 48 dp targets, font scaling, reduced motion.
 - [ ] All copy in `strings.xml` with plurals.
+- [ ] Manual device check (#93): with TalkBack on, opening the Pages sheet puts focus on the current row, announced as selected (`Selected, Home, page 1 of 3`). Hint: a `FocusRequester` on the current row, requested after the sheet settles (`sheetState.currentValue == Expanded`), plus `Modifier.semantics { selected = true }` on that row.
 - [ ] Manual tests: edit the file on a PC via Syncthing while the phone is on home, in edit mode, and mid-drag. Corrupt the file, then edit on the phone (broken copy). Revoke access in system settings. Delete the file. Newer `schemaVersion`. Font 200 %. TalkBack-only layout edit.
 
 ---
