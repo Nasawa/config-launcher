@@ -448,7 +448,7 @@
       }
     },
     "element": {
-      "description": "Common element fields, checked for every element (docs/design/title-bar.md §3, docs/research/widgets.md §5.1). An element is anchored (anchor) or grid-placed (page, x, y, w, h), never both; a grid-placed element reserves its cells even when this launcher skips it. No additionalProperties here: an unknown type accepts any other keys (skipped, kept verbatim); each known type's own definition is strict. Known types (feature level 2): titleBar.",
+      "description": "Common element fields, checked for every element (docs/design/title-bar.md §3, docs/research/widgets.md §5.1). An element is anchored (anchor) or grid-placed (page, x, y, w, h), never both; a grid-placed element reserves its cells even when this launcher skips it. No additionalProperties here: an unknown type accepts any other keys (skipped, kept verbatim); each known type's own definition is strict. Known types (feature level 4): titleBar (level 2) and card (level 4); level 3 is reserved for appWidget.",
       "type": "object",
       "required": [
         "id",
@@ -561,22 +561,44 @@
           }
         ]
       },
-      "if": {
-        "required": [
-          "type"
-        ],
-        "properties": {
-          "type": {
-            "const": "titleBar"
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "titleBar"
+              },
+              "requires": {
+                "maximum": 4
+              }
+            }
           },
-          "requires": {
-            "maximum": 2
+          "then": {
+            "$ref": "#/$defs/titleBar"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "card"
+              },
+              "requires": {
+                "maximum": 4
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/card"
           }
         }
-      },
-      "then": {
-        "$ref": "#/$defs/titleBar"
-      }
+      ]
     },
     "pageOverrides": {
       "description": "Per-page changes to elements, keyed by element ID. An ID that matches no element is a warning (ignored, kept).",
@@ -805,6 +827,585 @@
         "center",
         "end"
       ]
+    },
+    "cardNode": {
+      "description": "One node of a card layout (dynamic-widgets.md §1): containers column, row, tile (children, at most 4 levels deep) and primitives text, metric, list, icon, progress, button. No coordinates inside a card. Text fields are templates ({data:path}, {relative}, title-bar tokens), checked when cards render (S3-E/F).",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "children"
+          ],
+          "properties": {
+            "type": {
+              "const": "column"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "weight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "tap": {
+              "$ref": "#/$defs/cardTap"
+            },
+            "children": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "$ref": "#/$defs/cardNode"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "children"
+          ],
+          "properties": {
+            "type": {
+              "const": "row"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "weight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "tap": {
+              "$ref": "#/$defs/cardTap"
+            },
+            "children": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "$ref": "#/$defs/cardNode"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "children"
+          ],
+          "properties": {
+            "type": {
+              "const": "tile"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "weight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "tap": {
+              "$ref": "#/$defs/cardTap"
+            },
+            "children": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "$ref": "#/$defs/cardNode"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "const": "text"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "weight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "tap": {
+              "$ref": "#/$defs/cardTap"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "role": {
+              "enum": [
+                "caption",
+                "body",
+                "title"
+              ]
+            },
+            "maxLines": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "metric"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "weight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "tap": {
+              "$ref": "#/$defs/cardTap"
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "value": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "unit": {
+              "type": "string",
+              "maxLength": 16
+            },
+            "status": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "items"
+          ],
+          "properties": {
+            "type": {
+              "const": "list"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "weight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "tap": {
+              "$ref": "#/$defs/cardTap"
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": {
+              "oneOf": [
+                {
+                  "const": "auto"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                }
+              ]
+            },
+            "emptyText": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "icon"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "weight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "tap": {
+              "$ref": "#/$defs/cardTap"
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "package": {
+              "$ref": "#/$defs/packageName"
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "name"
+              ],
+              "not": {
+                "required": [
+                  "package"
+                ]
+              }
+            },
+            {
+              "required": [
+                "package"
+              ],
+              "not": {
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "progress"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "weight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "tap": {
+              "$ref": "#/$defs/cardTap"
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "value": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "label",
+            "tap"
+          ],
+          "properties": {
+            "type": {
+              "const": "button"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "weight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "tap": {
+              "$ref": "#/$defs/cardTap"
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "cardTap": {
+      "description": "A tap action; its kind (and package) must be declared in the card's capabilities. ui.openUrl to the card's source opens silently; any other host asks on every tap.",
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "ui.openUrl"
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "ui.openApp"
+            },
+            "package": {
+              "$ref": "#/$defs/packageName"
+            }
+          },
+          "required": [
+            "kind",
+            "package"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "ui.reload"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "card": {
+      "description": "Dashboard card (#137 S3-A, feature level 4; docs/design/dynamic-widgets.md). Grid-placed, requires 4 or higher. Capabilities use the stage-3 kinds only: data.file (data is always .configlauncher/widgets-data/<id>.json), ui.reload, ui.openApp + packages, and a bare ui.openUrl (taps to source open silently; any other host asks on every tap). A launcher that doesn't know a kind skips the card with a warning; this schema (CI) rejects it so typos fail fast. Nothing renders yet.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "requires",
+        "page",
+        "x",
+        "y",
+        "w",
+        "h",
+        "layouts"
+      ],
+      "properties": {
+        "id": {},
+        "type": {
+          "const": "card"
+        },
+        "requires": {
+          "type": "integer",
+          "minimum": 4
+        },
+        "page": {},
+        "x": {},
+        "y": {},
+        "w": {},
+        "h": {},
+        "minSpan": {
+          "type": "object",
+          "required": [
+            "w",
+            "h"
+          ],
+          "properties": {
+            "w": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "h": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            }
+          },
+          "additionalProperties": false
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "author": {
+          "description": "Who wrote it, quoted in the consent UI; never trusted. Omitted = hidden.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "source": {
+          "description": "The card's own site (Q-D5): taps to it open without asking; any other host asks on every tap. Part of the consent fingerprint; not a fetch origin.",
+          "type": "string",
+          "maxLength": 261,
+          "pattern": "^(https?://)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$"
+        },
+        "surface": {
+          "const": "auto"
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "oneOf": [
+              {
+                "properties": {
+                  "kind": {
+                    "const": "data.file"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "ui.reload"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "ui.openApp"
+                  },
+                  "packages": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "uniqueItems": true,
+                    "items": {
+                      "$ref": "#/$defs/packageName"
+                    }
+                  }
+                },
+                "required": [
+                  "packages"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "ui.openUrl"
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "staleAfter": {
+              "description": "ISO-8601 duration after which the card shows stale, e.g. PT30M.",
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^P(?=[0-9]|T[0-9])([0-9]+D)?(T(?=[0-9])([0-9]+H)?([0-9]+M)?([0-9]+S)?)?$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "layouts": {
+          "description": "1-3 layouts keyed by size \"WxH\" (lowercase x); the launcher picks the largest that fits.",
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 3,
+          "propertyNames": {
+            "pattern": "^([1-9]|1[0-2])x([1-9]|1[0-2])$"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+              "$ref": "#/$defs/cardNode"
+            }
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
     }
   }
 }

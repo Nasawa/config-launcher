@@ -79,7 +79,7 @@ class TitleBarTest {
         assertEquals(listOf("pages[0].overrides.t-main.style.size must be small, medium or large, or a number from 10 to 40."),
             errors(doc(preset, ""","overrides":{"t-main":{"style":{"size":9}}}""")))
         // A skipped title bar (requires too high) is not checked strictly and doesn't count as the one bar.
-        ok(doc("""{"id":"t-new","type":"titleBar","requires":3,"anything":1},$preset"""))
+        ok(doc("""{"id":"t-new","type":"titleBar","requires":5,"anything":1},$preset"""))
     }
 
     @Test fun canonicalOrderAndRoundTrip() {
@@ -149,7 +149,7 @@ class TitleBarTest {
         assertNull(TitleBarModel.forPage(ok(doc(preset, ""","overrides":{"t-main":{"enabled":false}}""")), "home"))
         assertNotNull(TitleBarModel.forPage(ok(doc(preset, ""","overrides":{"t-main":{"enabled":false}}""")), "two"))
         assertNull(TitleBarModel.forPage(ok(doc("""{"id":"t-main","type":"titleBar","enabled":false}""")), "home"))
-        assertNull(TitleBarModel.forPage(ok(doc("""{"id":"t-main","type":"titleBar","requires":3}""")), "home"))
+        assertNull(TitleBarModel.forPage(ok(doc("""{"id":"t-main","type":"titleBar","requires":5}""")), "home"))
         assertNull(TitleBarModel.forPage(ok("""{"schemaVersion":1,"pages":[{"id":"home","items":[]}]}"""), "home"))
     }
 
