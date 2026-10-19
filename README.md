@@ -31,11 +31,16 @@ only reads and writes `launcher.json` in that folder.
 2. **Edit `launcher.json`.** Keep IDs stable, give new items new IDs, put notes in `x-` keys (see [Schema](#schema)).
 3. **Validate before committing.**
    ```sh
-   pip install jsonschema
-   python -c "import json,jsonschema;jsonschema.validate(json.load(open('launcher.json')),json.load(open('schema/launcher-config.v1.schema.json')),cls=jsonschema.Draft202012Validator)"
+   pip install jsonschema            # optional; the phone's own rules run without it
+   python3 scripts/validate.py launcher.json            # same errors, same wording as the phone
+   python3 scripts/validate.py --format launcher.json   # rewrite in the phone's canonical form
    ```
-   (Keep a copy of the schema in the repo, or point at this repo's `schema/`.) The schema doesn't catch everything the
-   phone checks, such as duplicate IDs or two items in one cell (see the list under [Rules](#rules-the-launcher-follows-and-expects)).
+   `scripts/validate.py` (Python 3.9+, stdlib only) runs the phone's checks: the schema, unique IDs across the whole
+   file, no two items in one cell, cells inside the grid, no nested folders, no x/y in the dock or folders, and the
+   size limits. `--format` writes exactly what the phone writes, so your commit won't show up as a diff after the phone's
+   next save. It never rewrites an invalid file. `--check` exits 1 if the file isn't already canonical, which is useful
+   in a pre-commit hook. Exit codes: 0 valid, 1 invalid (or not canonical with `--check`), 2 usage error. Syntax
+   errors are worded by Python's JSON parser, so they read differently from the phone's.
 4. **Commit and push.**
    ```sh
    git add launcher.json && git commit -m "Move Maps to the dock" && git push
@@ -58,8 +63,9 @@ only reads and writes `launcher.json` in that folder.
    ```gitignore
    .configlauncher/launcher.json.tmp
    .configlauncher/status.json
+   .configlauncher/apps.json
    ```
-   Never commit `.tmp` or `status.json`. They change on every phone write and cause pointless conflicts. `backup/`
+   Never commit `.tmp`, `status.json` or `apps.json`. They change on every phone write and cause pointless conflicts. `backup/`
    and `broken/` are yours to commit or ignore. Configure the phone's git app to respect `.gitignore` (most do).
 
 **Other sync tools (secondary).** Syncthing works the same without commits: edit, save, and it syncs. Its conflict
@@ -174,11 +180,14 @@ Shape in brief:
 `.configlauncher/` holds:
 - `status.json`: the last load result (ok or the list of errors, the hash and the time) and any sync-conflict copies it
   noticed. **Read this to find out why your edit was rejected** without picking up the phone.
+- `apps.json`: every launchable app the drawer shows (`package`, `activity`, `label`, `profile`, `installTime`), rewritten
+  when apps are installed, removed or changed. Use it to place apps by their real package and activity. Work apps are
+  listed only when *Include work apps in config* is on.
 - `launcher.json.tmp`: the write-verify copy (above).
 - `broken/`: copies of invalid files saved before a phone edit replaced them.
 - `backup/`: originals saved before an *Upgrade now* (as `launcher.v{N}.{timestamp}.json`), *Restore last working version* or *Start fresh*.
 
-Ignore `launcher.json.tmp` and `status.json` in git (see [the git workflow](#recommended-keep-the-folder-in-git)).
+Ignore `launcher.json.tmp`, `status.json` and `apps.json` in git (see [the git workflow](#recommended-keep-the-folder-in-git)).
 
 `launcher.json` is never created automatically. If it's missing, the phone shows `No launcher.json yet.` with
 *Create from current layout* and *Reconnect*.
@@ -193,7 +202,7 @@ versioning.
 
 ### Dos and don'ts
 **Do**
-- Validate against the schema before saving.
+- Validate with `scripts/validate.py` before saving.
 - Keep IDs stable and unique, and give new items new IDs.
 - Use `package` (and `activity` only when you need a specific one).
 - Put notes in `x-` keys.
@@ -201,6 +210,11 @@ versioning.
 - Write the whole file in one go.
 - Retry a read that fails to parse.
 - Check `.configlauncher/status.json` after a change.
+  `revision` is the applied file's `revision` (null when the file was rejected); `hash` stays the authority.
+- To reload immediately from a script (instead of waiting for the 2 s poll or pressing Home):
+  `adb shell am broadcast -a dev.nasawa.configlauncher.RELOAD -n dev.nasawa.configlauncher/.ReloadReceiver`.
+  It runs the same load as ⋮ → Reload and rewrites `status.json` before returning (result `1` = changed, `0` =
+  unchanged or rejected). Only adb shell can send it (it requires `android.permission.DUMP`).
 
 **Don't**
 - Add comments, trailing commas, or keys without an `x-` prefix.

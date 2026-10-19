@@ -68,6 +68,27 @@ fun HomeScreen(vm: HomeViewModel) {
     val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }, onStart = { editing = true }) { vm.store.edit(it) } }
     var cloudUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var onboarded by remember { mutableStateOf(vm.store.prefs.onboarded) }
+    // #61: default home app. Re-checked on every resume (the user may change it in system settings).
+    var isHome by remember { mutableStateOf(dev.nasawa.configlauncher.apps.HomeRole.held(ctx)) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { isHome = dev.nasawa.configlauncher.apps.HomeRole.held(ctx); onPauseOrDispose { } }
+    var homePrompt by remember { mutableStateOf(false) }
+    val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        isHome = dev.nasawa.configlauncher.apps.HomeRole.held(ctx)
+        if (res.resultCode != android.app.Activity.RESULT_OK && !isHome) vm.store.prefs.homeRoleDenials += 1
+    }
+    val becomeHome = {
+        when (dev.nasawa.configlauncher.apps.HomeRole.route(dev.nasawa.configlauncher.apps.HomeRole.available(ctx), vm.store.prefs.homeRoleDenials)) {
+            dev.nasawa.configlauncher.apps.HomeRole.Route.ROLE_REQUEST -> runCatching { roleLauncher.launch(dev.nasawa.configlauncher.apps.HomeRole.requestIntent(ctx)) }
+                .onFailure { runCatching { ctx.startActivity(dev.nasawa.configlauncher.apps.HomeRole.settingsIntent()) } }
+            dev.nasawa.configlauncher.apps.HomeRole.Route.HOME_SETTINGS -> runCatching { ctx.startActivity(dev.nasawa.configlauncher.apps.HomeRole.settingsIntent()) }
+        }
+        Unit
+    }
+    LaunchedEffect(onboarded) {
+        if (dev.nasawa.configlauncher.apps.HomeRole.shouldPrompt(onboarded, isHome, vm.store.prefs.homePromptShown)) {
+            homePrompt = true; vm.store.prefs.homePromptShown = true
+        }
+    }
     // true: the pick moves the layout (first run, menu); false: Reconnect just re-grants the folder.
     var moving by remember { mutableStateOf(false) }
     var moveAsk by remember { mutableStateOf<Pair<android.net.Uri, dev.nasawa.configlauncher.store.ConfigEngine.Inspection>?>(null) }
@@ -149,7 +170,8 @@ fun HomeScreen(vm: HomeViewModel) {
     androidx.activity.compose.BackHandler(editing) { editing = false }
 
     MaterialTheme(colorScheme = darkColorScheme()) {
-        Surface(Modifier.fillMaxSize(), color = Color(0xFF101418)) {
+        // Transparent over the system wallpaper (theme windowShowWallpaper, #58).
+        Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
             Column(Modifier.fillMaxSize().systemBarsPadding()) {
                 if (editing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.editing_layout), color = Color.White, modifier = Modifier.weight(1f))
@@ -173,6 +195,7 @@ fun HomeScreen(vm: HomeViewModel) {
                                 keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
                             }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_reload)) }, { menuOpen = false; vm.store.pollNow() })
+                            if (!isHome) DropdownMenuItem({ Text(stringResource(R.string.home_role_button)) }, { menuOpen = false; becomeHome() })
                         }
                     }
                 }
@@ -224,6 +247,13 @@ fun HomeScreen(vm: HomeViewModel) {
 
         cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }, { cloudUri = null; pickFolder.launch(null) }) }
         moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it) }, { moveAsk = null }) }
+        if (homePrompt && !isHome) AlertDialog(
+            onDismissRequest = { homePrompt = false },
+            title = { Text(stringResource(R.string.home_role_title)) },
+            text = { Text(stringResource(R.string.home_role_body)) },
+            confirmButton = { TextButton({ homePrompt = false; becomeHome() }) { Text(stringResource(R.string.home_role_button)) } },
+            dismissButton = { TextButton({ homePrompt = false }) { Text(stringResource(R.string.not_now)) } },
+        )
 
         drawerSheet?.let { app ->
             DrawerAppSheet(app, includeWork = false, onAction = { a ->
@@ -249,6 +279,10 @@ fun HomeScreen(vm: HomeViewModel) {
                 HomeAction.RELOAD -> vm.store.pollNow()
                 // No Settings screen yet: the settings live in the ⋮ menu, so open that (gap, noted).
                 HomeAction.SETTINGS -> menuOpen = true
+                // #58: system wallpaper chooser; ACTION_SET_WALLPAPER needs no permission.
+                HomeAction.WALLPAPER -> runCatching {
+                    ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SET_WALLPAPER), res.getString(R.string.action_wallpaper)))
+                }.onFailure { toast(res.getString(R.string.open_failed, res.getString(R.string.action_wallpaper))) }
             }
         }, onDismiss = { homeMenu = false })
 

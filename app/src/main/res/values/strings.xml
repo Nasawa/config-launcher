@@ -82,6 +82,11 @@
     <string name="search_no_match">No apps match \"%1$s\".</string>
     <string name="dock_empty">Dock: long-press an app and drop it here</string>
     <string name="close">Close</string>
+    <!-- Home app (ux.md §7 step 4, §8) -->
+    <string name="home_role_title">Set as home app</string>
+    <string name="home_role_body">To use Config Launcher when you press Home, set it as your default home app. Shortcuts only work once it\'s your home app.</string>
+    <string name="home_role_button">Set as home app</string>
+    <string name="not_now">Not now</string>
     <string name="apps">Apps</string>
     <string name="cancel">Cancel</string>
 
@@ -121,6 +126,7 @@
     </plurals>
     <string name="action_reload_layout">Reload layout</string>
     <string name="action_settings">Settings</string>
+    <string name="action_wallpaper">Wallpaper</string>
     <string name="action_add_to_home">Add to home</string>
     <string name="action_hide">Hide</string>
     <string name="home_full">No room on home: all 20 pages are full.</string>
