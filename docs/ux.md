@@ -847,8 +847,8 @@ Assumptions A1–A5, all **✅ resolved** in the [#116 comment](https://github.c
   not a best guess.
 - ✅ **A4** Dashboard data comes from **one file per widget** at `.configlauncher/widgets-data/<elementId>.json`
   (`data.file`, card feature level 4, Q-A5). The agent fetches on its own machine and writes the file, so the launcher
-  can stay offline. `net.fetch` exists in the schema at feature level 5, but whether it ships, and with it the INTERNET
-  permission, is decided: a later release (Q-C1/Q-C2, #117). Phone data and Act have no v1 kinds.
+  can stay offline. The launcher doesn't fetch from the internet yet; `net.fetch` arrives in a later release
+  (Q-C1/Q-C2, #117). Phone data and Act have no v1 kinds.
 - ✅ **A5** Hosted AppWidgets (§16) are **outside this model**. Android's bind consent (§16.3) covers them, and the
   provider app holds its own permissions. They are listed in the review screen as read-only `Allowed by Android` (Q-A8).
 
@@ -911,7 +911,8 @@ leaving the file (GC) clears it. On every load:
 
 `Turn off` (§17.6) is separate from the approved set. It's a sticky off switch that wins until the user picks `Allow`
 again, and it **keeps the ceiling** unchanged, so `Allow` turns the widget back on with no new prompt while the file
-stays within it.
+stays within it. **`Forget approval`** (§17.6) is the only thing that clears the ceiling by hand: the widget stays off,
+and the next `Allow` asks fresh, with every line listed as new.
 
 | Trigger | Where it's detected | What happens on the grid | Prompt |
 |---|---|---|---|
@@ -1034,7 +1035,8 @@ prompt (§17.2).
 
 **Strings:** all consent copy, with names, placeholders and where each is used, is in §17.13.
 `status.json` (Q-A3) has a `consent` map keyed by element id, each with `state` (`needsApproval` | `needsApprovalAgain` |
-`off` | `allowed`) and an optional `warning` in the §15.1 style. It never holds the approval itself:
+`off` | `allowed`) and an optional `warning` in the §15.1 style. **Confirmed by Archimedes** (shape and the `warn_consent_*` / `warn_data_missing` names in §17.13). It never holds the
+approval secret or the approved set itself:
 ```json
 "consent": { "w-anigeek": { "state": "needsApproval", "warning": "elements[4]: widget \"Anigeek LLC\" is waiting for approval on this phone. It isn't shown until then." } }
 ```
@@ -1052,8 +1054,22 @@ Widget detail (from the review list, or item sheet → `Review` / `Permissions`)
 - Actions: `Turn off` (live widget) or `Allow` (off). `Turn off` takes effect immediately: the tile turns to `Turned off`,
   the data stops and the snackbar says `"<Title>" turned off.` [`Undo`]. **No file write**, because consent is device-local
   and the widget stays in the file. To delete the widget, use `Remove from home` (one write, §16.7).
-- `Forget` isn't offered. `Turn off` + `Allow` covers it, and the approval is GC'd once the element leaves the file.
-- Turning off never revokes Android runtime permissions the launcher holds (other widgets may use them). The detail
+- **`Forget approval`** (text button under `Turn off` / `Allow`, `error` colour, shown whenever this phone holds an
+  approval for the widget). It's separate from `Turn off`: `Turn off` is the sticky switch that keeps the ceiling,
+  while `Forget approval` **clears the ceiling** and leaves the widget **off** (a live widget turns off first). It
+  can't be undone, so it confirms first:
+  ```
+  Forget approval for "Anigeek LLC"?
+  It stays off. Next time you allow it, you'll be asked about everything again.
+                                            [Cancel]  [Forget]
+  ```
+  `Cancel` has initial focus. `Forget` is in the `error` colour. After `Forget`: the snackbar `Approval forgotten.`
+  (4 s, **no Undo**), the history entry `<time> · Approval forgotten`, `Approved on this phone:` empties, the tile
+  shows `Turned off`, and the action button reads `Allow`. The next `Allow` opens the first-time prompt (`Allow
+  "<Title>"?`): every line is listed under `This widget can:` and nothing under `Already allowed`. **No file write.**
+  The approval is also GC'd when the element leaves the file (§17.2). The history list is kept, since it's the record
+  of what happened on this phone.
+- Turning off or forgetting never revokes Android runtime permissions the launcher holds (other widgets may use them). The detail
   links `Open settings` for that.
 
 ### 17.7 Accessibility (adds to §12)
@@ -1245,7 +1261,7 @@ not-private note under `http://nas.lan`). `data.file` and `ui.reload` are Show-t
 ### 17.12 Build checklist additions (Sprite, when scheduled)
 - [ ] Consent store (device-local), approved-set check on every load (it never shrinks), the states in §17.2, no dialog from a load.
 - [ ] Consent tile (§17.3), B9 + count chip + menu badges (§17.4), review list, prompt sheet with preview, detail with
-  Turn off + Undo, `status.json` consent fields.
+  Turn off + Undo, Forget approval (confirm, no Undo), `status.json` consent fields.
 - [ ] Tokens and tiers (§17.8), six primitives + three containers (§17.9), layout selection and priority drops, card
   chrome with `as of` / stale.
 - [ ] Contrast measurement for custom colours (warnings only), 200 % font and TalkBack passes on a phone and a tablet.
@@ -1344,6 +1360,15 @@ builds S3-C from it.
 | `tofu_changed_title` | `Certificate changed for %1$s` | 1 = origin | R · S5 | Re-pin prompt title (fetch is paused until answered) |
 | `tofu_changed_body` | `This can be normal, like a renewed certificate, or someone could be intercepting the connection. Only trust it if you expected this change.` | — | R · S5 | Re-pin prompt body |
 | `tofu_trust` / `tofu_keep_off` | `Trust new certificate` / `Keep off` | — | R · S5 | Re-pin prompt buttons |
+| `cert_paused_status` | `Paused: certificate changed` | — | R · S5 | Detail-page line status for that origin; also the tap-on-▲ hint on the card header |
+| `cert_paused_a11y` | `stale, paused because the certificate for %1$s changed` | 1 = origin | A · S5 | Replaces `card_stale_a11y` while the re-pin prompt is unanswered |
+
+**Certificate changed (stage 5, Q-C7).** While a `Certificate changed` prompt is unanswered, fetching from **that
+origin pauses** (other origins of the widget keep going), and the card keeps its **last good data**, shown as stale
+(`card_stale` + ▲, `cert_paused_status` on tap and on the detail page). The new certificate is **never accepted
+silently**: only `Trust new certificate` re-pins it. `Keep off` keeps the old pin, the origin stays paused and the
+prompt can be reopened from the detail page. A dismissed sheet counts as unanswered. `status.json` gets
+`warn_cert_changed` (below).
 | `cap_list_more` | `%1$s and %2$d more` | 1 = first 3 items, 2 = rest count | R · S3 | Lists over 3 items (expandable) |
 | `cap_write_data` | `Change values in %1$s` | 1 = data file | R · Later | Act tier (no v1 kind) |
 
@@ -1366,6 +1391,13 @@ to expand. Each http entry stays in full and gets its own note line under the li
 | `detail_not_used` | `not used now` | — | R · S3 | Secondary text on ceiling lines the current version doesn't use |
 | `detail_turn_off` / `detail_allow` | `Turn off` / `Allow` | — | R · S3 | Action button |
 | `turned_off_snack` | `"%1$s" turned off.` | 1 = title | R · S3 | Snackbar after Turn off, with `merge_undo` (`Undo`, §9.1), 10 s |
+| `detail_forget` | `Forget approval` | — | R · S3 | Detail-page text button (`error` colour) |
+| `detail_forget_a11y` | `Forget approval for %1$s. Can't be undone.` | 1 = title | A · S3 | `contentDescription` of that button |
+| `forget_title` | `Forget approval for "%1$s"?` | 1 = title | R · S3 | Confirm dialog title |
+| `forget_body` | `It stays off. Next time you allow it, you'll be asked about everything again.` | — | R · S3 | Confirm dialog body |
+| `forget_confirm` / `forget_cancel` | `Forget` / `Cancel` | — | R · S3 | Dialog buttons (`Cancel` has initial focus) |
+| `forget_snack` | `Approval forgotten.` | — | R · S3 | Snackbar, 4 s, **no Undo** |
+| `history_forgotten` | `Approval forgotten` | — | R · S3 | History event |
 | `detail_android_off` | `Android permission off: %1$s` | 1 = permission label | R · Later | Phone data tier |
 | `detail_open_settings` | `Open settings` | — | R · Later | Same |
 
@@ -1393,12 +1425,15 @@ to expand. Each http entry stays in full and gets its own note line under the li
 | `warn_card_title` | `%1$s: a card needs a title, so it was skipped. It stays in the file.` | 1 = path | S3 |
 | `warn_surface_none` | `%1$s: "none" needs room for the header row, so the default card surface was used.` | 1 = path (`….surface`) | S3 |
 | `warn_data_missing` | `%1$s: widgets-data/%2$s.json is missing or unreadable, so the last values are shown.` | 1 = path, 2 = element id | S3 |
+| `warn_cert_changed` | `%1$s: the certificate for %2$s changed. Fetching from it is paused until someone approves the new certificate on this phone; the last good data is shown as stale.` | 1 = path, 2 = origin | S5 |
 | `warn_tap_host` | `%1$s: the tap link's host "%2$s" isn't in this widget's approved hosts, so the tap was ignored.` | 1 = path, 2 = host | S3 |
 | `warn_tap_scheme` | `%1$s: the tap link uses http, but "%2$s" is approved for https only, so the tap was ignored.` | 1 = path, 2 = host | S3 |
 | `warn_tap_userinfo` | `%1$s: the tap link has a user name or password in it, so the tap was ignored.` | 1 = path | S3 |
 | `warn_tap_empty` | `%1$s: the tap link %2$s has no value, so the tap was ignored.` | 1 = path, 2 = template | S3 |
 
-The `consent` map's `state` values (`needsApproval`, `needsApprovalAgain`, `off`, `allowed`) are keys, not copy.
+The `consent` map's `state` values (`needsApproval`, `needsApprovalAgain`, `off`, `allowed`) are keys, not copy. The
+map shape and the names `warn_consent_pending`, `warn_consent_again`, `warn_consent_off` and `warn_data_missing` are
+**confirmed by Archimedes**. The map never holds the approval secret. After `Forget approval` the state is `off`.
 
 **Author (Q-C4).** `author` is optional and recommended. When it's **absent or empty after stripping**, every author
 element is **omitted, not blanked**: no `consent_author` line in the prompt (the source line moves up), no
