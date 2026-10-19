@@ -21,6 +21,13 @@
     "note": ""
   },
   {
+    "file": "valid/x-numbers.json",
+    "expect": "valid; numbers are rewritten as the phone writes them (1.50 -> 1.5, 1e3 -> 1000.0)",
+    "layer": "both",
+    "ref": "#113",
+    "note": ""
+  },
+  {
     "file": "valid/no-revision.json",
     "expect": "valid",
     "layer": "both",
@@ -843,5 +850,13 @@
     "ref": "title-bar.md §4",
     "note": "#79",
     "kotlinOnly": "template-grammar"
+  },
+  {
+    "file": "invalid/number-too-large.json",
+    "expect": "B2: x-n[0] is outside the double range; the phone could not write it back",
+    "layer": "kotlin-only",
+    "ref": "#113",
+    "note": "",
+    "kotlinOnly": "number-range"
   }
 ]

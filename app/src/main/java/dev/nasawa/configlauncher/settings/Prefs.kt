@@ -48,6 +48,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("askBeforeMerging", false)
         set(v) = sp.edit { putBoolean("askBeforeMerging", v) }
 
+    /** #72 `Include hidden apps in apps.json` (default off): drawer-hidden apps are left out of apps.json unless on. */
+    var includeHiddenApps: Boolean
+        get() = sp.getBoolean("includeHiddenApps", false)
+        set(v) = sp.edit { putBoolean("includeHiddenApps", v) }
+
     /** §20.1 *Add agent instructions to folder* (default on). */
     var agentDocs: Boolean
         get() = sp.getBoolean("agentDocs", true)

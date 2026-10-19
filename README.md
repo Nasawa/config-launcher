@@ -61,7 +61,7 @@ only reads and writes `launcher.json` in that folder.
      indent, keys in schema order) keeps conflicts small.
 8. **Ignore the launcher's scratch files.** Add this `.gitignore`:
    ```gitignore
-   .configlauncher/launcher.json.tmp
+   .configlauncher/*.tmp
    .configlauncher/status.json
    .configlauncher/apps.json
    ```
@@ -190,11 +190,15 @@ Shape in brief:
   apps.json* or the hidden list changes. Use it to place apps by their real package and activity. Work apps are listed
   only when *Include work apps in config* is on. Apps hidden from the drawer are left out unless *Include hidden apps in
   apps.json* is on (off by default).
-- `launcher.json.tmp`: the write-verify copy (above).
+- `launcher.json.tmp` and `AGENTS.md.tmp`: the write-verify copies (above). `AGENTS.md` goes through the same temp,
+  verify and restore path as `launcher.json`, so its `.tmp` stays too. Both are reused on the next write.
+- `launcher-config.v1.schema.json`: an offline copy of the schema, so agents can validate without network. Replaced on
+  app updates unless you edited it.
 - `broken/`: copies of invalid files saved before a phone edit replaced them.
-- `backup/`: originals saved before an *Upgrade now* (as `launcher.v{N}.{timestamp}.json`), *Restore last working version* or *Start fresh*.
+- `backup/`: originals saved before an *Upgrade now* (as `launcher.v{N}.{timestamp}.json`), *Restore last working version* or *Start fresh*,
+  and your edited `AGENTS.md` before *Update agent instructions* replaces it (as `AGENTS.{timestamp}.md`).
 
-Ignore `launcher.json.tmp`, `status.json` and `apps.json` in git (see [the git workflow](#recommended-keep-the-folder-in-git)).
+Ignore the `.tmp` files, `status.json` and `apps.json` in git (see [the git workflow](#recommended-keep-the-folder-in-git)).
 
 `launcher.json` is never created automatically. If it's missing, the phone shows `No launcher.json yet.` with
 *Create from current layout* and *Reconnect*.
@@ -242,7 +246,7 @@ versioning.
 - Write private-space apps, user IDs or serial numbers.
 - Write anything into `.configlauncher/`, or rely on it for history.
 - Expect your formatting to survive a phone edit.
-- Commit `.configlauncher/launcher.json.tmp` or `status.json`, commit conflict markers, or force-push.
+- Commit `.configlauncher/*.tmp` or `status.json`, commit conflict markers, or force-push.
 - Copy unplaced apps into the file just to "list" them. The drawer already shows everything.
 
 ## Debug builds: signing key

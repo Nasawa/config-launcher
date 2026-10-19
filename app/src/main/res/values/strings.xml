@@ -171,6 +171,9 @@
     <string name="move_to_confirm">Move</string>
     <string name="a11y_decrease">Decrease: %1$s</string>
     <string name="a11y_increase">Increase: %1$s</string>
+    <!-- #72 apps.json privacy (Pragma) -->
+    <string name="menu_include_hidden_apps">Include hidden apps in apps.json</string>
+    <string name="menu_include_hidden_apps_desc">apps.json lists your installed apps for agents. Apps hidden from the drawer are left out unless this is on.</string>
     <!-- AGENTS.md in the config folder, ux.md §7.1 -->
     <string name="menu_agent_docs">Agent instructions (AGENTS.md)</string>
     <string name="agent_docs_add">Add agent instructions</string>

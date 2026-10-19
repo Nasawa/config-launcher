@@ -28,15 +28,31 @@ class TitleBarTest {
         assertEquals(Template.Problem.Unknown("wether"), Template.check("{wether}"))
         assertEquals(Template.Problem.Letter("s", "{time:HH:mm:ss}"), Template.check("{time:HH:mm:ss}"))
         assertEquals(Template.Problem.Letter("z", "{time:HH z}"), Template.check("{time:HH z}"))
-        assertEquals(Template.Problem.Letter("MMMMMM", "{date:MMMMMM}"), Template.check("{date:MMMMMM}"))
-        assertEquals(Template.Problem.Letter("'", "{date:d 'x}"), Template.check("{date:d 'x}"))
+        assertEquals(Template.Problem.RunTooLong("MMMMMM", 4), Template.check("{date:MMMMMM}"))
+        assertEquals(Template.Problem.RunTooLong("aa", 1), Template.check("{time:h aa}"))
+        assertEquals(Template.Problem.QuoteUnclosed, Template.check("{date:d 'x}"))
         assertEquals(Template.Problem.Unclosed(5), Template.check("Day {date"))
         assertEquals(Template.Problem.Stray(9), Template.check("abcdefgh}"))
         assertEquals(Template.Problem.TooMany(9), Template.check("{page}".repeat(9)))
         assertEquals(Template.Problem.TooLong(130), Template.check("x".repeat(130)))
         assertEquals(Template.Problem.MultiLine, Template.check("a\nb"))
-        assertEquals(Template.Problem.NoPattern("page"), Template.check("{page:x}"))
+        assertEquals(Template.Problem.NoPattern("{page:x}"), Template.check("{page:x}"))
         assertEquals(Template.Problem.EmptyPattern("time"), Template.check("{time:}"))
+        // Pragma's copy, docs/ux.md §15.1 (PR #122), exactly.
+        assertEquals(listOf("elements[0].content.slots.center: {page:x} doesn't take a pattern. Only {time} and {date} do."),
+            errors(doc("""{"id":"t-main","type":"titleBar","content":{"slots":{"center":"{page:x}"}}}""")))
+        assertEquals(listOf("elements[0].style.size must be small, medium or large, or a number from 10 to 40."),
+            errors(doc("""{"id":"t-main","type":"titleBar","style":{"size":"huge"}}""")))
+        assertEquals(listOf("elements[0].content.slots.start: MMMMMM is too long. Use at most 4 letters, like MMMM."),
+            errors(doc("""{"id":"t-main","type":"titleBar","content":{"slots":{"start":"{date:MMMMMM}"}}}""")))
+        // Pragma's copy (#115 review).
+        val p = "elements[0].content.slots.end"
+        assertEquals("$p: {page:x} doesn't take a pattern. Only {time} and {date} do.", Template.message(Template.check("{page:x}")!!, p))
+        assertEquals("$p: {time:} has an empty pattern. Write {time} for the default format.", Template.message(Template.check("{time:}")!!, p))
+        assertEquals("$p: A template is one line. Remove the line break.", Template.message(Template.check("a\nb")!!, p))
+        assertEquals("$p: MMMMMM is too long. Use at most 4 letters, like MMMM.", Template.message(Template.check("{date:MMMMMM}")!!, p))
+        assertEquals("$p: aa is too long. Use at most 1 letters, like a.", Template.message(Template.check("{time:h aa}")!!, p))
+        assertEquals("$p: A ' quote isn't closed. Add a closing ' after the text.", Template.message(Template.check("{date:d 'x}")!!, p))
         // Positions count code points, like the length limit.
         assertEquals(Template.Problem.Unclosed(3), Template.check("😀a{x"))
     }
@@ -55,7 +71,7 @@ class TitleBarTest {
         assertEquals(listOf("elements[0]: unknown key \"colour\""), errors(doc(preset.dropLast(1) + ""","colour":"red"}""")))
         assertEquals(listOf("elements[1]: only one titleBar is allowed (elements[0] is already one)."),
             errors(doc("$preset,${preset.replace("t-main", "t-two")}")))
-        assertEquals(listOf("pages[0].overrides.t-main.style.size: must be small, medium or large, or a number from 10 to 40"),
+        assertEquals(listOf("pages[0].overrides.t-main.style.size must be small, medium or large, or a number from 10 to 40."),
             errors(doc(preset, ""","overrides":{"t-main":{"style":{"size":9}}}""")))
         // A skipped title bar (requires too high) is not checked strictly and doesn't count as the one bar.
         ok(doc("""{"id":"t-new","type":"titleBar","requires":3,"anything":1},$preset"""))

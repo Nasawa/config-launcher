@@ -11,6 +11,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,6 +63,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var askMerge by remember { mutableStateOf(vm.store.prefs.askBeforeMerging) }
     var keyboardOnOpen by remember { mutableStateOf(vm.store.prefs.drawerKeyboard) }
     var agentDocs by remember { mutableStateOf(vm.store.prefs.agentDocs) }
+    var includeHidden by remember { mutableStateOf(vm.store.prefs.includeHiddenApps) }
     // ux.md §7.1: Add vs Update label (null = app-only, hidden), read when the ⋮ menu opens; Replace confirm for an edited file.
     var agentAction by remember { mutableStateOf<AgentDocs.MenuAction?>(null) }
     var agentConfirm by remember { mutableStateOf(false) }
@@ -233,6 +235,18 @@ fun HomeScreen(vm: HomeViewModel) {
                             DropdownMenuItem({ Text(stringResource(R.string.menu_open_keyboard)) }, {
                                 keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
                             }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
+                            // #72: apps.json exists only in folder mode; the toggle rewrites it silently.
+                            if (ui.load.reconnectable) {
+                                val label = stringResource(R.string.menu_include_hidden_apps)
+                                val spoken = label + ". " + stringResource(R.string.menu_include_hidden_apps_desc)
+                                DropdownMenuItem({ Text(label) }, {
+                                    includeHidden = !includeHidden; vm.store.setIncludeHiddenApps(includeHidden)
+                                }, Modifier.semantics {
+                                    // TalkBack: label, Pragma's description, and the checked state.
+                                    contentDescription = spoken
+                                    toggleableState = androidx.compose.ui.state.ToggleableState(includeHidden)
+                                }, trailingIcon = { Checkbox(includeHidden, null) })
+                            }
                             // ux.md §7.1: setting + action, folder mode only (no Settings screen yet, §14 R10).
                             if (agentAction != null) {
                                 DropdownMenuItem({ Text(stringResource(R.string.menu_agent_docs)) }, {

@@ -114,7 +114,7 @@ class Format(unittest.TestCase):
       ]
     }
   ],
-  "x-z": 1.50
+  "x-z": 1.5
 }
 """)
 

@@ -30,7 +30,7 @@ object TitleBar : Elements.ElementType {
     override fun validate(o: JsonObject, path: String, c: Validator.Checks) {
         c.keys(o, path, KEYS.toSet(), emptySet())
         c.bool(o, "enabled", path)
-        c.str(o, "anchor", path)?.let { if (it != "top") c.err("$path.anchor", "must be \"top\"") }
+        c.str(o, "anchor", path)?.let { if (it != "top") c.err("", "$path.anchor must be \"top\".") }
         o["content"]?.let { content(it, "$path.content", c) }
         o["style"]?.let { style(it, "$path.style", c) }
     }
@@ -60,24 +60,24 @@ object TitleBar : Elements.ElementType {
         o["size"]?.let { v ->
             val p = v as? JsonPrimitive
             val ok = if (p?.isString == true) p.content in SIZES else p != null && p !is JsonNull && p.content.toDoubleOrNull()?.let { it in 10.0..40.0 } == true
-            if (!ok) c.err("$path.size", "must be small, medium or large, or a number from 10 to 40")
+            if (!ok) c.err("", "$path.size must be small, medium or large, or a number from 10 to 40.")
         }
         o["weight"]?.let { v ->
             val p = v as? JsonPrimitive
             val ok = if (p?.isString == true) p.content in WEIGHTS else p?.content?.toLongOrNull()?.let { it in 300..800 && it % 100 == 0L } == true
-            if (!ok) c.err("$path.weight", "must be regular, medium or bold, or 300 to 800 in steps of 100")
+            if (!ok) c.err("", "$path.weight must be regular, medium or bold, or 300 to 800 in steps of 100.")
         }
         o["color"]?.let { v ->
             if (v is JsonObject) {
                 c.keys(v, "$path.color", setOf("light", "dark"), emptySet(), xKeys = false)
-                if (v.isEmpty()) c.err("$path.color", "needs light or dark")
+                if (v.isEmpty()) c.err("", "$path.color needs light or dark.")
                 for (k in listOf("light", "dark")) v[k]?.let { color(it, "$path.color.$k", c) }
             } else color(v, "$path.color", c)
         }
         o["align"]?.let { v ->
             val a = c.obj(v, "$path.align") ?: return@let
             c.keys(a, "$path.align", SLOTS.toSet(), emptySet(), xKeys = false)
-            for (s in SLOTS) c.str(a, s, "$path.align")?.let { if (it !in SLOTS) c.err("$path.align.$s", "must be start, center or end") }
+            for (s in SLOTS) c.str(a, s, "$path.align")?.let { if (it !in SLOTS) c.err("", "$path.align.$s must be start, center or end.") }
         }
         o["padding"]?.let { v ->
             val p = c.obj(v, "$path.padding") ?: return@let
@@ -91,7 +91,7 @@ object TitleBar : Elements.ElementType {
                 c.int(v, "opacity", "$path.backdrop", 0, 100); c.int(v, "radius", "$path.backdrop", 0, 24)
             } else {
                 val s = (v as? JsonPrimitive)?.takeIf { it.isString }?.content
-                if (s !in setOf("auto", "none", "scrim")) c.err("$path.backdrop", "must be auto, none or scrim, or an object with color")
+                if (s !in setOf("auto", "none", "scrim")) c.err("", "$path.backdrop must be auto, none or scrim, or an object with color.")
             }
         }
     }
@@ -99,7 +99,7 @@ object TitleBar : Elements.ElementType {
     private fun color(v: JsonElement, path: String, c: Validator.Checks) {
         val s = (v as? JsonPrimitive)?.takeIf { it.isString }?.content
         if (s == null || (s !in COLOR_TOKENS && !HEX.matches(s)))
-            c.err(path, "must be #RRGGBB or one of ${COLOR_TOKENS.joinToString(", ")}")
+            c.err("", "$path must be #RRGGBB or one of ${COLOR_TOKENS.joinToString(", ")}.")
     }
 
     // ---- canonical order (title-bar.md §4): id, type, requires, enabled, anchor, content, style, then x- keys

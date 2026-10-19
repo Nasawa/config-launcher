@@ -237,6 +237,11 @@
       "not valid JSON: NUL character in a string (line 11)"
     ]
   },
+  "invalid/number-too-large.json": {
+    "errors": [
+      "x-n[0]: 1e309 is too large for a number"
+    ]
+  },
   "invalid/overlapping-cells.json": {
     "errors": [
       "pages[0].items[1]: overlaps pages[0].items[0] at cell (0, 0)"
@@ -359,14 +364,14 @@
   },
   "invalid/titlebar-anchor-bottom.json": {
     "errors": [
-      "elements[0].anchor: must be \"top\""
+      "elements[0].anchor must be \"top\"."
     ]
   },
   "invalid/titlebar-bad-style.json": {
     "errors": [
-      "elements[0].style.size: must be small, medium or large, or a number from 10 to 40",
-      "elements[0].style.weight: must be regular, medium or bold, or 300 to 800 in steps of 100",
-      "elements[0].style.color: must be #RRGGBB or one of light, dark, onWallpaper, primary, secondary, onSurface, surface",
+      "elements[0].style.size must be small, medium or large, or a number from 10 to 40.",
+      "elements[0].style.weight must be regular, medium or bold, or 300 to 800 in steps of 100.",
+      "elements[0].style.color must be #RRGGBB or one of light, dark, onWallpaper, primary, secondary, onSurface, surface.",
       "elements[0].style.backdrop: missing required \"color\""
     ]
   },
@@ -392,12 +397,12 @@
   },
   "invalid/token-pattern-on-page.json": {
     "errors": [
-      "elements[0].content.slots.end: {page} doesn't take a pattern. Only time and date do."
+      "elements[0].content.slots.end: {page:x} doesn't take a pattern. Only {time} and {date} do."
     ]
   },
   "invalid/token-run.json": {
     "errors": [
-      "elements[0].content.slots.end: \"MMMMMM\" isn't allowed in {date:MMMMMM}. Use y M d E a H h k K m; seconds and time zones aren't supported."
+      "elements[0].content.slots.end: MMMMMM is too long. Use at most 4 letters, like MMMM."
     ]
   },
   "invalid/token-stray.json": {
@@ -457,7 +462,8 @@
   },
   "invalid/x-huge.json": {
     "errors": [
-      "pages[0].items[0].x: must be an integer"
+      "pages[0].items[0].x: must be an integer",
+      "pages[0].items[0].x: 1e309 is too large for a number"
     ]
   },
   "invalid/zero-pages.json": {
@@ -554,5 +560,8 @@
   },
   "valid/x-keys.json": {
     "canonicalSha256": "6e1a6d201e42acc25ab499041b2b9aea8bcaf914c4417d938c8e55128341b62b"
+  },
+  "valid/x-numbers.json": {
+    "canonicalSha256": "b700ba81bb37ee405c789cfb6fdfe2fedb126025ab5916236c12c85b4b456287"
   }
 }

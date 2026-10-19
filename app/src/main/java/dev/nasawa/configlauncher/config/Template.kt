@@ -11,7 +11,7 @@ object Template {
     val NAMES = listOf("page", "pageNumber", "pageCount", "time", "date")
     val SHORTHANDS = mapOf("pageTitle" to "page", "clock" to "time", "date" to "date")
     /** Letters allowed in a pattern and the most of each in a row (more makes DateTimeFormatter throw). */
-    val LETTERS = mapOf('y' to 19, 'M' to 5, 'd' to 2, 'E' to 5, 'a' to 1, 'H' to 2, 'h' to 2, 'k' to 2, 'K' to 2, 'm' to 2)
+    val LETTERS = mapOf('y' to 19, 'M' to 4, 'd' to 2, 'E' to 5, 'a' to 1, 'H' to 2, 'h' to 2, 'k' to 2, 'K' to 2, 'm' to 2)
     const val PUNCTUATION = " .,:/-"
 
     sealed interface Part
@@ -22,10 +22,13 @@ object Template {
         data class TooLong(val length: Int) : Problem
         data object MultiLine : Problem
         data class Unknown(val name: String) : Problem
-        data class NoPattern(val name: String) : Problem
+        data class NoPattern(val token: String) : Problem
         data class EmptyPattern(val name: String) : Problem
         data class PatternLong(val name: String, val length: Int) : Problem
         data class Letter(val bad: String, val token: String) : Problem
+        /** A letter repeated more often than DateTimeFormatter allows ([max] letters at most). */
+        data class RunTooLong(val run: String, val max: Int) : Problem
+        data object QuoteUnclosed : Problem
         data class Unclosed(val at: Int) : Problem
         data class Stray(val at: Int) : Problem
         data class TooMany(val count: Int) : Problem
@@ -33,11 +36,13 @@ object Template {
 
     fun message(p: Problem, path: String): String = when (p) {
         is Problem.TooLong -> "$path is ${p.length} characters; the maximum is ${TitleBar.MAX_TEMPLATE}."
-        Problem.MultiLine -> "$path: a template is one line; remove the line break."
+        Problem.MultiLine -> "$path: A template is one line. Remove the line break."
         is Problem.Unknown -> "$path: unknown token {${p.name}}. Use page, pageNumber, pageCount, time or date."
-        is Problem.NoPattern -> "$path: {${p.name}} doesn't take a pattern. Only time and date do."
+        is Problem.NoPattern -> "$path: ${p.token} doesn't take a pattern. Only {time} and {date} do."
         is Problem.EmptyPattern -> "$path: {${p.name}:} has an empty pattern. Write {${p.name}} for the default format."
         is Problem.PatternLong -> "$path: the pattern in {${p.name}:…} is ${p.length} characters; the maximum is ${TitleBar.MAX_PATTERN}."
+        is Problem.RunTooLong -> "$path: ${p.run} is too long. Use at most ${p.max} letters, like ${p.run.take(p.max)}."
+        Problem.QuoteUnclosed -> "$path: A ' quote isn't closed. Add a closing ' after the text."
         is Problem.Letter -> "$path: \"${p.bad}\" isn't allowed in ${p.token}. Use y M d E a H h k K m; seconds and time zones aren't supported."
         is Problem.Unclosed -> "$path: the \"{\" at character ${p.at} isn't closed. For a literal brace, write {{."
         is Problem.Stray -> "$path: the \"}\" at character ${p.at} has no opening \"{\". For a literal brace, write }}."
@@ -76,11 +81,17 @@ object Template {
                     val pattern = if (colon < 0) null else inner.substring(colon + 1)
                     if (name !in NAMES) return Bad(Problem.Unknown(name))
                     if (pattern != null) {
-                        if (name != "time" && name != "date") return Bad(Problem.NoPattern(name))
+                        if (name != "time" && name != "date") return Bad(Problem.NoPattern("{$inner}"))
                         if (pattern.isEmpty()) return Bad(Problem.EmptyPattern(name))
                         val len = pattern.codePointCount(0, pattern.length)
                         if (len > TitleBar.MAX_PATTERN) return Bad(Problem.PatternLong(name, len))
-                        badInPattern(pattern)?.let { return Bad(Problem.Letter(it, "{$inner}")) }
+                        badInPattern(pattern)?.let { bad ->
+                            return Bad(when {
+                                bad == "'" -> Problem.QuoteUnclosed
+                                bad.length > 1 || (bad[0] in LETTERS) -> Problem.RunTooLong(bad, LETTERS.getValue(bad[0]))
+                                else -> Problem.Letter(bad, "{$inner}")
+                            })
+                        }
                     }
                     if (lit.isNotEmpty()) { parts += Lit(lit.toString()); lit.clear() }
                     parts += Tok(name, pattern)
@@ -95,7 +106,7 @@ object Template {
         return Ok(parts)
     }
 
-    /** The first disallowed letter, run or character in [p], or null. An unclosed quote reports `'`. */
+    /** The first disallowed letter, too-long run of an allowed letter, or character in [p], or null. An unclosed quote reports `'`. */
     fun badInPattern(p: String): String? {
         var i = 0
         while (i < p.length) {

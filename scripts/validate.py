@@ -19,7 +19,7 @@ keys (sorted), LF, trailing newline, UTF-8 without BOM; the deprecated `unsorted
 Item order and unspecified keys like `grid` are kept as written; only a phone edit changes those.
 Stdlib only, plus optional `jsonschema`.
 """
-import argparse, json, math, pathlib, re, sys
+import argparse, decimal, json, math, pathlib, re, sys
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_DEPTH = 8
@@ -553,7 +553,7 @@ def schema_errors(tree):
 class Template:
     NAMES = ("page", "pageNumber", "pageCount", "time", "date")
     SHORTHANDS = {"pageTitle": "page", "clock": "time", "date": "date"}
-    LETTERS = {"y": 19, "M": 5, "d": 2, "E": 5, "a": 1, "H": 2, "h": 2, "k": 2, "K": 2, "m": 2}
+    LETTERS = {"y": 19, "M": 4, "d": 2, "E": 5, "a": 1, "H": 2, "h": 2, "k": 2, "K": 2, "m": 2}
     PUNCTUATION = " .,:/-"
     MAX_TEMPLATE, MAX_TOKENS, MAX_PATTERN = 120, 8, 32
 
@@ -565,7 +565,7 @@ class Template:
         if len(s) > Template.MAX_TEMPLATE:
             return f"{path} is {len(s)} characters; the maximum is {Template.MAX_TEMPLATE}."
         if "\n" in s or "\r" in s:
-            return f"{path}: a template is one line; remove the line break."
+            return f"{path}: A template is one line. Remove the line break."
         i, tokens, n = 0, 0, len(s)
         while i < n:
             c = s[i]
@@ -585,12 +585,17 @@ class Template:
                     return f"{path}: unknown token {{{name}}}. Use page, pageNumber, pageCount, time or date."
                 if colon:
                     if name not in ("time", "date"):
-                        return f"{path}: {{{name}}} doesn't take a pattern. Only time and date do."
+                        return f"{path}: {{{inner}}} doesn't take a pattern. Only {{time}} and {{date}} do."
                     if not pattern:
                         return f"{path}: {{{name}:}} has an empty pattern. Write {{{name}}} for the default format."
                     if len(pattern) > Template.MAX_PATTERN:
                         return f"{path}: the pattern in {{{name}:…}} is {len(pattern)} characters; the maximum is {Template.MAX_PATTERN}."
                     bad = Template.bad_in_pattern(pattern)
+                    if bad == "'":
+                        return f"{path}: A ' quote isn't closed. Add a closing ' after the text."
+                    if bad is not None and (len(bad) > 1 or bad in Template.LETTERS):
+                        mx = Template.LETTERS[bad[0]]
+                        return f"{path}: {bad} is too long. Use at most {mx} letters, like {bad[:mx]}."
                     if bad is not None:
                         return (f'{path}: "{bad}" isn\'t allowed in {{{inner}}}. '
                                 "Use y M d E a H h k K m; seconds and time zones aren't supported.")
@@ -654,7 +659,7 @@ class TitleBar:
         r.bool(o, "enabled", path)
         a = r.str(o, "anchor", path)
         if a is not None and a != "top":
-            r.err(f"{path}.anchor", 'must be "top"')
+            r.err("", f'{path}.anchor must be "top".')
         if "content" in o:
             TitleBar.content(r, o["content"], f"{path}.content")
         if "style" in o:
@@ -692,7 +697,7 @@ class TitleBar:
     @staticmethod
     def _color(r, v, path):
         if not _is_str(v) or (v not in TitleBar.COLOR_TOKENS and not TitleBar.HEX.match(v)):
-            r.err(path, "must be #RRGGBB or one of " + ", ".join(TitleBar.COLOR_TOKENS))
+            r.err("", f"{path} must be #RRGGBB or one of " + ", ".join(TitleBar.COLOR_TOKENS) + ".")
 
     @staticmethod
     def style(r, e, path):
@@ -704,19 +709,19 @@ class TitleBar:
             v = o["size"]
             ok = v in TitleBar.SIZES if _is_str(v) else isinstance(v, Num) and 10.0 <= float(v) <= 40.0
             if not ok:
-                r.err(f"{path}.size", "must be small, medium or large, or a number from 10 to 40")
+                r.err("", f"{path}.size must be small, medium or large, or a number from 10 to 40.")
         if "weight" in o:
             v = o["weight"]
             ok = v in TitleBar.WEIGHTS if _is_str(v) else (
                 isinstance(v, Num) and v.is_int() and 300 <= int(v) <= 800 and int(v) % 100 == 0)
             if not ok:
-                r.err(f"{path}.weight", "must be regular, medium or bold, or 300 to 800 in steps of 100")
+                r.err("", f"{path}.weight must be regular, medium or bold, or 300 to 800 in steps of 100.")
         if "color" in o:
             v = o["color"]
             if isinstance(v, dict):
                 r.keys(v, f"{path}.color", {"light", "dark"}, [], x_keys=False)
                 if not v:
-                    r.err(f"{path}.color", "needs light or dark")
+                    r.err("", f"{path}.color needs light or dark.")
                 for k in ("light", "dark"):
                     if k in v:
                         TitleBar._color(r, v[k], f"{path}.color.{k}")
@@ -729,7 +734,7 @@ class TitleBar:
                 for k in TitleBar.SLOTS:
                     s = r.str(a, k, f"{path}.align")
                     if s is not None and s not in TitleBar.SLOTS:
-                        r.err(f"{path}.align.{k}", "must be start, center or end")
+                        r.err("", f"{path}.align.{k} must be start, center or end.")
         if "padding" in o:
             pd = r.obj(o["padding"], f"{path}.padding")
             if pd is not None:
@@ -745,7 +750,7 @@ class TitleBar:
                 r.int(v, "opacity", f"{path}.backdrop", 0, 100)
                 r.int(v, "radius", f"{path}.backdrop", 0, 24)
             elif not (_is_str(v) and v in ("auto", "none", "scrim")):
-                r.err(f"{path}.backdrop", "must be auto, none or scrim, or an object with color")
+                r.err("", f"{path}.backdrop must be auto, none or scrim, or an object with color.")
 
     @staticmethod
     def canonical(o):
@@ -875,6 +880,7 @@ def validate(raw, use_schema=True):
     r = Run()
     r.root(tree)
     errors = r.errors
+    _too_large(tree, "", errors)
     if use_schema and not errors:
         s = schema_errors(tree)
         errors = s or []
@@ -882,6 +888,65 @@ def validate(raw, use_schema=True):
 
 
 # ---------------------------------------------------------------- canonical encoding (ConfigCodec.encode)
+
+LONG = (-(1 << 63), (1 << 63) - 1)
+ULONG_MAX = (1 << 64) - 1
+
+
+def _as_int(text):
+    """kotlinx JsonLiteralSerializer: a number that fits Long (or ULong) is written as that integer."""
+    if re.fullmatch(r"-?\d+", text):
+        n = int(text)
+        if LONG[0] <= n <= LONG[1] or 0 <= n <= ULONG_MAX:
+            return n
+    return None
+
+
+def _java_double(d):
+    """Double.toString (JDK 19+): shortest digits that round-trip, at least two when one would do."""
+    if d == 0:
+        return "-0.0" if math.copysign(1, d) < 0 else "0.0"
+    sign = "-" if d < 0 else ""
+    d = abs(d)
+    digits, exp = _shortest(d)
+    if len(digits) == 1:
+        # Two digits closest to the exact value (JDK picks the closest 2-digit decimal, e.g. 4.9E-324).
+        m, e = f"{decimal.Decimal(d):.1e}".split("e")
+        digits, exp = m.replace(".", "").rstrip("0") or "0", int(e)
+    if 1e-3 <= d < 1e7:
+        if exp >= 0:
+            ip = digits[:exp + 1].ljust(exp + 1, "0")
+            fp = digits[exp + 1:] or "0"
+        else:
+            ip, fp = "0", "0" * (-exp - 1) + digits
+        return f"{sign}{ip}.{fp}"
+    return f"{sign}{digits[0]}.{digits[1:] or '0'}E{exp}"
+
+
+def _shortest(d):
+    """Shortest round-trip significant digits (no trailing zeros) and the decimal exponent of the first digit."""
+    t = decimal.Decimal(repr(d)).normalize().as_tuple()
+    return "".join(map(str, t.digits)), len(t.digits) - 1 + t.exponent
+
+
+def _num_text(v):
+    """A number as the phone writes it (#113): integers in Long/ULong range as is, everything else as a Java double."""
+    n = _as_int(v)
+    return str(n) if n is not None else _java_double(float(v))
+
+
+def _too_large(tree, path, out):
+    """#113: a number outside the double range can't be written back by the phone, so it's an error (any key)."""
+    if isinstance(tree, Num):
+        if _as_int(tree) is None and not math.isfinite(float(tree)):
+            out.append(f"{path}: {tree} is too large for a number" if path else f"{tree} is too large for a number")
+    elif isinstance(tree, dict):
+        for k, x in tree.items():
+            _too_large(x, f"{path}.{k}" if path else k, out)
+    elif isinstance(tree, list):
+        for i, x in enumerate(tree):
+            _too_large(x, f"{path}[{i}]", out)
+
 
 def _enc_str(s):
     out = ['"']
@@ -920,7 +985,7 @@ def dump(v, ind=0):
             return "[]"
         return "[\n" + ",\n".join(inner + dump(x, ind + 1) for x in v) + "\n" + pad + "]"
     if isinstance(v, Num):
-        return str(v)
+        return _num_text(v)
     if v is True:
         return "true"
     if v is False:
