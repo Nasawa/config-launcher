@@ -213,4 +213,41 @@
     <string name="agent_docs_replace_body">Your edits will be saved to .configlauncher/backup/.</string>
     <string name="agent_docs_replace">Replace</string>
     <string name="first_run_agent_docs">It also adds AGENTS.md, a short guide for AI agents that edit your layout. You can turn this off in Settings.</string>
+    <!-- #142 S3-C consent (Pragma, ux.md §17.13). -->
+    <string name="tile_needs_ok">Needs your OK</string>
+    <string name="tile_needs_ok_again">Needs your OK again</string>
+    <string name="tile_off">Turned off</string>
+    <string name="tile_update">Update Config Launcher to show this</string>
+    <string name="tile_update_hint">This widget needs a newer Config Launcher. It stays in your layout file.</string>
+    <!-- %1$s = title, %2$s = reason in lower case (e.g. "needs your OK"). TalkBack only. -->
+    <string name="tile_a11y">%1$s, widget, %2$s. Double-tap to review.</string>
+    <!-- %1$s = reason. TalkBack only. -->
+    <string name="tile_a11y_untitled">Widget, %1$s.</string>
+    <string name="widget_action_review">Review</string>
+    <string name="consent_title">Allow \"%1$s\"?</string>
+    <string name="consent_title_more">\"%1$s\" wants more access</string>
+    <!-- %1$s = time (10:42, or a date if not today). -->
+    <string name="consent_source_file">Added in launcher.json · %1$s</string>
+    <!-- Only when the card has an author. -->
+    <string name="consent_author">says \"%1$s\"</string>
+    <string name="consent_can">This widget can:</string>
+    <string name="consent_new_header">New</string>
+    <string name="consent_already">Already allowed</string>
+    <string name="consent_new_prefix">New: %1$s</string>
+    <!-- TalkBack only: spoken form of consent_new_prefix. -->
+    <string name="consent_new_a11y">new, %1$s</string>
+    <string name="consent_footer">You can change this later in Widget permissions.</string>
+    <string name="consent_allow">Allow</string>
+    <string name="consent_keep_off">Keep off</string>
+    <!-- %1$s = widgets-data/<id>.json -->
+    <string name="cap_show_file">Show data from %1$s in your config folder</string>
+    <string name="cap_reload">Reload its data when you tap it</string>
+    <!-- %1$s = app label, or the package if it isn't installed. -->
+    <string name="cap_open_app">Open %1$s when you tap it</string>
+    <!-- %1$s = source host (bare for https, http://host for http). -->
+    <string name="cap_open_source">Open links to its source, %1$s, when you tap it</string>
+    <string name="cap_open_others">Links to other sites ask you each time.</string>
+    <string name="cap_open_ask">Open links when you tap it, asking you each time</string>
+    <!-- %1$s = http://host -->
+    <string name="cap_http_note_link">Links to %1$s aren\'t private. Others on your network could see or change them. Only allow this if you trust this network. You\'re choosing a less secure connection.</string>
 </resources>

@@ -33,7 +33,9 @@ object Consent {
     }
 
     /** What this phone remembers for one widget id. Never written to the synced folder. */
-    data class Entry(val ceiling: Set<String> = emptySet(), val off: Boolean = false, val alwaysAllow: Set<String> = emptySet())
+    data class Entry(val ceiling: Set<String> = emptySet(), val off: Boolean = false, val alwaysAllow: Set<String> = emptySet(),
+                     /** #142: when this phone first saw the card in launcher.json (epoch ms), for `Added in launcher.json · <time>`. */
+                     val seen: Long? = null)
 
     /** `source` as scheme + host: a bare host means https (dynamic-widgets.md §4 "Normalising source"). */
     fun canonicalSource(s: String): String = if (s.startsWith("http://") || s.startsWith("https://")) s else "https://$s"
