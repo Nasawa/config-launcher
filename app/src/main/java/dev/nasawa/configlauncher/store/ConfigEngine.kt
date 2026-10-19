@@ -522,12 +522,38 @@ class ConfigEngine(
         statusConfig?.let { c -> consent?.report(c) }.orEmpty()
 
     /** #138: re-emit status.json after the UI changed an approval (Allow, Turn off, Undo, Forget approval). */
-    suspend fun consentChanged() = mutex.withLock { emitStatus() }
+    suspend fun consentChanged() = mutex.withLock { pollWidgetsLocked(force = true); emitStatus() }
+
+    private val widgetReader = dev.nasawa.configlauncher.widgetdata.WidgetDataReader(clock)
+    private val _widgetData = MutableStateFlow<Map<String, dev.nasawa.configlauncher.widgetdata.WidgetDataReader.Snapshot>>(emptyMap())
+    /** #139: each readable card's last data, by element id. Only cards allowed on this phone that declare `data.file`. */
+    val widgetData: StateFlow<Map<String, dev.nasawa.configlauncher.widgetdata.WidgetDataReader.Snapshot>> = _widgetData
+
+    /** #139: cards whose data file may be read: shown, `allowed` here, and declaring `data.file` (Q-A7: only approved APIs). */
+    private fun dataTargets(): List<dev.nasawa.configlauncher.widgetdata.WidgetDataReader.Target> =
+        consentReport().filter { it.state == dev.nasawa.configlauncher.consent.Consent.State.Allowed && "data.file" in it.lines }
+            .map { dev.nasawa.configlauncher.widgetdata.WidgetDataReader.Target(it.id, it.path) }
+
+    /** #139: poll the data files (called with every launcher.json poll; [force] on resume). */
+    suspend fun pollWidgets(force: Boolean = false) = mutex.withLock { if (pollWidgetsLocked(force)) emitStatus() }
+
+    private fun pollWidgetsLocked(force: Boolean): Boolean {
+        val changed = widgetReader.poll(source, dataTargets(), force)
+        if (changed) _widgetData.value = widgetReader.snapshots()
+        return changed
+    }
+
+    /** #139 `ui.reload`: re-read one card's data file now, if it's allowed and declares `ui.reload` and `data.file`. */
+    suspend fun reloadWidget(id: String): dev.nasawa.configlauncher.widgetdata.WidgetDataReader.Reload = mutex.withLock {
+        val t = dataTargets().firstOrNull { it.id == id }
+        if (t == null || consentReport().none { it.id == id && "ui.reload" in it.lines }) return@withLock dev.nasawa.configlauncher.widgetdata.WidgetDataReader.Reload.Ignored
+        widgetReader.reload(source, t).also { _widgetData.value = widgetReader.snapshots(); emitStatus() }
+    }
 
     private fun emitStatus() {
         val (result, errors, hash) = statusResult ?: return
         val report = if (result == "ok") consentReport() else emptyList()
-        val warnings = if (result == "ok") statusWarnings + phoneWarnings() + report.mapNotNull { it.warning } else statusWarnings
+        val warnings = if (result == "ok") statusWarnings + phoneWarnings() + report.mapNotNull { it.warning } + widgetReader.warnings(dataTargets()) else statusWarnings
         val consentMap = if (consent == null) null else report.associate { it.id to (it.state.key to it.warning) }
         val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${warnings.hashCode()}|$backupError|$conflictFiles|$consentMap"
         if (key == lastStatusKey) return

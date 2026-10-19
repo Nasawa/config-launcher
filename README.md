@@ -193,6 +193,12 @@ Shape in brief:
   Once dashboard cards render, `consent` lists each card's state on this phone, keyed by element `id`: `needsApproval`, `needsApprovalAgain`,
   `off` or `allowed`, plus a `warning` sentence when the card is waiting or off. Approvals themselves stay on the
   phone and never go into your folder, so an edit to `launcher.json` can't approve its own card.
+- `widgets-data/<card id>.json`: **you (the agent) write these**, one per dashboard card that declares
+  `{"kind":"data.file"}`. The path always comes from the card's `id`; a card can't name another file. UTF-8 JSON with an
+  object at the root, at most 256 KiB. Put `updatedAt` (ISO-8601 with an offset, e.g. `"2026-10-19T08:38:00-06:00"`)
+  at the root so the card can say how old the data is; after the card's `data.staleAfter` (default 30 min) it's marked
+  stale. The phone re-reads the file when it changes (every 2 s while it's open) and only for cards allowed on that
+  phone. If the file is missing or unreadable, the card keeps its last values and `status.json` says so.
 - `apps.json`: every launchable app the drawer shows (`package`, `activity`, `label`, `profile`, `installTime`), rewritten
   when apps are installed, removed or changed, and when *Include work apps in config*, *Include hidden apps in
   apps.json* or the hidden list changes. Use it to place apps by their real package and activity. Work apps are listed

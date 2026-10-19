@@ -30,6 +30,9 @@ interface ConfigSource {
     @Throws(IOException::class)
     fun writeSidecar(subdir: String, name: String, bytes: ByteArray)
 
+    /** #139: cheap change check for a sidecar; null when absent or unknown (the caller then reads). */
+    fun sidecarStamp(subdir: String, name: String): Stamp? = null
+
     /** `.configlauncher/<subdir>/<name>` ([subdir] may be empty); null when absent. */
     fun readSidecar(subdir: String, name: String, maxBytes: Int): ByteArray? = throw UnsupportedOperationException("no folder")
 

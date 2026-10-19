@@ -92,6 +92,12 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
 
     override fun siblingNames(): List<String> = children(rootDocId).keys.toList()
 
+    override fun sidecarStamp(subdir: String, name: String): Stamp? {
+        var dir = children(rootDocId)[".configlauncher"]?.docId ?: return null
+        if (subdir.isNotEmpty()) dir = children(dir)[subdir]?.docId ?: return null
+        return children(dir)[name]?.let { Stamp(it.docId, it.modified, it.size) }
+    }
+
     override fun readSidecar(subdir: String, name: String, maxBytes: Int): ByteArray? {
         var dir = children(rootDocId)[".configlauncher"]?.docId ?: return null
         if (subdir.isNotEmpty()) dir = children(dir)[subdir]?.docId ?: return null
