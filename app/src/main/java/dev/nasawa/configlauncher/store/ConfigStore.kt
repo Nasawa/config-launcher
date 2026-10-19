@@ -104,7 +104,22 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         return o
     }
 
-    fun addAgentDocsAgain() { scope.launch(Dispatchers.IO) { syncAgentDocs(force = true) } }
+    private fun bundledAgentDocs() = runCatching { context.assets.open(AgentDocs.ASSET).use { it.readBytes() } }.getOrNull()
+
+    /** ux.md §7.1: which label the ⋮ action shows; null in app-only mode (hidden). Blocking: call off the main thread. */
+    fun agentDocsMenuAction(): AgentDocs.MenuAction? {
+        val uri = prefs.folderUri ?: return null
+        return AgentDocs.menuAction(AgentDocs.readExisting(SafSource(context.contentResolver, uri)))
+    }
+
+    /** ux.md §7.1 `Add/Update agent instructions`. [confirmed] = the user chose Replace for an edited file. Blocking. */
+    fun updateAgentDocs(confirmed: Boolean): AgentDocs.Update {
+        val uri = prefs.folderUri ?: return AgentDocs.Update.FAILED
+        val bundled = bundledAgentDocs() ?: return AgentDocs.Update.FAILED
+        return AgentDocs.update(SafSource(context.contentResolver, uri), bundled, confirmed).also {
+            if (it == AgentDocs.Update.ADDED || it == AgentDocs.Update.UPDATED) prefs.markAgentDocsWritten(uri)
+        }
+    }
 
     /** First run "Skip for now": app-only storage; a folder can be chosen later. */
     fun skipOnboarding() {

@@ -71,4 +71,45 @@ class AgentDocsTest {
         assertEquals(Outcome.FAILED, AgentDocs.sync(f, template, writtenBefore = false, enabled = true))
         assertNull(f.agents())
     }
+
+    // ---- ux.md §7.1 menu action ----
+
+    @Test fun menuLabelFollowsFilePresence() {
+        assertEquals(AgentDocs.MenuAction.ADD, AgentDocs.menuAction(null))
+        assertEquals(AgentDocs.MenuAction.UPDATE, AgentDocs.menuAction(template))
+    }
+
+    @Test fun addWritesWhenAbsent() {
+        val f = folder()
+        assertEquals(AgentDocs.Update.ADDED, AgentDocs.update(f, template, confirmed = false))
+        assertArrayEquals(template, f.agents())
+    }
+
+    @Test fun updateReplacesUntouchedFileSilently() {
+        val f = folder()
+        File(f.dir, "AGENTS.md").writeBytes(template)   // a shipped version
+        val newer = template + "\nmore".toByteArray()
+        assertEquals(AgentDocs.Update.UPDATED, AgentDocs.update(f, newer, confirmed = false))
+        assertArrayEquals(newer, f.agents())
+        assertFalse(File(f.dir, ".configlauncher/backup").exists())
+    }
+
+    @Test fun editedFileNeedsConfirmThenIsBackedUp() {
+        val f = folder()
+        File(f.dir, "AGENTS.md").writeText("my edits")
+        assertEquals(AgentDocs.Update.NEEDS_CONFIRM, AgentDocs.update(f, template, confirmed = false))
+        assertEquals("my edits", File(f.dir, "AGENTS.md").readText())
+        val now = 1_792_000_000_000L
+        assertEquals(AgentDocs.Update.UPDATED, AgentDocs.update(f, template, confirmed = true, nowMillis = now))
+        assertArrayEquals(template, f.agents())
+        val backup = File(f.dir, ".configlauncher/backup/" + AgentDocs.backupName(now))
+        assertEquals("my edits", backup.readText())
+        assertTrue(backup.name, Regex("""^AGENTS\.\d{8}-\d{6}\.md$""").matches(backup.name))
+    }
+
+    @Test fun appOnlyUpdateDoesNothing() {
+        val f = LocalFileSource(tmp.newFolder(), sidecars = false)
+        assertEquals(AgentDocs.Update.FAILED, AgentDocs.update(f, template, confirmed = true))
+        assertNull(f.agents())
+    }
 }

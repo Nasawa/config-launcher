@@ -46,6 +46,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.nasawa.configlauncher.apps.InstalledApps
 import dev.nasawa.configlauncher.model.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import dev.nasawa.configlauncher.store.AgentDocs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,6 +61,10 @@ fun HomeScreen(vm: HomeViewModel) {
     var askMerge by remember { mutableStateOf(vm.store.prefs.askBeforeMerging) }
     var keyboardOnOpen by remember { mutableStateOf(vm.store.prefs.drawerKeyboard) }
     var agentDocs by remember { mutableStateOf(vm.store.prefs.agentDocs) }
+    // ux.md §7.1: Add vs Update label (null = app-only, hidden), read when the ⋮ menu opens; Replace confirm for an edited file.
+    var agentAction by remember { mutableStateOf<AgentDocs.MenuAction?>(null) }
+    var agentConfirm by remember { mutableStateOf(false) }
+    var agentSnack by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var folderInfo by remember { mutableStateOf<String?>(null) }   // "" = app-only
     // ux.md §4.1 edit mode: entered from `Edit layout` or a drag; left on Done, Back, Home or 30 s idle.
@@ -134,6 +141,17 @@ fun HomeScreen(vm: HomeViewModel) {
     val gestureBottomPx = (WindowInsets.systemGestures.getBottom(density) - WindowInsets.navigationBars.getBottom(density)).coerceAtLeast(0).toFloat()
     LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it.resolve(res), Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
     val toast = { msg: String -> Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
+    LaunchedEffect(menuOpen) { if (menuOpen) agentAction = withContext(Dispatchers.IO) { vm.store.agentDocsMenuAction() } }
+    val runAgentUpdate = { confirmed: Boolean ->
+        scope.launch {
+            when (withContext(Dispatchers.IO) { vm.store.updateAgentDocs(confirmed) }) {
+                AgentDocs.Update.UPDATED -> agentSnack = true
+                AgentDocs.Update.NEEDS_CONFIRM -> agentConfirm = true
+                else -> Unit
+            }
+        }
+        Unit
+    }
     val launchApp = { app: InstalledApp -> if (!vm.apps.launch(app)) toast(res.getString(R.string.open_failed, Labels.clean(app.label))) }
 
     val onOpen: (ResolvedItem) -> Unit = { r ->
@@ -213,11 +231,14 @@ fun HomeScreen(vm: HomeViewModel) {
                             DropdownMenuItem({ Text(stringResource(R.string.menu_open_keyboard)) }, {
                                 keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
                             }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
-                            // §20.1: no Settings screen yet, so the setting and its Add again action live here.
-                            DropdownMenuItem({ Text(stringResource(R.string.menu_agent_docs)) }, {
-                                agentDocs = !agentDocs; vm.store.prefs.agentDocs = agentDocs
-                            }, trailingIcon = { Checkbox(agentDocs, null) })
-                            if (ui.load.reconnectable) DropdownMenuItem({ Text(stringResource(R.string.menu_agent_docs_again)) }, { menuOpen = false; vm.store.addAgentDocsAgain() })
+                            // ux.md §7.1: setting + action, folder mode only (no Settings screen yet, §14 R10).
+                            if (agentAction != null) {
+                                DropdownMenuItem({ Text(stringResource(R.string.menu_agent_docs)) }, {
+                                    agentDocs = !agentDocs; vm.store.prefs.agentDocs = agentDocs
+                                }, trailingIcon = { Checkbox(agentDocs, null) })
+                                DropdownMenuItem({ Text(stringResource(if (agentAction == AgentDocs.MenuAction.ADD) R.string.agent_docs_add else R.string.agent_docs_update)) },
+                                    { menuOpen = false; runAgentUpdate(false) })
+                            }
                             DropdownMenuItem({ Text(stringResource(R.string.menu_reload)) }, { menuOpen = false; vm.store.pollNow() })
                             if (!isHome) DropdownMenuItem({ Text(stringResource(R.string.home_role_button)) }, { menuOpen = false; becomeHome() })
                         }
@@ -258,6 +279,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     MergeSnackbar(m, onUndo = { vm.store.undoMerge() }.takeIf { m.undo && ui.load.mergeUndo },
                         onDismiss = { vm.store.engine.dismissMergeUndo() })
                 }
+                if (agentSnack) AgentDocsSnackbar { agentSnack = false }
                 undoSnack?.let { u ->
                     UndoSnackbar(u, onUndo = {
                         undoSnack = null
@@ -314,6 +336,8 @@ fun HomeScreen(vm: HomeViewModel) {
                 }.onFailure { toast(res.getString(R.string.open_failed, res.getString(R.string.action_wallpaper))) }
             }
         }, onDismiss = { homeMenu = false })
+
+        if (agentConfirm) AgentDocsReplaceDialog(onReplace = { agentConfirm = false; runAgentUpdate(true) }, onCancel = { agentConfirm = false })
 
         moveFor?.let { r ->
             MoveToDialog(r, ui.layout.pages.map { it.id }, ui.layout.grid, onMove = { pageId, x, y -> moveFor = null; vm.store.edit(Edit.MoveToCell(r.item.id, pageId, x, y)) }, onDismiss = { moveFor = null })
