@@ -1,5 +1,8 @@
 # Widgets: research and recommendation
 
+> **Update (draft):** Christopher reframed the product around AI-composed **dynamic cards** ([docs/design/dynamic-widgets.md](../design/dynamic-widgets.md)). Sections that assumed first-party widgets were only `text`/`clock`, or that INTERNET must never land, are **partly superseded**. Stage 1 cell reservation, `appWidget` hosting, tap-to-bind, and phone-private widget IDs **still stand**. Design-doc §10 product Qs **Q-C1–C5, Q-C7 settled 2026-10-19** (incl. stage-5 INTERNET + HA v1 = companion widgets + agent JSON); see design §5 / §8.
+
+
 Status: research and design proposal, 2026-10-19. Author: Archimedes (architecture). **Docs only: nothing in `schema/` or the app changes until this is accepted.** Builds on the element model in [docs/design/title-bar.md](../design/title-bar.md) (#81, ARCHITECTURE §19), where `appWidget` was a placeholder type, and on the spike's widget notes ([docs/research-spike.md](../research-spike.md)).
 
 Christopher's framing: widgets are critical to the end vision and the first post-MVP item (ARCHITECTURE §18, row "§14 Q9"). Grok Bot's ask: survey existing schemas we could adapt before designing anything.
@@ -34,10 +37,10 @@ JSON card schema (`TextBlock`, `Image`, `ColumnSet`, `Container`, `FactSet`, `In
 Dashboards are YAML/JSON (stored in `.storage/lovelace*`, or YAML mode). A view holds cards, each `{type: <card>, ...config}`. Third-party cards use `type: custom:<name>` and register a web component [7][8]. The *sections* view (default since 2024.11) is a **12-column grid**: each card declares `grid_options {columns, rows, min_columns, max_columns, min_rows, max_rows}`, rows are 56 px with an 8 px gap, `rows: "auto"` follows content, and the UI resizes cards by dragging within those bounds [7][9][10]. Styling comes from themes (CSS variables), plus the community `card-mod`. Cards are bound to entities (`entity: light.kitchen`) and tapping calls services (`tap_action`), so they are **genuinely two-way**, but through the HA server.
 - **License:** HA frontend Apache-2.0. The HA Android companion app is also Apache-2.0 and already ships Android AppWidgets: entity state, button, media, camera and a **Template widget** that renders a Jinja template [11].
 - **(a) AppWidgets:** the closest conceptual fit for *sizing*: default plus min/max cells is exactly what we need. It has no AppWidget hosting itself.
-- **(b) Config widgets:** excellent model (typed cards, entity binding, actions, conditional cards), but it needs a live HA connection, which means INTERNET permission and an auth token, both non-goals.
+- **(b) Config widgets:** excellent model (typed cards, entity binding, actions, conditional cards), but it needs a live HA connection — a **built-in HA client + auth token remain non-goals**. (Generic APK `INTERNET` for later `net.fetch` is decided in the design doc for stage 5; that is not an HA client.)
 - **Two-way:** best in class, via HA services.
 - **Complexity:** the sizing vocabulary is trivial to adopt. The card runtime isn't portable (web components).
-- **Take:** **adopt the `grid_options` vocabulary and semantics** (default size and min/max bounds in cells; "auto" height is a later option). For HA data on the phone, **host the HA companion app's own AppWidgets** (Stage 3 gives this for free, including the Template widget) instead of building an HA client into the launcher. That keeps the launcher network-free, and Christopher's HA work shows up on the home screen immediately.
+- **Take:** **adopt the `grid_options` vocabulary and semantics** (default size and min/max bounds in cells; "auto" height is a later option). For HA data on the phone, **host the HA companion app's own AppWidgets** (Stage 3 gives this for free, including the Template widget) instead of building an HA client into the launcher (confirmed design-doc Q-C5). Agent-written local JSON is the v1 path for custom HA-shaped cards; no tight HA coupling.
 
 ### 3.3 KWGT / KLWP presets (Kustom)
 A `.kwgt`/`.klwp` file is a ZIP with `preset.json` plus fonts and bitmaps [12][13]. The JSON is a tree of modules (`TextModule`, `ShapeModule`, `ProgressModule`, `StackLayerModule`, `OverlapLayerModule`, with `viewgroup_items`). Properties are absolute dp-ish numbers (`position_offset_x`, `text_size`), and any property can be replaced by a **formula** in `$…$` syntax (`$df(MM/dd)$`, `$if(…)$`, `$gv(global)$`) [14]. KWGT itself is an AppWidget provider: the user places a KWGT widget and loads a preset into it.
@@ -210,7 +213,7 @@ The schema stays v1 because: new element *types* are skipped by launchers that p
 - **Q-C2** Sync: is it OK that each phone needs a one-time tap per widget, and that widgets whose app isn't installed show a placeholder on that phone?
 - **Q-C3** Phone migration: do you restore phones with Google backup or Smart Switch? If yes, Stage 6's restore remap is worth doing; if you set phones up fresh, it isn't.
 - **Q-C4** Two-way: should first-party widgets ever *write* data (a toggle or counter into `widgets-data.json`), or stay read-only?
-- **Q-C5** Home Assistant: is hosting the HA companion app's widgets (entity, button and Template widgets) enough, or do you want the launcher itself to show HA data? The latter would need INTERNET permission and an HA token, which reverses an ARCHITECTURE §1 non-goal; the recommendation is no.
+- **Q-C5** Home Assistant: *(decided via design-doc Q-C5, 2026-10-19)* Companion AppWidgets + agent-written local JSON are enough for v1; no built-in HA client / no tight coupling. Own HA-reading cards are advanced; distant first-class in-app widgets are a far goal only.
 - **Q-C6** Which first-party widgets matter most after `text` and `clock`?
 
 ## 8. Sources
