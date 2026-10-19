@@ -36,7 +36,7 @@ Dynamic widgets are type `card` (name TBD at schema time; UX §17 says `card`) i
 
 Containers: `column`, `row` (children may have `weight`), `tile` (inset sub-surface).
 
-Responsive: up to 3 `layouts` keyed by `"WxH"` (minimum span). Launcher picks the **largest that fits**; else smallest + drop by `priority` (0–9, low first) + ellipsis. Optional `showIn` size-class filters. Optional `minSpan: { "w", "h" }` (amber outline if undersized; still shows — §16.5).
+Responsive: up to 3 `layouts` keyed by `"WxH"` with a **lowercase** `x` (e.g. `"4x3"`, not `"4X3"`; pattern `^[1-9][0-9]*x[1-9][0-9]*$`). Launcher picks the **largest that fits**; else smallest + drop by `priority` (0–9, low first) + ellipsis. Optional `showIn` size-class filters. Optional `minSpan: { "w", "h" }` (amber outline if undersized; still shows — §16.5).
 
 ### Primitives (v1)
 
@@ -98,11 +98,13 @@ Normative kinds (Archimedes; supersede §17.11 sample names):
 |---|---|---|---|
 | `data.file` | path under `.configlauncher/widgets-data/` (no `..`) | Show | yes |
 | `ui.openApp` | package name(s) | Open | yes |
-| `ui.openUrl` | hostname(s) | Open | yes |
+| `ui.openUrl` | hostname(s) | Open (**prompts** — phishing; see note) | yes |
 | `net.fetch` | exact HTTPS origin(s) | Internet | later stage |
 | `phone.*` | — | Phone data | **not in v1** |
 | Act kinds | — | Act | **not in v1** (buttons = Open only) |
 
+
+**Open-tier split (Pragma #116):** `ui.openApp` stays **silent** (installing an app is already a user act). `ui.openUrl` **always prompts** on first enable / host broaden, even though the UX sentence sits in the Open tier — agent-written links are a phishing risk. Christopher confirms via Pragma Q-D5. Show-tier `data.file` stays silent.
 **Never offered** (absent from schema entirely): SMS, calls, contacts, messages, mic, camera, location, VPN/tunnels, run code.
 
 ### Fingerprint and prompts
@@ -125,7 +127,7 @@ Normative kinds (Archimedes; supersede §17.11 sample names):
 }
 ```
 
-Enforcement: runtime can only perform APIs listed in the **approved** manifest for that id. Unknown `capabilities[].kind` → **validation error**. Undeclared use is impossible by construction.
+Enforcement: runtime can only perform APIs listed in the **approved** manifest for that id. Unknown `capabilities[].kind` on this launcher → **skip that element** with a warning (consent tile / "Update Config Launcher" or "Can't show", cells kept) — **not** a whole-file B2 reject. Writers of a new kind MUST bump the feature level and set `requires` on every element that uses it so older phones hit the requires-skip path cleanly. `validate.py` / CI at the current feature level may still treat unknown kinds as errors so agents fail fast on typos. Undeclared use at runtime is impossible by construction.
 
 ### Hosted AppWidgets
 
