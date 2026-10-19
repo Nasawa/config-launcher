@@ -98,6 +98,8 @@
     <string name="pages_title">Pages</string>
     <string name="page_untitled">Page %1$d</string>
     <string name="page_a11y">%1$s, page %2$d of %3$d</string>
+    <!-- #124: TalkBack label of a title bar slot holding {page} (Pragma): "<slot text>, Pages". -->
+    <string name="titlebar_page_a11y">%1$s, Pages</string>
     <string name="pages_action">List pages</string>
     <string name="pages_hint">list pages</string>
     <string name="page_of">Page %1$d of %2$d</string>
