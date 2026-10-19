@@ -60,3 +60,9 @@ class ItemSheetModelTest {
         assertTrue(ItemAction.APP_INFO in m.actions)
     }
 }
+
+class HomeMenuTest {
+    @Test fun emptySpaceMenuMatchesUx() {
+        assertEquals(listOf(HomeAction.EDIT_LAYOUT, HomeAction.RELOAD, HomeAction.SETTINGS), HomeMenu.actions)
+    }
+}

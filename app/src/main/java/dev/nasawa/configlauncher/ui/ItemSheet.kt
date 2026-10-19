@@ -72,3 +72,28 @@ fun ItemSheet(r: ResolvedItem, onAction: (ItemAction) -> Unit, onDismiss: () -> 
         }
     }
 }
+
+enum class HomeAction { EDIT_LAYOUT, RELOAD, SETTINGS }
+
+/** ux.md §1.1: long-press empty space → `Edit layout`, `Reload layout`, `Settings`. */
+object HomeMenu {
+    val actions = listOf(HomeAction.EDIT_LAYOUT, HomeAction.RELOAD, HomeAction.SETTINGS)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeMenuSheet(onAction: (HomeAction) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+            HomeMenu.actions.forEach { a ->
+                TextButton({ onAction(a) }, Modifier.fillMaxWidth()) {
+                    Text(stringResource(when (a) {
+                        HomeAction.EDIT_LAYOUT -> R.string.action_edit_layout
+                        HomeAction.RELOAD -> R.string.action_reload_layout
+                        HomeAction.SETTINGS -> R.string.action_settings
+                    }), Modifier.fillMaxWidth())
+                }
+            }
+        }
+    }
+}
