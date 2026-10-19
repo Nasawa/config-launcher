@@ -139,7 +139,23 @@ assert _size('2016-items.json', I) < 256*1024
 SIZES = {'size-257k': _size('size-257k.json'), 'just-under': _size('size-just-under-2mib.json'), 'just-over': _size('size-just-over-2mib.json', I),
          '2000-items': _li, 'seed-compact': len(_seed), 'seed-canonical-approx': len(dump(json.loads(_seed)))}
 
-RULES={'duplicate-id.json':'duplicate-ids','overlapping-cells.json':'overlapping-cells','cell-outside-grid.json':'cell-outside-grid','2016-items.json':'item-total','duplicate-key.json':'duplicate-keys','depth-9.json':'parser-depth','deep-nesting.json':'parser-depth','size-just-over-2mib.json':'byte-cap','nul-in-label.json':'nul-or-encoding','invalid-utf8.json':'nul-or-encoding','lone-surrogate.json':'nul-or-encoding','utf16.json':'nul-or-encoding'}
+# #79 elements container (feature level 1) + Stage 1 cell reservation (docs/research/widgets.md §5.1)
+def els(*e): return lambda c: c.__setitem__('elements', list(e))
+_w = {'id':'w-weather','type':'appWidget','page':'home','x':0,'y':1,'w':2,'h':1,'provider':'com.example.weather/.Widget'}
+add(V,'elements-skipped.json',m(lambda c:(els({'id':'t-main','type':'titleBar','anchor':'top','content':{'slots':{'center':'{page}'}}}, _w,
+    {'id':'w-new','type':'clock','requires':9,'page':'home','x':3,'y':0,'w':1,'h':1,'future':True})(c),
+    c['pages'][0].__setitem__('overrides',{'t-main':{'enabled':False},'t-gone':{'content':{}}}))),
+    'valid with 4 warnings: unknown types and requires above the feature level are skipped and kept verbatim; an override for a missing element is ignored','both','title-bar.md §6, widgets.md §5.1','#79')
+add(I,'element-overlaps-item.json',m(els(dict(_w, y=0))),'invalid, B2: a grid-placed element (even a skipped one) reserves its cells','kotlin','widgets.md §5.1','#79 Stage 1')
+add(I,'element-overlaps-element.json',m(els(_w, dict(_w, id='w-two', x=1))),'invalid, B2: two elements in one cell','kotlin','widgets.md §5.1','#79 Stage 1')
+add(I,'element-outside-grid.json',m(els(dict(_w, x=3))),'invalid, B2: x + w past the grid','kotlin','widgets.md §5.1','#79 Stage 1')
+add(I,'element-anchor-and-grid.json',m(els(dict(_w, anchor='top'))),'invalid, B2: anchor and a grid position','both','widgets.md §5.1','#79')
+add(I,'element-partial-placement.json',m(els({'id':'w-x','type':'appWidget','page':'home','x':0})),'invalid, B2: grid-placed elements need page, x, y, w and h','both','widgets.md §5.1','#79')
+add(I,'element-missing-type.json',m(els({'id':'w-x','anchor':'top'})),'invalid, B2','both','title-bar.md §4','#79')
+add(I,'override-unknown-key.json',m(lambda c:c['pages'][0].__setitem__('overrides',{'t-main':{'hidden':True}})),'invalid, B2: overrides take enabled, content or style','both','title-bar.md §4','#79')
+add(I,'element-duplicate-id.json',m(els(dict(_w, id='a-settings'))),'invalid, B2: element IDs are unique with item IDs','kotlin','title-bar.md §8','#79')
+
+RULES={'duplicate-id.json':'duplicate-ids','overlapping-cells.json':'overlapping-cells','cell-outside-grid.json':'cell-outside-grid','2016-items.json':'item-total','duplicate-key.json':'duplicate-keys','depth-9.json':'parser-depth','deep-nesting.json':'parser-depth','size-just-over-2mib.json':'byte-cap','nul-in-label.json':'nul-or-encoding','invalid-utf8.json':'nul-or-encoding','lone-surrogate.json':'nul-or-encoding','utf16.json':'nul-or-encoding','element-overlaps-item.json':'overlapping-cells','element-overlaps-element.json':'overlapping-cells','element-outside-grid.json':'cell-outside-grid','element-duplicate-id.json':'duplicate-ids'}
 for e in man:
     r=RULES.get(e['file'].split('/')[1])
     if r: e['kotlinOnly']=r; e['layer']='kotlin-only'

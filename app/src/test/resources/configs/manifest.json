@@ -633,5 +633,72 @@
     "layer": "parser",
     "ref": "A§18.1 git primary, CM-21, MG-4",
     "note": ""
+  },
+  {
+    "file": "valid/elements-skipped.json",
+    "expect": "valid with 4 warnings: unknown types and requires above the feature level are skipped and kept verbatim; an override for a missing element is ignored",
+    "layer": "both",
+    "ref": "title-bar.md §6, widgets.md §5.1",
+    "note": "#79"
+  },
+  {
+    "file": "invalid/element-overlaps-item.json",
+    "expect": "invalid, B2: a grid-placed element (even a skipped one) reserves its cells",
+    "layer": "kotlin-only",
+    "ref": "widgets.md §5.1",
+    "note": "#79 Stage 1",
+    "kotlinOnly": "overlapping-cells"
+  },
+  {
+    "file": "invalid/element-overlaps-element.json",
+    "expect": "invalid, B2: two elements in one cell",
+    "layer": "kotlin-only",
+    "ref": "widgets.md §5.1",
+    "note": "#79 Stage 1",
+    "kotlinOnly": "overlapping-cells"
+  },
+  {
+    "file": "invalid/element-outside-grid.json",
+    "expect": "invalid, B2: x + w past the grid",
+    "layer": "kotlin-only",
+    "ref": "widgets.md §5.1",
+    "note": "#79 Stage 1",
+    "kotlinOnly": "cell-outside-grid"
+  },
+  {
+    "file": "invalid/element-anchor-and-grid.json",
+    "expect": "invalid, B2: anchor and a grid position",
+    "layer": "both",
+    "ref": "widgets.md §5.1",
+    "note": "#79"
+  },
+  {
+    "file": "invalid/element-partial-placement.json",
+    "expect": "invalid, B2: grid-placed elements need page, x, y, w and h",
+    "layer": "both",
+    "ref": "widgets.md §5.1",
+    "note": "#79"
+  },
+  {
+    "file": "invalid/element-missing-type.json",
+    "expect": "invalid, B2",
+    "layer": "both",
+    "ref": "title-bar.md §4",
+    "note": "#79"
+  },
+  {
+    "file": "invalid/override-unknown-key.json",
+    "expect": "invalid, B2: overrides take enabled, content or style",
+    "layer": "both",
+    "ref": "title-bar.md §4",
+    "note": "#79"
+  },
+  {
+    "file": "invalid/element-duplicate-id.json",
+    "expect": "invalid, B2: element IDs are unique with item IDs",
+    "layer": "kotlin-only",
+    "ref": "title-bar.md §8",
+    "note": "#79",
+    "kotlinOnly": "duplicate-ids"
   }
 ]
