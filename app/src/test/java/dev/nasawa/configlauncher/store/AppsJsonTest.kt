@@ -27,6 +27,29 @@ class AppsJsonTest {
         assertTrue(AppsJson.entries(listOf(teams), includeWork = true).single()["profile"]!!.jsonPrimitive.content == "work")
     }
 
+    @Test fun hiddenAppsLeftOutUnlessIncluded() {   // #72
+        val hidden = setOf(maps.packageName)
+        assertEquals(listOf("Calculator"), AppsJson.entries(listOf(maps, calc), false, hidden).map { it["label"]!!.jsonPrimitive.content })
+        assertEquals(listOf("Calculator", "Maps"), AppsJson.entries(listOf(maps, calc), false, hidden, includeHidden = true).map { it["label"]!!.jsonPrimitive.content })
+    }
+
+    @Test fun engineRewritesAppsJsonWhenHiddenListOrSettingChanges() = runBlocking {   // #72
+        val dir = tmp.newFolder()
+        val src = LocalFileSource(dir)
+        src.file.writeText("""{"schemaVersion":1,"pages":[{"id":"home","items":[]}]}""")
+        val e = ConfigEngine(src, LastGoodStore(tmp.newFolder()), stabilityMs = 0); e.poll(force = true)
+        val f = File(dir, ".configlauncher/apps.json")
+        fun labels() = Json.parseToJsonElement(f.readText()).jsonObject["apps"]!!.jsonArray.map { it.jsonObject["label"]!!.jsonPrimitive.content }
+        assertTrue(e.writeApps(listOf(maps, calc)))
+        assertEquals(listOf("Calculator", "Maps"), labels())
+        e.edit(dev.nasawa.configlauncher.model.Edit.Hide(maps.packageName))
+        assertTrue("hidden list changed", e.writeApps(listOf(maps, calc)))
+        assertEquals(listOf("Calculator"), labels())
+        assertTrue("setting on", e.writeApps(listOf(maps, calc), includeHidden = true))
+        assertEquals(listOf("Calculator", "Maps"), labels())
+        assertFalse("nothing changed", e.writeApps(listOf(maps, calc), includeHidden = true))
+    }
+
     @Test fun engineWritesSidecarOnlyOnChange() = runBlocking {
         val dir = tmp.newFolder()
         val e = ConfigEngine(LocalFileSource(dir), LastGoodStore(tmp.newFolder()), stabilityMs = 0)
