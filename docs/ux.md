@@ -848,7 +848,7 @@ Assumptions A1–A5, all **✅ resolved** in the [#116 comment](https://github.c
 - ✅ **A4** Dashboard data comes from **one file per widget** at `.configlauncher/widgets-data/<elementId>.json`
   (`data.file`, card feature level 4, Q-A5). The agent fetches on its own machine and writes the file, so the launcher
   can stay offline. `net.fetch` exists in the schema at feature level 5, but whether it ships, and with it the INTERNET
-  permission, is Christopher's call (Q-D3). Phone data and Act have no v1 kinds.
+  permission, is decided: a later release (Q-C1/Q-C2, #117). Phone data and Act have no v1 kinds.
 - ✅ **A5** Hosted AppWidgets (§16) are **outside this model**. Android's bind consent (§16.3) covers them, and the
   provider app holds its own permissions. They are listed in the review screen as read-only `Allowed by Android` (Q-A8).
 
@@ -860,13 +860,16 @@ The prompt groups capabilities by what they mean to a person, not by API. Each t
 | **Show** | `data.file` (no fields: the file is always `.configlauncher/widgets-data/<elementId>.json`, from the element `id`, so a card can't point at another card's file) | Static text, `{time}`/`{date}`/`{page}`, the widget's own data file | `Show data from widgets-data/w-anigeek.json in your config folder` | **No.** It's listed in the review screen, but on its own it never prompts (Q-D1). The folder is already yours, and displaying data can't reach anything |
 | **Show** | `ui.reload` (no fields) | A tap or button that re-reads this widget's own data file now | `Reload its data when you tap it` | **No** (#117: Show tier, silent). It only re-reads a file the card can already show (§17.9) |
 | **Open** | `ui.openApp` (`packages`) | Tap to open an app, or a launcher target (drawer, page list) | `Open Signal when you tap it` (the app label; the package if it isn't installed) | **No**, same rule as title-bar tap targets |
-| **Open** | `ui.openUrl` (`hosts`: a bare hostname such as `anigeek.com` = https only; scheme-qualified `https://nas.lan` or `http://nas.lan` = that scheme for that host. No ports) | Tap to open a link in the browser | `Open links to anigeek.com when you tap it`. An http entry is written literally, `Open links to http://nas.lan when you tap it`, followed by the note `Links to http://nas.lan aren't private. Others on your network could see or change them.` | **Yes, always**: on first enable and whenever a host is added. It's in the Open tier, but a file-written link is the phishing path. Documented as the Open-tier split in #117 (`ui.openApp` silent, `ui.openUrl` prompts). Christopher confirms in Q-D5 |
-| **Internet** (feature level 5, only if Q-D3 says yes) | `net.fetch` (`origins`: full `https://host[:port]` or `http://host[:port]`, approved by name; literal URLs only) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (https hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable). An http origin is always written in full, `Connect to http://nas.lan:3001`, followed by the note `The connection to http://nas.lan:3001 isn't private. Others on your network could see or change it.` | **Yes** |
+| **Open** | `ui.openUrl` (`hosts`: a bare hostname such as `anigeek.com` = https only; scheme-qualified `https://nas.lan` or `http://nas.lan` = that scheme for that host. No ports) | Tap to open a link in the browser | `Open links to anigeek.com when you tap it`. An http entry is written literally, `Open links to http://nas.lan when you tap it`, followed by the note `cap_http_note_link` (§17.13): `Links to http://nas.lan aren't private. Others on your network could see or change them. Only allow this if you trust this network. You're choosing a less secure connection.` | **Yes, always**: on first enable and whenever a host is added. It's in the Open tier, but a file-written link is the phishing path. Documented as the Open-tier split in #117 (`ui.openApp` silent, `ui.openUrl` prompts). Christopher confirms in Q-D5 |
+| **Internet** (feature level 5, a later release: Christopher's Q-C1/Q-C2, #117) | `net.fetch` (`origins`: full `https://host[:port]` or `http://host[:port]`, approved by name; literal URLs only) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (https hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable). An http origin is always written in full, `Connect to http://nas.lan:3001`, followed by `cap_http_note`: `The connection to http://nas.lan:3001 isn't private. Others on your network could see or change it. Only allow this if you trust this network. You're choosing a less secure connection.` Private-network origins get `cap_private_note` and self-signed ones `cap_tofu_note` (§17.13) | **Yes** |
 | **Phone data** (later, no v1 kinds) | — (future `phone.*`) | Calendar, next alarm, battery, notification counts | `Read your calendar` · `See notification counts` | **Yes.** After `Allow`, Android may ask for its own permission too |
 | **Act** (later, no v1 kinds) | — | Write back to the data file, toggles, webhooks. In v1 buttons only Open | `Change values in widgets-data/w-anigeek.json` | **Yes** |
 | **Never offered** | — (not in the schema) | Send SMS, place calls, read contacts or messages, mic, camera, location, VPN or tunnel control, run code | — | The schema has no kind for these (the iappyx lesson: one bridge for every widget). One written anyway is an unknown kind: the phone skips that element (§17.3), and `validate.py` reports it |
 
-**Hosts and schemes (Christopher: guardrails and information, not blocks).** https is the default. Plain http is
+**Hosts and schemes (Christopher: guardrails and information, not blocks; decided as Q-C3/Q-C7 in #117).** http and
+private hosts stay allowed by name. Every such line carries a short, plain disclosure that ends by putting the choice
+with the user (`Only allow this if you trust this network. You're choosing a less secure connection.`), with no alarm
+colours and no extra confirm step. https is the default. Plain http is
 allowed only for a host or origin the user approves **by name**, shown literally as `http://…` with the not-private
 note, so the choice is visible. There's **no silent downgrade**: approving `anigeek.com` (https) doesn't cover
 `http://anigeek.com`, and a widget that switches a host to http is broadened (`Needs your OK again`). Hosts match
@@ -907,7 +910,8 @@ leaving the file (GC) clears it. On every load:
   set like any other line.
 
 `Turn off` (§17.6) is separate from the approved set. It's a sticky off switch that wins until the user picks `Allow`
-again, and it leaves the set unchanged.
+again, and it **keeps the ceiling** unchanged, so `Allow` turns the widget back on with no new prompt while the file
+stays within it.
 
 | Trigger | Where it's detected | What happens on the grid | Prompt |
 |---|---|---|---|
@@ -915,7 +919,7 @@ again, and it leaves the set unchanged.
 | **Added in the file** (by an agent, a sync, a PC edit) | Reload | Disabled tile `Needs your OK` (§17.3) | From a tap on the tile, or the review screen (§17.4) |
 | **Broadened** (a new kind, or a new entry inside one: a new origin, hostname, package or file, or https → http for a host) | Reload: a line outside the approved set → `needsApprovalAgain` | **Disabled** with `Needs your OK again`. The old version isn't kept running (its definition is gone) | `"<Title>" wants more access` (§17.5), new lines first |
 | **Narrowed, or back to an earlier version** (everything still within the approved set) | Reload | Stays (or becomes) live. No dot, no badge. The approved set is unchanged | None. A quiet history entry in the widget detail (`10:42 · No longer asks to connect to status.anigeek.com`) |
-| **Data bindings changed** (different `{data:…}` paths, a new layout, same capabilities) | Reload | Stays live (not consent-relevant, since layout isn't in the fingerprint) | None, and no history entry |
+| **Cosmetic change** (text, style, layout, `{data:…}` bindings, span or `author`; same capabilities) | Reload | Stays live. No dot, no badge, no `Changed` (not consent-relevant, since none of it is in the fingerprint) | None. Only a quiet history entry (`10:42 · Layout changed in launcher.json`; one per reload at most) |
 | **Element `id` changed** | Reload | Treated as a new widget: `Needs your OK`. Its data file changes too, because the path comes from the `id` (`widgets-data/<newId>.json`), so the agent must rename it | As "Added in the file". The old approval is dropped at the next GC (like widget bindings) |
 | **Same file, another device** (tablet) | First load there | `Needs your OK` (approvals don't sync, A1) | As "Added in the file" (Q-D6) |
 
@@ -951,9 +955,7 @@ Warnings for the two skip rows (Warnings section + `status.json`, §15.1 style; 
 skipped element):
 - `requires` too high: the existing §15.1 `warn_element_level` text.
 - Unknown kind: `elements[4]: capability kind "phone.calendar" isn't supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo.`
-```xml
-<string name="warn_capability_kind">%1$s: capability kind \"%2$s\" isn\'t supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo.</string>
-```
+(`warn_capability_kind`, §17.13.)
 
 Long-press: the item sheet with the title, `Widget · from launcher.json`, then `Review`, `Edit layout`,
 `Remove from home`. TalkBack: `<Title>, widget, needs your OK. Double-tap to review.`
@@ -973,7 +975,7 @@ Long-press: the item sheet with the title, `Widget · from launcher.json`, then 
 
 **Review list** (`Widget permissions`, full screen, from all of the above). Sections, each hidden when empty:
 1. `Needs your OK (2)`: one row per widget with the title, `Page 2 · 4 × 3`, a one-line summary (`New: Internet,
-   links`) and the source (`in launcher.json · 10:42`, plus the author quote if present). Tap → prompt.
+   links`) and the source (`in launcher.json · 10:42`, with ` · says "Claw"` only when `author` is present). Tap → prompt.
 2. `Allowed (5)`: title and capability chips (`Show`, `Open`, `Internet`). Tap → detail.
 3. `Turned off (1)`.
 4. `Android widgets (3)`: hosted AppWidgets, read-only, `Allowed by Android` (A5). Tap → App info.
@@ -1001,16 +1003,20 @@ A bottom sheet (not a dialog, so it can scroll and show a preview), opened only 
 │    you tap it                        │
 │  · Open links to http://nas.lan when │
 │    you tap it                        │
-│    Links to http://nas.lan aren't    │
+│    ▲ Links to http://nas.lan aren't  │
 │    private. Others on your network   │
-│    could see or change them.         │
+│    could see or change them. Only    │
+│    allow this if you trust this      │
+│    network. You're choosing a less   │
+│    secure connection.                │
 │                                      │
 │ You can change this later in Widget  │
 │ permissions.                         │
 │            [Keep off]   [Allow]      │
 └──────────────────────────────────────┘
 ```
-- Title: `Allow "<Title>"?`. Source line: `Added in launcher.json · <time>` or `Added on this phone`.
+- Title: `Allow "<Title>"?`. Source line: `Added in launcher.json · <time>` or `Added on this phone`. The `says "…"`
+  line appears only when the element has `author`. Without it, the preview moves up and no gap is left (Q-C4).
 - The **preview** draws the widget's layout with every data binding shown as `—` and no actions wired. It shows the
   shape, not data the widget hasn't been allowed to read.
 - Lines are in tier order (§17.1), Show first. An http host or origin is always written in full with its not-private
@@ -1026,48 +1032,7 @@ allowed`. Same buttons. `Keep off` leaves the approved set unchanged and the til
 (it isn't the sticky `Turn off`). If the file comes back within the approved set, the widget is live again with no
 prompt (§17.2).
 
-**Strings**
-```xml
-<string name="consent_title">Allow "%1$s"?</string>
-<string name="consent_title_more">"%1$s" wants more access</string>
-<string name="consent_source_file">Added in launcher.json · %1$s</string>
-<string name="consent_source_phone">Added on this phone</string>
-<string name="consent_author">says "%1$s"</string>
-<string name="consent_can">This widget can:</string>
-<string name="consent_new_prefix">New: %1$s</string>
-<string name="consent_already">Already allowed</string>
-<string name="consent_combo">It could send what it reads from your phone to these sites.</string>
-<string name="consent_footer">You can change this later in Widget permissions.</string>
-<string name="consent_allow">Allow</string>
-<string name="consent_keep_off">Keep off</string>
-<string name="cap_show_file">Show data from %1$s in your config folder</string>
-<string name="cap_open_app">Open %1$s when you tap it</string>
-<string name="cap_net">Connect to %1$s</string>
-<string name="cap_reload">Reload its data when you tap it</string>
-<string name="reload_in_progress">Reloading…</string>
-<string name="reload_a11y_updated">Updated</string>
-<string name="reload_a11y_same">No new data</string>
-<string name="tap_link_blocked">This link isn\'t allowed for this widget.</string>
-<string name="warn_tap_host">%1$s: the tap link\'s host \"%2$s\" isn\'t in this widget\'s approved hosts, so the tap was ignored.</string>
-<string name="warn_tap_scheme">%1$s: the tap link uses http, but \"%2$s\" is approved for https only, so the tap was ignored.</string>
-<string name="warn_tap_userinfo">%1$s: the tap link has a user name or password in it, so the tap was ignored.</string>
-<string name="cap_http_note">%1$s isn\'t private. Others on your network could see or change it.</string>
-<string name="warn_card_title">%1$s: a card needs a title, so it was skipped. It stays in the file.</string>
-<string name="warn_surface_none">%1$s: \"none\" needs room for the header row, so the default card surface was used.</string>
-<string name="warn_tap_empty">%1$s: the tap link %2$s has no value, so the tap was ignored.</string>
-<string name="cap_open_link">Open links to %1$s when you tap it</string>
-<!-- later, no v1 kind: -->
-<string name="cap_write_data">Change values in %1$s</string>
-<string name="tile_needs_ok">Needs your OK</string>
-<string name="tile_needs_ok_again">Needs your OK again</string>
-<string name="tile_off">Turned off</string>
-<string name="tile_update">Update Config Launcher to show this</string>
-<plurals name="b9_widgets_review">
-    <item quantity="one">%d widget needs your OK.</item>
-    <item quantity="other">%d widgets need your OK.</item>
-</plurals>
-<string name="b9_review">Review</string>
-```
+**Strings:** all consent copy, with names, placeholders and where each is used, is in §17.13.
 `status.json` (Q-A3) has a `consent` map keyed by element id, each with `state` (`needsApproval` | `needsApprovalAgain` |
 `off` | `allowed`) and an optional `warning` in the §15.1 style. It never holds the approval itself:
 ```json
@@ -1077,7 +1042,8 @@ An agent can see it's blocked and tell the person to look at the phone, and it c
 
 ### 17.6 Manage and revoke (per widget)
 Widget detail (from the review list, or item sheet → `Review` / `Permissions`):
-- Header: title, `Page 2 · 4 × 3`, source and last change (`Changed in launcher.json · 10:42 · says "Claw"`).
+- Header: title, `Page 2 · 4 × 3`, source and last change (`Changed in launcher.json · 10:42`, plus ` · says "Claw"`
+  only when `author` is present).
 - `This widget can:` with the same lines as the prompt, each with a status (`Allowed`, `Android permission off`).
 - **History** (last 5 consent-relevant changes on this phone, quiet: never a badge or dot): `10:42 · No longer asks to
   connect to status.anigeek.com`, `Yesterday · Allowed`.
@@ -1171,7 +1137,7 @@ glyph for warn ▲ and error ■.
 
 **Card chrome (automatic, always drawn; Claw #4).** Every config widget gets a header row with the title (`title` role)
 and its source: `as of 08:38` (caption) when the data has `updatedAt`, otherwise a 12 dp `dashboard` glyph that marks it as
-a widget. It turns `as of 08:38 · stale` with ▲ after the widget's `staleAfter` (default 2× the agent's declared
+a widget. The header never shows `author`. It turns `as of 08:38 · stale` with ▲ after the widget's `staleAfter` (default 2× the agent's declared
 interval, else 30 min). **The header can't be turned off.** At `short` heights (h = 1) it collapses to a leading title
 caption on the same row, ellipsized before the content, so even a 1-row card says what it is. This way a live card
 (even a Show-only one, which needs no prompt) can't pass for a system dialog, a notification or the status bar.
@@ -1285,6 +1251,174 @@ not-private note under `http://nas.lan`). `data.file` and `ui.reload` are Show-t
 - [ ] Contrast measurement for custom colours (warnings only), 200 % font and TalkBack passes on a phone and a tablet.
 
 
+### 17.13 S3-C strings (implementation-ready, #142)
+This table is the **single source** for consent copy. It replaces the scattered XML blocks earlier in §17. Sprite
+builds S3-C from it.
+- **Where:** **R** = `strings.xml` (localisable). **C** = English built in code for `status.json`, not `strings.xml`,
+  per §15 ("status.json text is code"). **A** = TalkBack-only (a `contentDescription`, state description or
+  announcement, never shown).
+- **Stage:** S3 = ships in S3-C. S5 = ships with `net.fetch` (Q-C1/Q-C2: later release). Later = no v1 kind.
+- **Provisional pending Q-Dn:** built now with the recommended answer. It changes only if Christopher answers otherwise.
+- Escape `'` and `"` as usual in `strings.xml`. `%1$s` placeholders are already-formatted text: titles and hosts are
+  bidi- and zero-width-stripped, and hosts are normalised to punycode (§17.1).
+
+**Grid: consent tile and item sheet (§17.3)**
+
+| Resource | English | Placeholders | Where · stage | Used in |
+|---|---|---|---|---|
+| `tile_needs_ok` | `Needs your OK` | — | R · S3 | Consent tile reason (new widget) |
+| `tile_needs_ok_again` | `Needs your OK again` | — | R · S3 | Consent tile reason (broadened) |
+| `tile_off` | `Turned off` | — | R · S3 | Consent tile reason (user turned it off) |
+| `tile_update` | `Update Config Launcher to show this` | — | R · S3 | Tile reason: `requires` too high or unknown kind |
+| `tile_update_hint` | `This widget needs a newer Config Launcher. It stays in your layout file.` | — | R · S3 | Hint sheet from the tile above |
+| `tile_cant_show` | `Can't show this widget` | — | R · S3 | Tile reason: card without a title (reuses §16.2 copy) |
+| `tile_a11y` | `%1$s, widget, %2$s. Double-tap to review.` | 1 = title, 2 = reason in lower case (e.g. `needs your OK`) | A · S3 | Consent tile node |
+| `tile_a11y_untitled` | `Widget, %1$s.` | 1 = reason | A · S3 | Consent tile for a card skipped for having no title |
+| `widget_sheet_source_file` | `Widget · from launcher.json` | — | R · S3 | Long-press item sheet subtitle |
+| `widget_action_review` | `Review` | — | R · S3 | Item sheet action and tile custom action (consent tile) |
+| `widget_action_permissions` | `Permissions` | — | R · S3 | Item sheet action and custom action (live card) → detail |
+
+**Banner, chip, badges (§17.4)**
+
+| Resource | English | Placeholders | Where · stage | Used in |
+|---|---|---|---|---|
+| `b9_widgets_review` (plurals) | one: `%d widget needs your OK.` · other: `%d widgets need your OK.` | d = count | R · S3 | B9 banner text |
+| `b9_review` | `Review` | — | R · S3 | B9 button |
+| `b9_dismiss_a11y` | `Dismiss` | — | A · S3 | B9 `×` button (collapses to the chip) |
+| `chip_review_a11y` (plurals) | one: `Widget permissions, %d needs your OK` · other: `Widget permissions, %d need your OK` | d = count | A · S3 | Count chip |
+| `menu_widgets_review` (plurals) | one/other: `Widgets · %d to review` | d = count | R · S3 | Home long-press `Widgets` item and interim ⋮ item when count > 0 |
+| `menu_dot_a11y` | `New widget permissions to review` | — | A · S3 | ⋮ icon dot |
+
+**Review list `Widget permissions` (§17.4)**
+
+| Resource | English | Placeholders | Where · stage | Used in |
+|---|---|---|---|---|
+| `review_title` | `Widget permissions` | — | R · S3 | Screen title, Settings/⋮ item |
+| `review_section_needs` | `Needs your OK (%1$d)` | 1 = count | R · S3 | Section header |
+| `review_section_allowed` | `Allowed (%1$d)` | 1 = count | R · S3 | Section header |
+| `review_section_off` | `Turned off (%1$d)` | 1 = count | R · S3 | Section header |
+| `review_section_android` | `Android widgets (%1$d)` | 1 = count | R · S3 | Section header (hosted AppWidgets) |
+| `review_row_where` | `Page %1$d · %2$d × %3$d` | 1 = page number (1-based), 2 = w, 3 = h | R · S3 | Row second line; also detail header |
+| `review_row_new` | `New: %1$s` | 1 = list of tier nouns (`review_noun_*`), joined with the locale's list format | R · S3 | Row summary (needs-OK rows) |
+| `review_noun_data` / `_apps` / `_links` / `_internet` | `data` / `apps` / `links` / `internet` | — | R · S3 (`_internet`: S5) | Joined into `review_row_new`, e.g. `New: links, internet` |
+| `review_source_file` | `in launcher.json · %1$s` | 1 = time (`10:42`, or a date if not today) | R · S3 | Row source |
+| `review_source_phone` | `on this phone · %1$s` | 1 = time | R · S3 | Row source |
+| `author_inline` | `%1$s · says "%2$s"` | 1 = source text, 2 = `author` | R · S3 · provisional pending Q-D7 | Row source and detail header **only when `author` is present** |
+| `chip_show` / `chip_open` / `chip_internet` | `Show` / `Open` / `Internet` | — | R · S3 (`chip_internet`: S5) | Allowed-row capability chips |
+| `review_android_allowed` | `Allowed by Android` | — | R · S3 | Android widgets rows |
+| `review_empty` | `No dashboard widgets yet.` | — | R · S3 | Empty state |
+
+**Prompt sheet (§17.5)**
+
+| Resource | English | Placeholders | Where · stage | Used in |
+|---|---|---|---|---|
+| `consent_title` | `Allow "%1$s"?` | 1 = title | R · S3 | New widget prompt title |
+| `consent_title_more` | `"%1$s" wants more access` | 1 = title | R · S3 | Broadened prompt title |
+| `consent_source_file` | `Added in launcher.json · %1$s` | 1 = time | R · S3 | Prompt source line |
+| `consent_source_phone` | `Added on this phone` | — | R · S3 | Prompt source line (inline add) |
+| `consent_author` | `says "%1$s"` | 1 = `author` | R · S3 · provisional pending Q-D7 | Prompt line under the source, **only when `author` is present** |
+| `consent_preview_a11y` | `Preview of the widget, without its data` | — | A · S3 | Preview box |
+| `consent_can` | `This widget can:` | — | R · S3 · provisional pending Q-D2 | List heading (new widget; detail page too) |
+| `consent_new_header` | `New` | — | R · S3 | Broadened prompt: section header |
+| `consent_already` | `Already allowed` | — | R · S3 | Broadened prompt: section header |
+| `consent_new_prefix` | `New: %1$s` | 1 = capability line | R · S3 | Each new line in the broadened prompt |
+| `consent_new_a11y` | `new, %1$s` | 1 = capability line | A · S3 | Spoken form of `consent_new_prefix` |
+| `consent_footer` | `You can change this later in Widget permissions.` | — | R · S3 | Prompt footer |
+| `consent_allow` | `Allow` | — | R · S3 · provisional pending Q-D2 | Primary button |
+| `consent_keep_off` | `Keep off` | — | R · S3 · provisional pending Q-D2 | Secondary button |
+| `consent_combo` | `It could send what it reads from your phone to these sites.` | — | R · Later | Combination line (Phone data + Internet) |
+
+**Capability lines (§17.1)**, used in the prompt, the detail page and history:
+
+| Resource | English | Placeholders | Where · stage | Used in |
+|---|---|---|---|---|
+| `cap_show_file` | `Show data from %1$s in your config folder` | 1 = `widgets-data/<id>.json` | R · S3 | `data.file` |
+| `cap_reload` | `Reload its data when you tap it` | — | R · S3 | `ui.reload` |
+| `cap_open_app` | `Open %1$s when you tap it` | 1 = app label, or the package if it isn't installed | R · S3 · provisional pending Q-D5 | `ui.openApp`, one line per package |
+| `cap_open_link` | `Open links to %1$s when you tap it` | 1 = host list (§ list rule below); http hosts written as `http://host` | R · S3 · provisional pending Q-D5 | `ui.openUrl` |
+| `cap_http_note_link` | `Links to %1$s aren't private. Others on your network could see or change them. Only allow this if you trust this network. You're choosing a less secure connection.` | 1 = `http://host` | R · S3 | Under each `http://` host in `cap_open_link` (Q-C3) |
+| `cap_net` | `Connect to %1$s` | 1 = origin list; https origins without `https://` and `:443`, http in full | R · S5 | `net.fetch` |
+| `cap_http_note` | `The connection to %1$s isn't private. Others on your network could see or change it. Only allow this if you trust this network. You're choosing a less secure connection.` | 1 = `http://host[:port]` | R · S5 | Under each `http://` origin in `cap_net` (Q-C3/Q-C7) |
+| `cap_private_note` | `%1$s is on your local network. Only allow this if you know what it is and trust it. You're responsible for this choice.` | 1 = origin | R · S5 | Under a private-IP / local origin (Q-C3) |
+| `cap_tofu_note` | `%1$s uses a certificate Android doesn't trust. Config Launcher will remember this certificate and ask again if it ever changes. Only allow this if you trust this server.` | 1 = origin | R · S5 | Under a self-signed origin (Q-C7 TOFU, pin on approve) |
+| `tofu_changed_title` | `Certificate changed for %1$s` | 1 = origin | R · S5 | Re-pin prompt title (fetch is paused until answered) |
+| `tofu_changed_body` | `This can be normal, like a renewed certificate, or someone could be intercepting the connection. Only trust it if you expected this change.` | — | R · S5 | Re-pin prompt body |
+| `tofu_trust` / `tofu_keep_off` | `Trust new certificate` / `Keep off` | — | R · S5 | Re-pin prompt buttons |
+| `cap_list_more` | `%1$s and %2$d more` | 1 = first 3 items, 2 = rest count | R · S3 | Lists over 3 items (expandable) |
+| `cap_write_data` | `Change values in %1$s` | 1 = data file | R · Later | Act tier (no v1 kind) |
+
+List rule: up to 3 hosts/origins/apps joined with the locale's list format (`a, b and c`); more → `cap_list_more`, tap
+to expand. Each http entry stays in full and gets its own note line under the list.
+
+**Detail page (§17.6)**
+
+| Resource | English | Placeholders | Where · stage | Used in |
+|---|---|---|---|---|
+| `detail_changed_file` | `Changed in launcher.json · %1$s` | 1 = time | R · S3 | Detail header source line (+ `author_inline` when present) |
+| `detail_changed_phone` | `Changed on this phone · %1$s` | 1 = time | R · S3 | Same |
+| `detail_status_allowed` | `Allowed` | — | R · S3 | Per-line status |
+| `detail_history` | `History` | — | R · S3 | Section header |
+| `history_entry` | `%1$s · %2$s` | 1 = time/date, 2 = event | R · S3 | History row |
+| `history_allowed` / `history_turned_off` / `history_turned_on` | `Allowed` / `Turned off` / `Turned on` | — | R · S3 | Events |
+| `history_no_longer` | `No longer asks: %1$s` | 1 = capability line | R · S3 | Narrowing (quiet, §17.2) |
+| `history_layout` | `Layout changed in launcher.json` | — | R · S3 | Cosmetic / layout / data-binding change, same capabilities (quiet, §17.2) |
+| `detail_approved` | `Approved on this phone:` | — | R · S3 · provisional pending Q-D6 | Full ceiling list |
+| `detail_not_used` | `not used now` | — | R · S3 | Secondary text on ceiling lines the current version doesn't use |
+| `detail_turn_off` / `detail_allow` | `Turn off` / `Allow` | — | R · S3 | Action button |
+| `turned_off_snack` | `"%1$s" turned off.` | 1 = title | R · S3 | Snackbar after Turn off, with `merge_undo` (`Undo`, §9.1), 10 s |
+| `detail_android_off` | `Android permission off: %1$s` | 1 = permission label | R · Later | Phone data tier |
+| `detail_open_settings` | `Open settings` | — | R · Later | Same |
+
+**Card chrome, taps, reload (§17.9)**
+
+| Resource | English | Placeholders | Where · stage | Used in |
+|---|---|---|---|---|
+| `card_as_of` | `as of %1$s` | 1 = time of `updatedAt` | R · S3 | Card header |
+| `card_stale` | `as of %1$s · stale` | 1 = time | R · S3 | Card header after `staleAfter` (+ ▲ glyph) |
+| `card_a11y` | `%1$s, widget` | 1 = title | A · S3 | Live card root node |
+| `card_stale_a11y` | `stale` | — | A · S3 | Appended to `as of` when stale |
+| `reload_in_progress` | `Reloading…` | — | R · S3 | Header while re-reading |
+| `reload_a11y_updated` / `reload_a11y_same` | `Updated` / `No new data` | — | A · S3 | Polite announcement after reload |
+| `reload_action_a11y` | `Reload` | — | A · S3 | Custom action on a tile with a reload tap |
+| `tap_link_blocked` | `This link isn't allowed for this widget.` | — | R · S3 | Snackbar, 4 s, no action |
+
+**status.json (C: English in code, never `strings.xml`)**
+
+| Name (in code) | English | Placeholders | Stage |
+|---|---|---|---|
+| `warn_consent_pending` | `%1$s: widget "%2$s" is waiting for approval on this phone. It isn't shown until then.` | 1 = path, 2 = title | S3 |
+| `warn_consent_again` | `%1$s: widget "%2$s" asks for more access and is waiting for approval on this phone. It isn't shown until then.` | same | S3 |
+| `warn_consent_off` | `%1$s: widget "%2$s" is turned off on this phone.` | same | S3 |
+| `warn_capability_kind` | `%1$s: capability kind "%2$s" isn't supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo.` | 1 = path, 2 = kind | S3 |
+| `warn_card_title` | `%1$s: a card needs a title, so it was skipped. It stays in the file.` | 1 = path | S3 |
+| `warn_surface_none` | `%1$s: "none" needs room for the header row, so the default card surface was used.` | 1 = path (`….surface`) | S3 |
+| `warn_data_missing` | `%1$s: widgets-data/%2$s.json is missing or unreadable, so the last values are shown.` | 1 = path, 2 = element id | S3 |
+| `warn_tap_host` | `%1$s: the tap link's host "%2$s" isn't in this widget's approved hosts, so the tap was ignored.` | 1 = path, 2 = host | S3 |
+| `warn_tap_scheme` | `%1$s: the tap link uses http, but "%2$s" is approved for https only, so the tap was ignored.` | 1 = path, 2 = host | S3 |
+| `warn_tap_userinfo` | `%1$s: the tap link has a user name or password in it, so the tap was ignored.` | 1 = path | S3 |
+| `warn_tap_empty` | `%1$s: the tap link %2$s has no value, so the tap was ignored.` | 1 = path, 2 = template | S3 |
+
+The `consent` map's `state` values (`needsApproval`, `needsApprovalAgain`, `off`, `allowed`) are keys, not copy.
+
+**Author (Q-C4).** `author` is optional and recommended. When it's **absent or empty after stripping**, every author
+element is **omitted, not blanked**: no `consent_author` line in the prompt (the source line moves up), no
+`author_inline` suffix in the review row or the detail header (plain `review_source_*` / `detail_changed_*`), no
+quote marks, and never `Unknown author`. The card header never shows the author, present or not; it shows only the
+title and `as of`. With and without author, the prompt reads: title → source → (author) → preview → list, with no
+gap left behind.
+
+**Strings that depend on an open Christopher question** (built now with the recommended answer):
+
+| Q | Recommended answer used | Strings |
+|---|---|---|
+| Q-D2 (per widget vs per capability) | Whole widget | `consent_can`, `consent_allow`, `consent_keep_off` (per-capability would add toggles per line) |
+| Q-D5 (openApp silent, openUrl prompts) | Yes | `cap_open_app` (shown in the review list and detail, never alone in a prompt), `cap_open_link` |
+| Q-D6 (approvals don't travel) | No sync | `detail_approved` ("on this phone") |
+| Q-D7 (author never trusted) | Never trusted | `consent_author`, `author_inline` (stay a quote) |
+
+Q-D1, Q-D4 and Q-D3 don't change any string. Q-D1 decides *when* a Show-only prompt appears, not its words. Q-D3 is
+answered by Christopher's Q-C1/Q-C2 (#117).
+
 ## Open questions for Christopher
 
 
@@ -1304,7 +1438,8 @@ Open (dashboard widgets, §17). Recommendations are in brackets:
   hold, and prompting for every agent card trains people to tap Allow.]
 - **Q-D2** Approval per widget as a whole, or per capability (e.g. allow the calendar but not the internet)? [Whole
   widget in the first release. Partial grants leave half-working cards that are hard to explain.]
-- **Q-D3** The schema now has `net.fetch` (exact origins, https by default, feature level 5). Should the launcher ship it? It
+- ~~**Q-D3**~~ ✅ Answered by Christopher's Q-C1/Q-C2 in #117 (25a7d36): ship local data first (stage 3), and add
+  INTERNET with `net.fetch` in a later release (stage 5). Original question kept for the record: The schema now has `net.fetch` (exact origins, https by default, feature level 5). Should the launcher ship it? It
   means adding the **INTERNET permission to the whole app**, for every user and every widget, which breaks the README's
   "no network access" promise even for people who never allow a fetch. [Ship level 4 first: your agent fetches on its
   own machine and writes `.configlauncher/widgets-data/<id>.json`, as the Claw card's numbers already could. Turn on
