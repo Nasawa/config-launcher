@@ -838,7 +838,7 @@ Assumptions A1–A5, all **✅ resolved** in the [#116 comment](https://github.c
 - ✅ **A1** Approval is **device-local** (like `bindings.json`, §16) and never stored in the synced folder, so nothing that
   writes `launcher.json`, whether an agent, a sync or a git merge, can approve its own widget.
 - ✅ **A2** Approval is keyed by **element `id` + a capability fingerprint**: a canonical serialization of the
-  capabilities and their targets only (kinds sorted, targets sorted). Layout, text, style, span and `author` are left
+  capabilities only: each `kind` plus its kind-specific field (`path`, `packages`, `hosts`, `origins`), sorted. Layout, text, style, span and `author` are left
   out, so editing them never prompts (Q-A2).
 - ✅ **A3** Capabilities are **enforced, not just shown**: a widget can't use anything it didn't declare, because the
   runtime grants only the APIs in the element's **approved** manifest (Q-A7). The prompt lists everything a widget can do,
@@ -853,12 +853,12 @@ Assumptions A1–A5, all **✅ resolved** in the [#116 comment](https://github.c
 ### 17.1 What a widget can ask for (UX tiers)
 The prompt groups capabilities by what they mean to a person, not by API. Each tier has one fixed sentence shape.
 
-| Tier | v1 kind (target) | Examples | Prompt line (exact shape) | Needs OK? |
+| Tier | v1 kind (field) | Examples | Prompt line (exact shape) | Needs OK? |
 |---|---|---|---|---|
-| **Show** | `data.file` (a path under `.configlauncher/widgets-data/`) | Static text, `{time}`/`{date}`/`{page}`, the widget's own data file | `Show data from widgets-data/w-anigeek.json in your config folder` | **No.** It's listed in the review screen, but on its own it never prompts (Q-D1). The folder is already yours, and displaying data can't reach anything |
-| **Open** | `ui.openApp` (package names) | Tap to open an app, or a launcher target (drawer, page list) | `Open Signal when you tap it` (the app label; the package if it isn't installed) | **No**, same rule as title-bar tap targets |
-| **Open** | `ui.openUrl` (hostnames) | Tap to open a link in the browser | `Open links to anigeek.com when you tap it` | **Yes, always**: on first enable and whenever a host is added. It's in the Open tier, but a file-written link is the phishing path. Documented as the Open-tier split in #117 (`ui.openApp` silent, `ui.openUrl` prompts). Christopher confirms in Q-D5 |
-| **Internet** (feature level 5, only if Q-D3 says yes) | `net.fetch` (exact origins `https://host[:port]`) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable) | **Yes** |
+| **Show** | `data.file` (`path`: a file under `.configlauncher/widgets-data/`) | Static text, `{time}`/`{date}`/`{page}`, the widget's own data file | `Show data from widgets-data/w-anigeek.json in your config folder` | **No.** It's listed in the review screen, but on its own it never prompts (Q-D1). The folder is already yours, and displaying data can't reach anything |
+| **Open** | `ui.openApp` (`packages`) | Tap to open an app, or a launcher target (drawer, page list) | `Open Signal when you tap it` (the app label; the package if it isn't installed) | **No**, same rule as title-bar tap targets |
+| **Open** | `ui.openUrl` (`hosts`) | Tap to open a link in the browser | `Open links to anigeek.com when you tap it` | **Yes, always**: on first enable and whenever a host is added. It's in the Open tier, but a file-written link is the phishing path. Documented as the Open-tier split in #117 (`ui.openApp` silent, `ui.openUrl` prompts). Christopher confirms in Q-D5 |
+| **Internet** (feature level 5, only if Q-D3 says yes) | `net.fetch` (`origins`: exact `https://host[:port]`, literal URLs only) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable) | **Yes** |
 | **Phone data** (later, no v1 kinds) | — (future `phone.*`) | Calendar, next alarm, battery, notification counts | `Read your calendar` · `See notification counts` | **Yes.** After `Allow`, Android may ask for its own permission too |
 | **Act** (later, no v1 kinds) | — | Write back to the data file, toggles, webhooks. In v1 buttons only Open | `Change values in widgets-data/w-anigeek.json` | **Yes** |
 | **Never offered** | — (not in the schema) | Send SMS, place calls, read contacts or messages, mic, camera, location, VPN or tunnel control, run code | — | The schema has no kind for these (the iappyx lesson: one bridge for every widget). One written anyway is an unknown kind: the phone skips that element (§17.3), and `validate.py` reports it |
@@ -1001,6 +1001,10 @@ live again (§17.2).
 <string name="cap_show_file">Show data from %1$s in your config folder</string>
 <string name="cap_open_app">Open %1$s when you tap it</string>
 <string name="cap_net">Connect to %1$s</string>
+<string name="tap_link_blocked">This link isn\'t allowed for this widget.</string>
+<string name="warn_tap_host">%1$s: the tap link\'s host \"%2$s\" isn\'t in this widget\'s approved hosts, so the tap was ignored.</string>
+<string name="warn_tap_scheme">%1$s: the tap link isn\'t an https link without a user name or password, so the tap was ignored.</string>
+<string name="warn_tap_empty">%1$s: the tap link %2$s has no value, so the tap was ignored.</string>
 <string name="cap_open_link">Open links to %1$s when you tap it</string>
 <!-- later, no v1 kind: -->
 <string name="cap_write_data">Change values in %1$s</string>
@@ -1122,6 +1126,18 @@ when the data has `updatedAt`, `as of 08:38` (caption). It turns `as of 08:38 ·
 first ever load shows `—`. A data file that's missing or unreadable keeps the last values, adds ▲ to `as of`, and writes a
 `status.json` warning.
 
+**Taps with data-built links (`ui.openUrl`).** A tap `url` may contain `{data:…}` (e.g. the latest blog post). At tap
+time the launcher resolves it and opens it only if the result is `https` (`http` only if Christopher allows it, #117
+Q-C7), has no user name or password in it, and its host is in the element's approved `hosts`. Otherwise:
+- **Nothing opens**, and the widget doesn't change. A short snackbar (4 s, no action) says
+  `This link isn't allowed for this widget.` TalkBack announces the same text. It shows once per tap, never a dialog,
+  and there's no "open anyway".
+- A `status.json` warning (Warnings section too) says which rule failed, so the agent can fix the data, e.g.
+  `elements[4]: the tap link's host "evil.example" isn't in this widget's approved hosts, so the tap was ignored.`
+- If the binding has no value, the tap is ignored the same way, with the warning
+  `elements[4]: the tap link {data:blog.url} has no value, so the tap was ignored.`
+- Allowing a new host is a capability change (`hosts` broadened → `Needs your OK again`). The snackbar never offers it.
+
 ### 17.10 Phone → tablet (and any span change)
 The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may give it its own grid).
 - **Same span, bigger cells:** `k` rises (tokens grow up to 1.5×, text up to 1.25×). Spare room goes to `list auto`
@@ -1149,17 +1165,17 @@ The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may
   "author": "Claw",
   "surface": "auto",
   "capabilities": [
-    { "kind": "data.file", "targets": ["w-anigeek.json"] },
-    { "kind": "ui.openUrl", "targets": ["anigeek.com", "blog.anigeek.com"] }
+    { "kind": "data.file", "path": "w-anigeek.json" },
+    { "kind": "ui.openUrl", "hosts": ["anigeek.com", "blog.anigeek.com"] }
   ],
-  "staleAfter": "PT30M",
+  "data": { "staleAfter": "PT30M" },
   "layouts": {
     "2x1": [ { "type": "metric", "label": "Monitors", "value": "{data:monitors.summary}", "status": "{data:monitors.status}" } ],
     "4x3": [
       { "type": "tile", "children": [
         { "type": "text", "role": "caption", "text": "Latest on blog.anigeek.com" },
         { "type": "text", "role": "body", "text": "{data:blog.title}", "maxLines": 2 }
-      ], "tap": { "openUrl": "{data:blog.url}" } },
+      ], "tap": { "kind": "ui.openUrl", "url": "{data:blog.url}" } },
       { "type": "row", "children": [
         { "type": "metric", "label": "PicSpin site", "value": "{data:picspin.value}", "status": "{data:picspin.status}" },
         { "type": "metric", "label": "letmeaithatforyou", "value": "{data:lmaitfy.value}", "status": "{data:lmaitfy.status}", "priority": 4 },
@@ -1172,8 +1188,11 @@ The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may
 ```
 Normative names from the [#116 comment](https://github.com/Nasawa/config-launcher/pull/116#issuecomment-6270653131): the kinds `data.file` / `ui.openApp` / `ui.openUrl` / `net.fetch`, `author`,
 `minSpan` `{w,h}`, `layouts` keyed `"WxH"` with a **lowercase `x`** (confirmed, e.g. `"4x3"`, pattern `^[1-9][0-9]*x[1-9][0-9]*$`; max 3), `priority` 0–9, `showIn`, `staleAfter` (ISO-8601 duration), and
-`updatedAt` (ISO-8601) at the root of the data file. The shape of each capability entry (`targets` here) and of `tap` are
-illustrative. The `data.file` target is relative to `.configlauncher/widgets-data/`, so this card reads
+`updatedAt` (ISO-8601) at the root of the data file. Capability entries use kind-specific fields, matching #117:
+`data.file` → `path`, `ui.openApp` → `packages`, `ui.openUrl` → `hosts`, `net.fetch` → `origins` (exact
+`https://host[:port]`). Taps are `{ "kind": "ui.openUrl", "url": "…" }` or `{ "kind": "ui.openApp", "package": "…" }`.
+`net.fetch` URLs are literals and never use `{data:…}`. A `ui.openUrl` tap `url` may use `{data:…}`, checked at tap time
+(§17.9). The `data.file` `path` is relative to `.configlauncher/widgets-data/`, so this card reads
 `.configlauncher/widgets-data/w-anigeek.json`, which the agent writes, e.g.
 `{ "updatedAt": "2026-10-19T08:38:00-06:00", "picspin": { "value": "up · 96 ms", "status": "ok" }, "unhealthy": [ … ] }`.
 Prompt: `ui.openUrl` only (`Open links to anigeek.com and blog.anigeek.com when you tap it`). Without the `tap`, the
@@ -1239,7 +1258,7 @@ Dashboard capability model (§17): all eight are answered in the [#116 comment](
 | Q | Resolution |
 |---|---|
 | ~~Q-A1~~ | ✅ Closed kinds: `data.file` (Show), `ui.openApp` / `ui.openUrl` (Open), `net.fetch` (Internet). No `phone.*` or Act kinds in v1. Never-offered kinds aren't in the schema |
-| ~~Q-A2~~ | ✅ Fingerprint = capabilities + targets only (sorted). A subset never prompts, and returning to an exactly approved fingerprint re-enables silently. A new kind or target → `needsApprovalAgain` |
+| ~~Q-A2~~ | ✅ Fingerprint = each `kind` + its field (`path` / `packages` / `hosts` / `origins`) only, sorted. A subset never prompts, and returning to an exactly approved fingerprint re-enables silently. A new kind or target → `needsApprovalAgain` |
 | ~~Q-A3~~ | ✅ `status.json` `consent` map keyed by element id: `state` (`needsApproval` / `needsApprovalAgain` / `off` / `allowed`) + optional `warning`. No approval secret in it |
 | ~~Q-A4~~ | ✅ Real optional field `author` (string, max 40). Quoted, never trusted |
 | ~~Q-A5~~ | ✅ `{data:…}` with dots + `[index]` only, `list` binds to an array, `updatedAt` at the data file root, `staleAfter` on the element. One file per widget: `.configlauncher/widgets-data/<elementId>.json` |
