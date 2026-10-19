@@ -162,9 +162,10 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
                 Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 horizontalArrangement = when (align) { Align.START -> Arrangement.Start; Align.CENTER -> Arrangement.Center; Align.END -> Arrangement.End },
             ) {
-                // The text takes what's left after the ▾, so truncation ellipsizes the text and never clips the ▾.
+                // The text takes what's left after the 4 dp gap and the ▾ (ux.md §15), so truncation ellipsizes the text and never clips the ▾.
                 Text(text, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Text(" ▾", style = style.copy(fontSize = 12.sp), maxLines = 1, softWrap = false)
+                Spacer(Modifier.width(4.dp))
+                Text("▾", style = style.copy(fontSize = 12.sp), maxLines = 1, softWrap = false)
             }
         }
     }
