@@ -42,6 +42,7 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         watch(engine.source)
         val appOnly = prefs.folderUri == null
         pollJob = scope.launch(Dispatchers.IO) {
+            syncSchemaCopy()   // §20.2: after an app update the bundled schema may be newer
             runCatching { engine.poll(force = true) } // resume always hashes (§17 Q5)
             // §18.5: app-only mode doesn't poll; nothing external writes there (debug adb edits use the FileObserver).
             if (!appOnly) while (isActive) { delay(2_000); runCatching { engine.poll() } }
@@ -89,7 +90,14 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         prefs.folderUri = uri; prefs.appOnly = false
         switch()
-        scope.launch(Dispatchers.IO) { syncAgentDocs(uri) }
+        scope.launch(Dispatchers.IO) { syncAgentDocs(uri); syncSchemaCopy(uri) }
+    }
+
+    /** §20.2: offline schema copy in the folder's `.configlauncher/`, hash-guarded like AGENTS.md. Folder sources only. */
+    fun syncSchemaCopy(uri: Uri? = prefs.folderUri): SchemaCopy.Outcome {
+        uri ?: return SchemaCopy.Outcome.FAILED
+        val bundled = runCatching { context.assets.open(SchemaCopy.ASSET).use { it.readBytes() } }.getOrNull() ?: return SchemaCopy.Outcome.FAILED
+        return SchemaCopy.sync(SafSource(context.contentResolver, uri), bundled)
     }
 
     /**
@@ -146,7 +154,7 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         stop()
         scope.launch(Dispatchers.IO) {
             val ok = engine.moveTo(SafSource(context.contentResolver, uri), useMine)
-            if (ok) { prefs.folderUri = uri; prefs.appOnly = false; if (old != uri) release(old); syncAgentDocs(uri) }
+            if (ok) { prefs.folderUri = uri; prefs.appOnly = false; if (old != uri) release(old); syncAgentDocs(uri); syncSchemaCopy(uri) }
             else if (old != uri) release(uri)
             if (wasRunning) withContext(Dispatchers.Main) { start() }
         }

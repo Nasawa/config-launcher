@@ -92,6 +92,14 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
 
     override fun siblingNames(): List<String> = children(rootDocId).keys.toList()
 
+    override fun readSidecar(subdir: String, name: String, maxBytes: Int): ByteArray? {
+        var dir = children(rootDocId)[".configlauncher"]?.docId ?: return null
+        if (subdir.isNotEmpty()) dir = children(dir)[subdir]?.docId ?: return null
+        val child = children(dir)[name] ?: return null
+        if (child.size > maxBytes) throw IOException("$name is larger than ${maxBytes / 1024} KiB")
+        return resolver.openInputStream(docUri(child.docId))?.use { it.readCapped(maxBytes) }
+    }
+
     override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
         var dir = ensure(rootDocId, ".configlauncher", Document.MIME_TYPE_DIR)
         if (subdir.isNotEmpty()) dir = ensure(dir, subdir, Document.MIME_TYPE_DIR)
