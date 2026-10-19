@@ -422,3 +422,16 @@ Christopher clarified that the old devices are for testing only, not targets. mi
 
 ## 19. Design proposals (not yet accepted)
 - **Config-driven title bar (#79):** [docs/design/title-bar.md](docs/design/title-bar.md). The first instance of a general element model (`id`, `type`, placement, `content`, `style`) in a root `elements[]` array, with optional per-page overrides; widgets reuse it later. Stays on `schemaVersion` 1 through a forward-compatibility rule (unknown element types are skipped with a warning; unknown keys inside known types are errors; a `requires` feature level). Pragma's ux.md §15 slots (#80) are the default preset. Nothing changes in `schema/` until it's accepted.
+
+## 20. Agent onboarding (#76)
+Docs side done: [`templates/config-folder/AGENTS.md`](templates/config-folder/AGENTS.md) (the guidance that travels with `launcher.json`), [`skills/config-launcher/SKILL.md`](skills/config-launcher/SKILL.md), a contributor [`AGENTS.md`](AGENTS.md), and README "Canonical details" and "Agent kit" sections closing #76's four gaps. No MCP server, by design: the file is the API (#76 point 4, agreed).
+
+**Specified for Sprite (not implemented):**
+1. **Write `AGENTS.md` into the folder** once, when a folder is chosen or connected, if the setting *Add agent instructions to folder* is on (default on; mentioned on the first-run folder step). Content = the template above, bundled as an asset.
+   - Never overwrite a user-changed file: store the SHA-256 of each shipped version; replace `AGENTS.md` only if its current hash equals a shipped hash (then update it to the new version). If it differs, leave it alone. If it's absent after the first write, don't recreate it (the user deleted it on purpose); the setting's *Add again* action rewrites it.
+   - Goes through the normal SAF write path (temp + verify). Not in app-only mode.
+   - It's meant to be committed, so it's not in the suggested `.gitignore`.
+2. **Optional offline copies:** write `.configlauncher/launcher-config.v1.schema.json` (bundled asset) on the same trigger and on app updates, so agents can validate without network. `validate.py` stays a download from the repo (it isn't the launcher's to ship into a user's folder).
+3. **Canonical drawer rules:** the codec currently passes `drawer.rules` through as raw JSON, so key order stays as written. Emit `id`, `group`, `match` and inside `match` `packages`, `packagePrefix`, `tag`, `category`, in both the Kotlin codec and `validate.py --format`.
+4. **Generated IDs** for folders, shortcuts, pages and rules should follow the README convention (`f-`, `s-`, readable or `p-` pages, `r-`), like apps already do (`a-`).
+5. **Schema tidy-up (later, with the next schema change):** reorder `$defs/drawerRule.required` to `[id, group, match]` to match `properties`. Not done now because schema/ is frozen during the rework.
