@@ -701,15 +701,42 @@ schemaVersion 2: an unknown element type, or one whose `requires` is above the l
 a warning** and kept in the file. Unknown keys inside a known type are still errors (B2). `backdrop: "auto"` (default)
 follows the device's `Label backdrop` setting; an explicit `none`, `scrim` or custom backdrop in the file wins.
 
-**Layout and size.** One line. **Clock and date never truncate and take priority**: a slot holding only `{time}` /
-`{date}` keeps its full width. The centre gets the remaining width: **at least 50 % when the sides leave that much**,
+**Layout and size.** One line. **Clock and date take priority**: a slot holding only `{time}` / `{date}` keeps its
+full width whenever the bar fits, and only the overflow ladder below may shorten the date. **The clock never shortens
+or truncates.** The centre gets the remaining width: **at least 50 % when the sides leave that much**,
 centred. When fixed sides leave less, centring is given up and the centre takes what's left between them, ellipsizing
-at the end (the `{page}` slot never goes below 32 dp, so its ▾ and tap target stay; #152). Other side slots ellipsize
+at the end (the `{page}` slot doesn't go below 32 dp, so its ▾ and tap target stay; #152. Only step 1 of the overflow ladder below takes it under that). Other side slots ellipsize
 before the centre does. Adjacent **non-empty** slots always have an **8 dp minimum gap** between them, reserved before
 the text is laid out (like the ▾ width), so text never runs together (`11:20 AM` `Very…`); an empty slot takes no gap. **Default size is `small`, 14 sp (Q-T3)**: it matches
 the §1.3 page label and status-bar text, and at 200 % font (28 sp) it still fits one line and costs one grid row at most
 on small phones, where 18 sp (36 sp at 200 %) would push rows below the 64 × 80 dp minimum. The bar takes its height
 from size + padding, and grid rows share the rest. Never overlaps icons.
+
+**Overflow ladder (narrow phones, #149).** The rules above can't always hold. On Sprite's A51 at 320 dp wide, with
+large text and the One UI font, a long date is about 200 dp, the clock about 75 dp and `{page}` 32 dp, plus two 8 dp
+gaps, in a bar of about 285 dp. When the clock, the date, the `{page}` minimum and the gaps don't fit (other side text
+has already ellipsized), the phone applies these steps **in order and stops at the first one that fits**:
+1. **`{page}` shrinks to the ▾ alone.** The page text is hidden, and the ▾ (12 dp + 4 dp) stays. The slot keeps its
+   **48 dp touch area**, which may overlap the 8 dp gap but never the neighbouring text. TalkBack still reads the page
+   name (`Home, Pages, button`). With one page there's no ▾ and no action, so the page text is simply hidden, and
+   TalkBack still reads it. The 32 dp `{page}` minimum gives way to this step.
+2. **The date shortens, in steps** (re-measuring after each one), using the `DateTimeFormatter` letters §15.1 allows:
+   - Full text runs become short ones: `EEEE` → `EEE` (`Sunday` → `Sun`), `MMMM` → `MMM` (`October` → `Oct`).
+   - Then the weekday run (`E…`) is dropped, together with the literal separator next to it (`EEE, MMM d` → `MMM d`).
+   - Plain `{date}` (the locale medium date, title-bar.md) has no pattern to edit, so it steps from the medium to the
+     short date format (`Oct 18, 2026` → `10/18/26`).
+   Letters that are already short (`EEE`, `MMM`, `d`, `M`, `y`) and narrow forms (`MMMMM`) are left as they are.
+3. **Text size steps down by one, only when the size comes from a named title-bar size.** If `style.size` is `large`,
+   it becomes `medium`. If it's `medium`, it becomes `small`. It never goes below the default `small` (14 sp). A
+   numeric `style.size`, or `small`, skips this step. The step changes only the bar's own size. **The system font
+   scale is never overridden**: it still multiplies whatever size is used.
+4. **Last resort: the date truncates with an ellipsis at the end** (`Sun, Oct 1…`). The clock never truncates.
+TalkBack always reads the **full** spoken date and time (`Sunday, October 18`), whatever step is showing. The ladder
+runs again on every layout change: rotation, a font-scale or display-size change, a reload, a home-theme switch.
+Whenever step 2 or later is in use, `status.json` gets the phone-only warning `warn_titlebar_fit` (§15.1). It's
+marked `checked on this phone`, like the theme contrast warnings, because `validate.py` can't know the phone's width.
+It shows in the Warnings list, with no snackbar or banner, and it clears silently once the bar fits again. Step 1 alone
+writes no warning.
 
 **Contrast.** Light text always gets the label shadow; dark text doesn't. With `auto` + `Label backdrop` on, or
 `scrim`, the 60 % scrim gives ≥ 5.7:1 for white (§12). With a custom backdrop, the launcher measures text vs backdrop.
@@ -820,6 +847,7 @@ Showing the last working layout.`). Warnings never raise a banner.
 | Pattern letter run too long (`a`) | Error | `elements[0].content.slots.end: aa is too long. Use at most 1, like a.` |
 | Unclosed quote in a pattern | Error | `elements[0].content.slots.start: A ' quote isn't closed. Add a closing ' after the text.` |
 | Low contrast | Warning | `elements[0].style.color: contrast 2.1:1 on the backdrop (4.5:1 recommended). Shown anyway.` |
+| Bar too wide for this phone (overflow ladder step 2 or later, phone-only) | Warning | `elements[0].content.slots.end: the title bar doesn't fit this phone's 285 dp width, so fit step 2 of 4 was used: the date was shortened. Checked on this phone. Use a shorter date, like {date:d MMM}.` |
 
 Resources (character positions are 1-based, like line and column):
 ```xml
@@ -870,6 +898,16 @@ Resources (character positions are 1-based, like line and column):
 <!-- code, not strings.xml (status.json): validator error for the top-level theme key (§12.1, Q-A10) -->
 <string name="err_theme">%1$s must be system, light or dark.</string>
 <!-- code, not strings.xml (status.json): phone warning for an unknown theme string; %1$s = the value as written -->
+<!-- code, not strings.xml (status.json): overflow ladder (§15 Layout). %1$s = path of the slot holding the date
+     (elements[0].content.slots.end), %2$d = the bar's width in dp, %3$d = the last step used (2, 3 or 4),
+     %4$s = what was done: fit_step_date, fit_step_size or fit_step_cut. Phone-only, like warn_contrast_theme. -->
+<string name="warn_titlebar_fit">%1$s: the title bar doesn\'t fit this phone\'s %2$d dp width, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use a shorter date, like {date:d MMM}.</string>
+<!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit, step 2 -->
+<string name="fit_step_date">the date was shortened</string>
+<!-- code, not strings.xml (status.json): step 3; %1$s = medium or small -->
+<string name="fit_step_size">the date was shortened and the text size went down to %1$s</string>
+<!-- code, not strings.xml (status.json): step 4 (used whether or not step 3 ran) -->
+<string name="fit_step_cut">the date was shortened and cut off with …</string>
 <string name="warn_theme_value">theme \"%1$s\" isn\'t supported by this Config Launcher, so home follows the system setting. Update the app, or check for a typo.</string>
 <string name="warnings_copied">Warnings copied.</string>
 <string name="warnings_copy_done">Copied</string>
@@ -1261,7 +1299,10 @@ A bottom sheet (not a dialog, so it can scroll and show a preview), opened only 
   launcher.json still has exactly the `shown` fingerprint**; a card that has left the file (or is skipped) is refused
   too. After a refusal the card keeps its state: `needsApprovalAgain` when its ceiling is non-empty (including silent
   lines recorded while it was live), `needsApproval` when the ceiling is empty, `off` if turned off (e.g. after
-  `Forget approval`). So the UI can't approve lines the user never saw, even by accident.
+  `Forget approval`). So the UI can't approve lines the user never saw, even by accident. Whenever a fingerprint
+  mismatch ends the sheet without a decision (the store refuses `Allow`, or the sheet closes on its own because the
+  card changed or left the file), the snackbar `consent_changed_snack` says so: `"Anigeek LLC" changed. Review it
+  again.` (§17.13). It has no action, and TalkBack announces it.
 - After `Allow`, Android runtime permissions follow if needed, one system dialog per permission, but only those that
   are missing. If one is denied, the widget is live, the affected bindings show `—`, and the detail shows `Android
   permission off: Calendar` with `Open settings`.
@@ -1534,6 +1575,7 @@ time, with the not-private note, until the user ticks `Always allow http://nas.l
 - [ ] Consent store (device-local), approved-set check on every load (it never shrinks), the states in §17.2, no dialog from a load.
 - [ ] Consent tile (§17.3), B9 + count chip + menu badges (§17.4), review list, prompt sheet with preview, detail with
   Turn off + Undo, Forget approval (confirm, no Undo), `status.json` consent fields.
+- [ ] `consent_changed_snack` after a fingerprint mismatch ends the prompt (§17.5).
 - [ ] `allow(id, shown, current)`: refuse (no change) unless the card in the current launcher.json still has exactly the `shown` fingerprint, and refuse a card that has left the file or is skipped; an open prompt closes (or rebuilds visibly) when the fingerprint changes (§17.5).
 - [ ] Name fallback: the element `id` wherever there's no `title` (§17.2).
 - [ ] Link taps (§17.9): blocked schemes / user info, source match opens, confirm sheet otherwise, `Always allow` adds
@@ -1615,6 +1657,7 @@ builds S3-C from it.
 | `consent_footer` | `You can change this later in Widget permissions.` | — | R · S3 | Prompt footer |
 | `consent_allow` | `Allow` | — | R · S3 | Primary button |
 | `consent_keep_off` | `Keep off` | — | R · S3 | Secondary button |
+| `consent_changed_snack` | `"%1$s" changed. Review it again.` | 1 = name (title, or the element id, §17.2) | R · S3 | Snackbar, 4 s, **no action**, announced by TalkBack (polite), when a fingerprint mismatch ends the prompt without a decision: `allow(id, shown, current)` refused, or the sheet closed because the card changed or left the file (§17.5) |
 | `consent_combo` | `It could send what it reads from your phone to these sites.` | — | R · Later | Combination line (Phone data + Internet) |
 
 **Capability lines (§17.1)**, used in the prompt, the detail page and history:
