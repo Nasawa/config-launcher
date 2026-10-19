@@ -108,6 +108,13 @@
         <item quantity="one">Layout loaded · %d warning</item>
         <item quantity="other">Layout loaded · %d warnings</item>
     </plurals>
+    <!-- TalkBack form of status_loaded_warnings (ux.md §15): a comma, not the · glyph. -->
+    <plurals name="status_loaded_warnings_a11y">
+        <item quantity="one">Layout loaded, %d warning</item>
+        <item quantity="other">Layout loaded, %d warnings</item>
+    </plurals>
+    <!-- TalkBack announcement only (ux.md §15): the Copy button itself shows "Copied" with a check. -->
+    <string name="warnings_copied">Warnings copied.</string>
 
     <!-- Home app (ux.md §7 step 4, §8) -->
     <string name="home_role_title">Set as home app</string>

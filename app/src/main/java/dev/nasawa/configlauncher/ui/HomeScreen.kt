@@ -421,6 +421,7 @@ fun HomeScreen(vm: HomeViewModel) {
                 onDismissRequest = { folderInfo = null },
                 title = { Text(stringResource(R.string.menu_config_folder)) },
                 text = {
+                    val loadedSpoken = pluralStringResource(R.plurals.status_loaded_warnings_a11y, warnings.size, warnings.size)
                     Column {
                         androidx.compose.foundation.text.selection.SelectionContainer { Text(path.ifEmpty { stringResource(R.string.folder_app_only) }) }
                         // ux.md §15: a valid file with warnings says so here; tap → the Warnings list.
@@ -428,6 +429,8 @@ fun HomeScreen(vm: HomeViewModel) {
                             pluralStringResource(R.plurals.status_loaded_warnings, warnings.size, warnings.size),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 12.dp).heightIn(min = 48.dp)
+                                // §15: TalkBack reads "Layout loaded, 2 warnings, button" (comma, not the · glyph).
+                                .semantics { contentDescription = loadedSpoken }
                                 .clickable(role = Role.Button) { warningsOpen = true }.wrapContentHeight(),
                         )
                     }
@@ -445,7 +448,7 @@ fun HomeScreen(vm: HomeViewModel) {
 
         if (warningsOpen && warnings.isNotEmpty()) WarningsDialog(warnings, onCopy = { text ->
             ctx.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("launcher.json", text))
-            toast(res.getString(R.string.copied))
+            // §15: the list stays open; the Copy button shows "Copied" ✓ for ~2 s and TalkBack says "Warnings copied."
         }, onDismiss = { warningsOpen = false })
 
         openFolder?.let { folder ->
