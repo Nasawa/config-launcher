@@ -322,6 +322,7 @@ apps in the drawer.
 | **B7** | `schemaVersion` newer than supported | `This file needs a newer Config Launcher.` | `Details` |
 | **B8** (notice, lowest priority: shown only when no B1–B6 banner is up, and below them) | `schemaVersion` older: migrated in memory, not yet written | `launcher.json uses an older format (v{N}). It will be upgraded on your next change.` | `Upgrade now` (saves the original to `.configlauncher/backup/launcher.v{N}.{timestamp}.json`, then writes through the normal path with the hash check and B6) · `✕` (dismissed for that file hash; it returns only for a different older-format file. The next edit still upgrades, with a backup) |
 | — (notice) | Sync conflict copies next to the file (§5) | `Sync conflict copies found: <names>. Only launcher.json is used.` | `×` |
+| **B9** (later, §17.4; notice, lowest priority like B8) | A reload raised the number of dashboard widgets waiting for approval | `2 widgets need your OK.` (`1 widget needs your OK.`) | `Review` · `×` (collapses to the count chip) |
 
 `Create from current layout` writes the layout currently on screen (last working copy, or the built-in default) to
 `launcher.json`. Unknown packages and unpublished shortcuts are **not** errors (§1.2). Duplicates of the same app twice
@@ -815,6 +816,353 @@ Warnings section and `status.json` carry the path message (same style as §15.1)
 `apps.json` / `AGENTS.md` are unrelated. Bindings never appear in the synced folder.
 
 
+## 17. Dashboard widgets: consent and components (later, after §16)
+(References to "§17 AQ-…" or "§17 Q…" elsewhere in this doc point to ARCHITECTURE §17, not to this section.)
+Christopher's new framing: **make your home screen into an AI-assisted dashboard.** Widgets defined in the config, like
+Claw's "Anigeek LLC" card (blog post, three uptime metrics, an unhealthy-monitor list, "as of 08:38"), are now the core
+feature. Hosted AppWidgets (§16) sit next to them. This section covers the UX of (1) the **per-widget capability and
+consent model** Archimedes is designing and (2) the **component system** these widgets are drawn with.
+
+**Status and assumptions.** When this was written, nothing on the capability model had been posted yet (no ARCHITECTURE
+section, design doc, issue or PR), so this section fits the model as Grok Bot relayed it: each widget declares its data
+sources and permissions, new or broader permissions prompt the user, unapproved widgets are flagged and disabled,
+changed data sources are flagged, and the ⋮ menu may carry a counter badge. Words reused from existing docs: element,
+`elements[]`, `requires`/feature level, `style`, skip-and-keep, Stage 1 cell reservation, `widgets-data.json` and
+`{data:…}` (research/widgets.md §5.5), `status.json`, the Warnings section. **Archimedes owns every key name and the
+schema.** The JSON below shows what the UX needs, not the final schema. Assumptions:
+- **A1** Approval is **device-local** (like `bindings.json`, §16) and never stored in the synced folder, so nothing that
+  writes `launcher.json`, whether an agent, a sync or a git merge, can approve its own widget.
+- **A2** Approval is keyed by **element `id` + a capability fingerprint** (the declared capabilities and their targets).
+  Layout, text, style and size are not part of the fingerprint, so editing them never prompts.
+- **A3** Capabilities are **enforced, not just shown**: a widget can't use anything it didn't declare, because the
+  renderer gives it nothing else. The prompt lists everything a widget can do, not a best guess.
+- **A4** v1 dashboard data comes from **files in the config folder** (`widgets-data.json` or files named by the widget). The
+  agent fetches on its own machine and writes the data, so the launcher stays offline (README: no network access). Network,
+  phone data and actions are designed here so the flow is ready for them, but whether they ship is Christopher's call
+  (Q-D1, Q-D3).
+- **A5** Hosted AppWidgets (§16) are **outside this model**. Android's bind consent (§16.3) covers them, and the
+  provider app holds its own permissions. They are listed in the review screen for completeness only.
+
+### 17.1 What a widget can ask for (UX tiers)
+The prompt groups capabilities by what they mean to a person, not by API. Each tier has one fixed sentence shape.
+
+| Tier | Examples | Prompt line (exact shape) | Needs OK? |
+|---|---|---|---|
+| **Show** | Static text, `{time}`/`{date}`/`{page}`, data from a file in the config folder | `Show data from widgets-data.json in your config folder` | **No.** It's listed in the review screen, but on its own it never prompts (Q-D1). The folder is already yours, and displaying data can't reach anything |
+| **Open** | Tap to open an app or shortcut already on home or in the drawer, or a launcher target (drawer, page list) | `Open Signal when you tap it` | **No**, same rule as title-bar tap targets |
+| **Phone data** | Calendar, next alarm, battery, step count, notification counts | `Read your calendar` · `See notification counts` | **Yes.** After `Allow`, Android may ask for its own permission too |
+| **Internet** (only if Q-D3 says yes) | Fetch from named hosts | `Connect to status.anigeek.com and blog.anigeek.com` (each host listed; more than 3 → `and 2 more`, expandable) | **Yes** |
+| **Act** | Open a link, send an intent, write back to a data file, toggle something | `Open links to anigeek.com when you tap it` · `Change values in widgets-data.json` | **Yes** |
+| **Never offered** | Send SMS, place calls, read contacts or messages, mic, camera, location, VPN or tunnel control, run code | — | The schema has no capability for these (the iappyx lesson: one bridge for every widget) |
+
+**Combination line.** When a widget asks for **Phone data** *and* **Internet**, the prompt adds a final line in bold:
+`It could send what it reads from your phone to these sites.` (No line like this for Show + Internet: folder data is
+already the agent's.)
+
+### 17.2 When the prompt appears
+Rule inherited from §16 (research §5.3): **a file load never opens a dialog.** A file change only *marks* a widget, and
+the prompt opens from a tap.
+
+| Trigger | Where it's detected | What happens on the grid | Prompt |
+|---|---|---|---|
+| **Added on this phone** (picker, §16.1, a template or a first-party type) | The add action | Placed and live once allowed | **Inline, before placing**, only if it needs OK (a Show/Open-only widget is placed straight away). `Keep off` cancels the add, so nothing is written |
+| **Added in the file** (by an agent, a sync, a PC edit) | Reload | Disabled tile `Needs your OK` (§17.3) | From a tap on the tile, or the review screen (§17.4) |
+| **Broadened** (a new capability, or a new target inside one: a new host, a new file, a new app to open) | Reload: fingerprint ⊄ the approved set | **Disabled** with `Needs your OK again`. The old version isn't kept running (its definition is gone) | `"<Title>" wants more access` (§17.5), new lines first |
+| **Narrowed** (capabilities removed) | Reload | Stays live | None. The approval is narrowed silently; the review list shows `Changed` for 24 h |
+| **Data source changed, same tier, target already approved** (e.g. the file path inside the folder, or `{data:…}` keys) | Reload | Stays live. A small **info dot** (6 dp, white 70 %, no glyph colour meaning) at the top-start corner until the user opens the widget's detail or the review list | None. Listed under `Changed` with the before → after |
+| **Back to an approved fingerprint** (an agent reverts) | Reload | Live again | None |
+| **Element `id` changed** | Reload | Treated as a new widget: `Needs your OK` | As "Added in the file". The old approval is dropped at the next GC (like widget bindings) |
+| **Same file, another device** (tablet) | First load there | `Needs your OK` (approvals don't sync, A1) | As "Added in the file" (Q-D6) |
+
+**Who changed it.** The launcher can't know who edited the file, so it never claims to. It only knows **"on this
+phone"** (its own write, history-tracked) vs **"in launcher.json"** (anything else). If the element carries an author
+claim (Q-A4), it's shown as a quote: `Changed in launcher.json · says "Claw"`. It is never a trust signal: an agent and a
+person editing on a PC get the same prompt, and no author is ever auto-approved (Q-D7).
+
+**Phone edits never broaden.** In this release the phone edits only placement, size and the §16.6 presets. It never
+edits capabilities, so a phone-side edit can't trigger a prompt.
+
+### 17.3 A disabled widget on the grid
+A disabled widget **never renders its content**: no data is read, nothing is fetched, and its own text isn't drawn (it
+could imitate system UI, e.g. a fake "Tap to verify your account"). It shows a **consent tile** in its cells, built like
+the §16.2 placeholder so every non-live widget looks like the same family:
+- 12 dp-radius frame (scaled, §17.8), white 12 % fill, **1 dp dashed white 40 % outline** (the dash is the "not live"
+  cue; amber stays reserved for size problems, §16.5).
+- Centre: a 24 dp `shield` outline icon, then the widget's **title** from the file (14 sp, 1 line, bidi and
+  zero-width characters stripped, §13), then the reason (12 sp, secondary).
+- 1×1: icon only, with the title and reason in TalkBack and on long-press. 2×1: icon + reason, no title.
+
+| State | Reason (exact) | Tap |
+|---|---|---|
+| New, never allowed | `Needs your OK` | Prompt (§17.5) |
+| Broadened | `Needs your OK again` | Broadened prompt |
+| User chose `Keep off` | `Turned off` | Widget detail (§17.6) with `Allow` |
+| User revoked it | `Turned off` | Same |
+| Uses a capability this launcher doesn't know (above its feature level) | `Update Config Launcher to show this` | Hint sheet. Same skip-and-keep rule as §15, but it **keeps its cells and shows the tile**, because a dashboard card going missing looks broken |
+| Asks for a "never offered" or unknown capability | `Can't show this widget` | Detail sheet showing the path message from `status.json` |
+
+Long-press: the item sheet with the title, `Widget · from launcher.json`, then `Review`, `Edit layout`,
+`Remove from home`. TalkBack: `<Title>, widget, needs your OK. Double-tap to review.`
+
+### 17.4 The badge, the notice and the review list
+**Count:** the number of widgets in `Needs your OK` or `Needs your OK again` (not `Turned off`; that was the user's choice).
+
+- **Banner notice B9** (lowest priority, like B8: shown only when no B1–B7 banner is up). It appears when a reload
+  *raises* the count: `2 widgets need your OK.` (`1 widget needs your OK.`) · buttons `Review` · `×`. `×` collapses it
+  into the count chip below, and it isn't shown again until the count goes up. No snackbar is added. The §9 reload
+  snackbar is unchanged.
+- **Count chip:** a 20 dp pill at the top end of the banner slot, `shield` icon + number, tap → review list. Shown while
+  the count is > 0. If the B-banner ▲ chip is also showing, this chip sits to its start (left in LTR).
+- **⋮ / menu badges:** the same number on the home long-press menu's `Widgets` item (`Widgets · 2 to review`), on the
+  interim ⋮ menu (R10) and on Settings → `Widget permissions` once Settings exists. A ⋮ icon by itself only gets a dot, not
+  a number, because a number on ⋮ doesn't say what it counts.
+
+**Review list** (`Widget permissions`, full screen, from all of the above). Sections, each hidden when empty:
+1. `Needs your OK (2)`: one row per widget with the title, `Page 2 · 4 × 3`, a one-line summary (`New: Internet,
+   phone data`) and the source (`in launcher.json · 10:42`, plus the author quote if present). Tap → prompt.
+2. `Changed (1)`: narrowed or same-tier data source changes from the last 24 h, with the before → after (`Data:
+   monitors.json → uptime.json`). Tap → detail. Opening it clears the info dot.
+3. `Allowed (5)`: title and capability chips (`Show`, `Phone data`, …). Tap → detail.
+4. `Turned off (1)`.
+5. `Android widgets (3)`: hosted AppWidgets, read-only, `Allowed by Android` (A5). Tap → App info.
+
+There's no `Allow all` button. Each widget gets its own decision (Q-D2). The empty state is `No dashboard widgets yet.`
+
+### 17.5 Prompt copy
+A bottom sheet (not a dialog, so it can scroll and show a preview), opened only from a tap.
+
+**New widget**
+```
+┌──────────────────────────────────────┐
+│ Allow "Anigeek LLC"?                 │
+│ Added in launcher.json · 10:42       │
+│ says "Claw"                          │
+│ ┌──────────────────────────────────┐ │
+│ │ [preview: layout with — for data]│ │
+│ └──────────────────────────────────┘ │
+│ This widget can:                     │
+│  · Show data from uptime.json in     │
+│    your config folder                │
+│  · Connect to status.anigeek.com     │
+│  · Open links to anigeek.com when    │
+│    you tap it                        │
+│                                      │
+│ You can change this later in Widget  │
+│ permissions.                         │
+│            [Keep off]   [Allow]      │
+└──────────────────────────────────────┘
+```
+- Title: `Allow "<Title>"?`. Source line: `Added in launcher.json · <time>` or `Added on this phone`.
+- The **preview** draws the widget's layout with every data binding shown as `—` and no actions wired. It shows the
+  shape, not data the widget hasn't been allowed to read.
+- Lines are in tier order (§17.1), Show first. The combination line goes last when it applies.
+- Buttons: `Allow` (primary) · `Keep off`. Back or a swipe-down = no decision (the tile stays `Needs your OK`). There's no
+  "always allow from this source" option.
+- After `Allow`, Android runtime permissions follow if needed, one system dialog per permission, but only those that
+  are missing. If one is denied, the widget is live, the affected bindings show `—`, and the detail shows `Android
+  permission off: Calendar` with `Open settings`.
+
+**Broadened**: title `"<Title>" wants more access`. The list is split into `New` (each line prefixed `New:`) and `Already
+allowed`. Same buttons. `Keep off` → `Turned off`. The old approval is kept, so if the file goes back to it, the widget is
+live again (§17.2).
+
+**Strings**
+```xml
+<string name="consent_title">Allow "%1$s"?</string>
+<string name="consent_title_more">"%1$s" wants more access</string>
+<string name="consent_source_file">Added in launcher.json · %1$s</string>
+<string name="consent_source_phone">Added on this phone</string>
+<string name="consent_author">says "%1$s"</string>
+<string name="consent_can">This widget can:</string>
+<string name="consent_new_prefix">New: %1$s</string>
+<string name="consent_already">Already allowed</string>
+<string name="consent_combo">It could send what it reads from your phone to these sites.</string>
+<string name="consent_footer">You can change this later in Widget permissions.</string>
+<string name="consent_allow">Allow</string>
+<string name="consent_keep_off">Keep off</string>
+<string name="cap_show_file">Show data from %1$s in your config folder</string>
+<string name="cap_open_app">Open %1$s when you tap it</string>
+<string name="cap_net">Connect to %1$s</string>
+<string name="cap_open_link">Open links to %1$s when you tap it</string>
+<string name="cap_write_data">Change values in %1$s</string>
+<string name="tile_needs_ok">Needs your OK</string>
+<string name="tile_needs_ok_again">Needs your OK again</string>
+<string name="tile_off">Turned off</string>
+<string name="tile_update">Update Config Launcher to show this</string>
+<plurals name="b9_widgets_review">
+    <item quantity="one">%d widget needs your OK.</item>
+    <item quantity="other">%d widgets need your OK.</item>
+</plurals>
+<string name="b9_review">Review</string>
+```
+`status.json` per element (Q-A3): `"consent": "needsApproval" | "needsApprovalAgain" | "off" | "allowed"` plus a warning
+in the §15.1 style, e.g. `elements[4]: widget "Anigeek LLC" is waiting for approval on this phone. It isn't shown until then.`
+An agent can see it's blocked and tell the person to look at the phone, and it can't do anything about it itself.
+
+### 17.6 Manage and revoke (per widget)
+Widget detail (from the review list, or item sheet → `Review` / `Permissions`):
+- Header: title, `Page 2 · 4 × 3`, source and last change (`Changed in launcher.json · 10:42 · says "Claw"`).
+- `This widget can:` with the same lines as the prompt, each with a status (`Allowed`, `Android permission off`).
+- **History** (last 5 consent-relevant changes on this phone): `10:42 · Data: monitors.json → uptime.json`,
+  `Yesterday · Allowed`.
+- Actions: `Turn off` (live widget) or `Allow` (off). `Turn off` takes effect immediately: the tile turns to `Turned off`,
+  the data stops and the snackbar says `"<Title>" turned off.` [`Undo`]. **No file write**, because consent is device-local
+  and the widget stays in the file. To delete the widget, use `Remove from home` (one write, §16.7).
+- `Forget` isn't offered. `Turn off` + `Allow` covers it, and the approval is GC'd once the element leaves the file.
+- Turning off never revokes Android runtime permissions the launcher holds (other widgets may use them). The detail
+  links `Open settings` for that.
+
+### 17.7 Accessibility (adds to §12)
+- **Consent tile:** one node: `<Title>, widget, needs your OK. Double-tap to review.` Custom actions `Review`, `Move to…`,
+  `Remove from home`.
+- **Live widget:** the root node reads `<Title>, widget` followed by its children in reading order. Each primitive has a
+  spoken form (§17.9). A widget with the info dot adds `, changed`. Custom actions: `Permissions`, `Resize…` (§16.4),
+  `Move to…`, `Remove from home`.
+- **Prompt:** focus starts on the title. The capability lines are a list (`List, 3 items`), and `New:` is read as `new,`.
+  The combination line comes last before the buttons. `Allow` is not the initial focus.
+- **B9 and chip:** polite live region, announced once, like B1–B8. The chip reads `Widget permissions, 2 need your OK`.
+- **Font scale:** primitives follow the system scale up to 200 %, inside the tier caps (§17.8). Overflow drops content by
+  `priority` and never clips text mid-glyph. Dropped content stays available to TalkBack (`, 2 more items`).
+- **Reduced motion:** no shimmer on loading `—`. Progress changes are instant.
+- **Colour:** status is never colour-only. A dot is always paired with a word or glyph (`up`, `down`, ▲, ■).
+
+### 17.8 Component system: cell-relative layout
+**Anti-example (KWGT, `kwgt-handmade-widget.jpg`):** hand-placed absolute positions and pixel font sizes (`ctx`/`5h`/`7d`
+bars, `up 8h 44m`, `status: idle`, a mascot image under the text). It looks right on one phone and breaks on another
+screen: elements overlap or float, text doesn't scale, and the card's height has no relation to the icon grid around it.
+**Target (Claw card):** one surface, nested tiles, a clear title / source / value / label hierarchy, a small `as of`, and
+status dots paired with words.
+
+**Rules.**
+1. **No coordinates inside a widget.** The file gives the widget's `w`×`h` in grid cells (§16). Inside it, layout is
+   flow only: `column`, `row` (children with `weight`) and `tile` (an inset sub-surface). No `x`/`y`, dp, px or `%`
+   offsets inside a widget.
+2. **Everything resolves from the cell.** Let `cell` = the smaller of the rendered cell width and height in dp (≥ 64 dp
+   by §1.1). Scale `k = clamp(cell / 80, 0.85, 1.5)`. Each token is a base value × `k`, rounded to the dp:
+
+   | Token | Base | Use |
+   |---|---|---|
+   | `pad.card` | 12 dp | Card inner padding |
+   | `pad.tile` | 8 dp | Tile inner padding |
+   | `gap` | 8 dp | Between siblings (`gap.s` 4, `gap.l` 12) |
+   | `radius.card` | 16 dp | Card corners (clamped 12–24) |
+   | `radius.tile` | `radius.card − pad.card / 2`, min 6 | Nested corners stay concentric (Claw look) |
+   | `icon` | 16 dp (`icon.l` 24) | Glyphs, app icons inside a widget |
+   | `dot` | 6 dp | Status dot |
+3. **Text tiers by size class, not device.** The size class comes from the widget's span: width **compact** (w ≤ 2),
+   **regular** (3–4), **wide** (≥ 5); height **short** (h = 1), **tall** (h ≥ 2). Base sp (before the system font scale),
+   then × `k` capped at 1.25 so a tablet doesn't get billboard text:
+
+   | Role | Compact | Regular | Wide | Floor |
+   |---|---|---|---|---|
+   | `caption` (source, `as of`) | 11 | 12 | 12 | 11 |
+   | `body` (default, matches the 14 sp of §15) | 13 | 14 | 14 | 12 |
+   | `title` | 14 | 16 | 16 | 13 |
+   | `metric` value | 18 | 22 | 28 (tall: 32) | 16 |
+
+   With the system scale on top, the combined size never goes above 2× base and never below the floor.
+4. **Responsive layouts, chosen not stretched.** A widget may declare up to 3 `layouts` keyed by minimum span (e.g.
+   `2×1`, `4×2`, `4×3`). The launcher uses the **largest that fits** the actual span. If even the smallest doesn't fit,
+   it uses the smallest and drops children by `priority` (low first), then ellipsizes. With **no** declared layouts, the
+   single layout reflows by the same rules.
+5. **Surface and contrast over wallpaper** (extends §12). The default `surface: "auto"` is a dark card, `#121218` at
+   **≥ 85 %** opacity, which is the floor (Claw's feel). Worst case over pure white wallpaper (computed like
+   `tools/contrast.py`): white text **12.1:1**, secondary white 70 % **6.8:1**, inside a 6 % white tile **10.1:1** /
+   **5.9:1**; status dots green `#4CD964` **5.5:1**, amber `#FFC400` **6.3:1**, red `#FF6363` **3.4:1** (all ≥ 3:1 as
+   non-text graphics). Red is never used for text: `down` is white with a red dot and ■. `surface: "light"` mirrors
+   this. Any custom colour is measured against the surface: below 4.5:1 (text) or 3:1 (dots, bars) it **renders anyway
+   with a §15-style warning** (`status.json` + Warnings section, no banner). `surface: "none"` (text right on the
+   wallpaper) gets the label shadow, plus the 60 % scrim behind each text run when `Label backdrop` is on (§1.1). It
+   isn't measured.
+6. **No images with baked-in text, no background images in v1.** Icons are named Material symbols or an installed app's
+   icon. (A mascot under the text, as in the KWGT example, is what makes contrast impossible to guarantee.)
+
+### 17.9 Primitives
+Six content primitives plus three containers (`column`, `row`, `tile`). Every primitive takes `priority` (0–9, default
+5), optional `showIn` (size classes) and an optional `status` (`ok`/`warn`/`error`/`none`), which draws the dot plus a
+glyph for warn ▲ and error ■.
+
+| Primitive | Shows | Overflow | Empty / stale / error | TalkBack |
+|---|---|---|---|---|
+| `text` | Template text (title-bar grammar + `{data:…}`), `role` caption/body/title, `maxLines` 1–4 | Ellipsize at the end | Binding missing → `—` | As written |
+| `metric` | Label (caption), value (metric tier), optional unit and status, like `PicSpin site · up · 96 ms` | Label ellipsizes first, value never truncates. Too narrow → the unit is dropped, then the label | `—` | `PicSpin site, up, 96 milliseconds` |
+| `list` | Rows from a data array: leading dot/icon, primary text, trailing caption (`down`). `maxItems` or `auto` (as many as fit) | `auto` shows what fits plus `+2 more` | Empty → `emptyText` (default `Nothing to show`) | `Unhealthy monitors, list, 1 item. Label Printer, down` |
+| `icon` | Material symbol or app icon, `icon`/`icon.l` | Dropped by priority | — | Its `label`, or skipped if decorative |
+| `progress` | Bar (or ring at 1×1), value 0–1, label + percentage (the ctx/5h/7d case, done right) | Label drops before the bar | `—` and an empty track | `ctx, 18 percent` |
+| `button` | Label (+ icon), runs a declared action (Open/Act tier) | Icon-only at compact, label kept in TalkBack | Action not allowed → hidden, never greyed-and-tappable | `<Label>, button` |
+
+**Card chrome (automatic, not a primitive).** Every config widget gets a header row with the title (`title` role) and,
+when the data has `updatedAt`, `as of 08:38` (caption). It turns `as of 08:38 · stale` with ▲ after the widget's
+`staleAfter` (default 2× the agent's declared interval, else 30 min). The header is dropped at `short` heights, and
+`as of` moves into TalkBack only.
+
+**Data states.** Loading on cold start: the last-good render is cached, so it never flashes `—` at every launch. The
+first ever load shows `—`. A data file that's missing or unreadable keeps the last values, adds ▲ to `as of`, and writes a
+`status.json` warning.
+
+### 17.10 Phone → tablet (and any span change)
+The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may give it its own grid).
+- **Same span, bigger cells:** `k` rises (tokens grow up to 1.5×, text up to 1.25×). Spare room goes to `list auto`
+  rows, then to `showIn: ["wide"]` children, then to padding. The text doesn't become a poster.
+- **Bigger span** (the user resizes on the tablet, or the tablet layout gives more): the next declared `layouts` entry
+  takes over at its threshold, as a cross-fade (instant with reduced motion).
+- **Smaller span** (narrower grid, or resized down): the next smaller layout, then priority drops, then ellipsis. It
+  never scales text below the floor, never clips, and never overlaps neighbours. If the span is under the widget's
+  declared `minSpan`, it renders at that span with the §16.5 amber outline + ▲ and the warning `elements[4]: span 2×1 is
+  below this widget's minimum 3×2. Shown at 2×1 anyway.`
+- **Grid too small for the position** (an `x`+`w` past the columns): this is a validation error today (B2, §6). Q-D4 /
+  Q-A6 decide whether per-device grids change that.
+- **Approval doesn't travel** (A1): on the tablet, the first load shows `Needs your OK`, the tile keeps the widget's
+  real cells, and the dashboard comes alive one tap per widget.
+
+### 17.11 Sample declaration (UX terms only; **Archimedes owns the schema**)
+```json
+{
+  "id": "w-anigeek",
+  "type": "card",
+  "requires": 5,
+  "page": "home", "x": 0, "y": 4, "w": 4, "h": 3,
+  "minSpan": "3x2",
+  "title": "Anigeek LLC",
+  "x-by": "Claw",
+  "surface": "auto",
+  "capabilities": [
+    { "kind": "showFile", "file": "data/anigeek.json" },
+    { "kind": "openLink", "hosts": ["anigeek.com", "blog.anigeek.com"] }
+  ],
+  "data": { "src": "data/anigeek.json", "staleAfter": "PT30M" },
+  "layouts": {
+    "2x1": [ { "type": "metric", "label": "Monitors", "value": "{data:monitors.summary}", "status": "{data:monitors.status}" } ],
+    "4x3": [
+      { "type": "tile", "children": [
+        { "type": "text", "role": "caption", "text": "Latest on blog.anigeek.com" },
+        { "type": "text", "role": "body", "text": "{data:blog.title}", "maxLines": 2 }
+      ], "tap": { "openLink": "{data:blog.url}" } },
+      { "type": "row", "children": [
+        { "type": "metric", "label": "PicSpin site", "value": "{data:picspin.value}", "status": "{data:picspin.status}" },
+        { "type": "metric", "label": "letmeaithatforyou", "value": "{data:lmaitfy.value}", "status": "{data:lmaitfy.status}", "priority": 4 },
+        { "type": "metric", "label": "Homelab monitors", "value": "{data:monitors.summary}", "status": "{data:monitors.status}" }
+      ] },
+      { "type": "list", "label": "Unhealthy monitors", "items": "{data:unhealthy}", "maxItems": "auto", "emptyText": "All monitors up" }
+    ]
+  }
+}
+```
+What the UX depends on: a stable `id`, a **closed** list of capability kinds with explicit targets (hosts, files, apps),
+`title` for the tile and the prompt, `minSpan`/`layouts` keyed by span, `priority`, and an author claim the phone only
+quotes. `x-by` is here only to show the quote. Whether it's a real field is Q-A4. Under A4 this card prompts for
+`openLink` only (`Open links to anigeek.com and blog.anigeek.com when you tap it`). Without the `tap`, it would be
+Show-only and go live with no prompt.
+
+### 17.12 Build checklist additions (Sprite, when scheduled)
+- [ ] Consent store (device-local), fingerprint compare on every load, the states in §17.2, no dialog from a load.
+- [ ] Consent tile (§17.3), B9 + count chip + menu badges (§17.4), review list, prompt sheet with preview, detail with
+  Turn off + Undo, `status.json` consent fields.
+- [ ] Tokens and tiers (§17.8), six primitives + three containers (§17.9), layout selection and priority drops, card
+  chrome with `as of` / stale.
+- [ ] Contrast measurement for custom colours (warnings only), 200 % font and TalkBack passes on a phone and a tablet.
+
+
 ## Open questions for Christopher
 
 
@@ -828,6 +1176,24 @@ All answered by Christopher:
 - ~~Q-C7~~ Resolved by ARCHITECTURE §17 Q12: work items stay in the file, greyed with a hint, never deleted. They go live again when the setting is turned on.
 - Also open in ARCHITECTURE §14: sync tool, `.configlauncher/status.json` in your folder, work profile/private space use, distribution, your phone model, and widgets after the MVP.
 
+Open (dashboard widgets, §17). Recommendations are in brackets:
+- **Q-D1** Should a widget that only **shows** data from a file in your config folder (no internet, no phone data, no tap
+  actions besides opening apps) go live with **no prompt**? [Yes: it can't reach anything the folder doesn't already
+  hold, and prompting for every agent card trains people to tap Allow.]
+- **Q-D2** Approval per widget as a whole, or per capability (e.g. allow the calendar but not the internet)? [Whole
+  widget in the first release. Partial grants leave half-working cards that are hard to explain.]
+- **Q-D3** Should the launcher ever fetch from the internet for a widget? It reverses the "no network access" promise
+  in the README. [Not in the first dashboard release: your agent fetches on its own machine and writes
+  `widgets-data.json`, as the Claw card's numbers already could be. Revisit with named hosts only, using the §17.1 copy.]
+- **Q-D4** Phone and tablet from one file: the same grid on both (cells just get bigger), or a per-device grid/layout?
+  [Same grid first. §17.10 handles bigger cells, and per-device grids would need schema work.]
+- **Q-D5** Which tap actions do you want on dashboard cards? [Open an app (no prompt), open a link (prompt). Later, if
+  you want it: write back to the data file, e.g. a toggle (prompt). Never intents with extras or scripts.]
+- **Q-D6** Should an approval on your phone carry over to your tablet? [No: each device asks once per widget. Syncing
+  approvals through the folder would let anything that can write the folder approve itself.]
+- **Q-D7** Should any author (e.g. Claw) ever be trusted to add widgets without asking? [No, not in this release. The
+  author is quoted, never verified.]
+
 ## UI questions for Sprite
 
 - **Q-S1** Compose drag-and-drop across pager pages and into the dock: is `Modifier.dragAndDropSource/Target` enough, or a custom pointer-input layer?
@@ -838,6 +1204,22 @@ All answered by Christopher:
 - ~~Q-S4 poll cost~~ → resolved by ARCHITECTURE §4: one small cursor query every 2 s, foreground only.
 
 ## Architecture questions for Archimedes
+
+Open for the dashboard capability model (§17). UX assumptions A1–A5 are listed there:
+- **Q-A1** Capability vocabulary: the closed list of kinds and their targets (files, hosts, apps, phone-data types,
+  actions). UX needs each one to map to one §17.1 tier and one sentence.
+- **Q-A2** Fingerprint: confirm it covers capabilities + targets only (not layout, text, style or size), that a subset
+  never prompts, and that returning to an approved fingerprint re-enables without asking.
+- **Q-A3** `status.json` per-element consent state (`needsApproval`/`needsApprovalAgain`/`off`/`allowed`) and the
+  warning text in §17.5, so agents can see why a card is blank.
+- **Q-A4** An author claim on elements (e.g. `x-by` vs a real field) that the phone quotes but never trusts.
+- **Q-A5** Data: `{data:…}` paths, arrays for `list`, `updatedAt`/`staleAfter`, and multiple data files per widget vs one
+  `widgets-data.json`.
+- **Q-A6** Size: `minSpan` and `layouts` keyed by span, `priority`, `showIn`; the feature level for each; and whether
+  per-device grids (Q-D4) need schema.
+- **Q-A7** Enforcement: confirm undeclared capabilities are impossible at runtime (A3), and that "never offered"
+  kinds have no schema at all.
+- **Q-A8** Hosted AppWidgets stay outside this model (A5)?
 
 All seven are answered in ARCHITECTURE §16 and applied above:
 
