@@ -98,9 +98,65 @@ Gestures and taps (home):
 | Tap dimmed item | Nothing launches. A hint sheet says why: `Not installed`, `Shortcut no longer available`, `Work apps are paused`, `Turn on "Include work apps in config" to use this.` (tap → system unpause prompt) or `Set as Home to use shortcuts`, with **`Remove from layout`** (one write). `Open store page` comes later |
 | Long-press app, shortcut or folder | Item sheet showing the **real app name and package** (so a label override can't disguise an app), plus `Edit layout`, `App info`, `Remove from home`. Folder: header `Folder, 5 apps` (plural `Folder, 1 app`), no `App info`. Dimmed (not installed): header `Not installed · <package>`, no `App info` (§14) |
 | Long-press empty space (empty cells only; items open their sheet) | Home menu: `Edit layout`, `Wallpaper` (system wallpaper picker), `Reload layout`, `Settings`. In app-only mode also `Choose folder` |
-| Swipe up anywhere / tap ⌃ handle | Open the drawer (§2) |
+| Swipe up anywhere / tap `Apps` | Open the drawer (§1.4) |
 | Swipe left/right | Change page |
+| Tap the page label (≥ 2 pages) | Page list, jump to a page (§1.3) |
 | Home button while on home | Go to page 1, close drawer/folder |
+
+### 1.3 Page label and page list (#78, MVP)
+**Page label.** A single line at the top of the page area, under the banner slot, centred, 14 sp, white with the label
+shadow (and the 60 % scrim when `Label backdrop` is on). Text: the page `title`, or `Page 2` when the page has no title.
+- Shown when there are **≥ 2 pages**, or when the only page has a `title`. Hidden for a single untitled page.
+- It's a tap target only with ≥ 2 pages (min 48 dp tall, padded to at least 96 dp wide). A trailing `▾` (12 dp) shows
+  it's tappable. With one page it's plain text, no `▾`, no action.
+- Long titles: 1 line, ellipsized at the end, max width = screen width − 32 dp.
+
+**Tap → page list.** A bottom sheet (Material `ModalBottomSheet`), title `Pages`, one row per page in file order:
+- Row: `<title>` or `Page N` (N = 1-based position), 56 dp tall. The current page shows a leading `✓` and bold text;
+  others have a blank 24 dp slot so the titles line up.
+- Tap a row → the sheet closes and the pager scrolls to that page (an instant jump with reduced motion). Tapping the
+  current page just closes the sheet. Back, swipe-down or a tap on the scrim closes it without moving.
+- 20 pages (the max): the list scrolls, opening scrolled so the current page is visible. No search, no sections.
+- Nothing is written. Jumping never changes the file.
+
+**Edit mode:** the label and the list still work (jump to a page to drop things there). Jump-only in the MVP.
+Rename and reorder pages from the list are **later** (edit the file meanwhile). While an item is being dragged the
+label is inert (page turns use the screen edge, §4.2).
+
+**Page indicator:** unchanged (dots, ≥ 2 pages, not tappable). The label and the dots always agree, and both update
+when the pager settles.
+
+**TalkBack:**
+- Label: role button, announced `Home, page 2 of 3, button`, hint (`onClick` label) `list pages`, so TalkBack says
+  `Double-tap to list pages`. With one page: plain text, `Home`.
+- Sheet: a list with collection info (`20 items`). Rows: `Home, page 1 of 3` with **selected** state on the current
+  page (`Selected, Home, page 1 of 3`). Focus starts on the current row.
+- After a jump, the pager announces `Page 3 of 3` (polite).
+- The label also exposes a custom action `List pages` on the home grid, for users who navigate by actions.
+
+Copy: sheet title `Pages`; untitled row and label `Page %1$d`; TalkBack `%1$s, page %2$d of %3$d`, action `List pages`.
+
+### 1.4 Opening the drawer: swipe up and its alternatives (#77, MVP)
+- **Gesture:** a vertical swipe up that starts anywhere on home (empty cells, items, page label, dock, the gap
+  between). It opens when the finger moves **≥ 48 dp up** with a vertical-dominant angle (|dy| > 1.5 × |dx|), or on a
+  fling upwards faster than 1000 dp/s after ≥ 16 dp. The drawer follows the finger (interactive), and releasing
+  under the threshold springs it back.
+- **Conflicts:**
+  - Horizontal pager: whichever axis passes touch slop first wins for the rest of the gesture. Horizontal → pager,
+    vertical-up → drawer. Vertical-down on home does nothing (notification shade is out of scope, #77).
+  - Long-press and drag: once a long-press fires (item sheet, home menu or drag), the swipe is cancelled. Swipe-up
+    never starts edit mode.
+  - Edit mode: swipe-up is **off** (vertical moves belong to drag). Use `Done` first. The `Apps` button is hidden in edit mode.
+  - Open folder or open sheet: the gesture goes to them, not the drawer.
+  - System gesture navigation: the bottom system gesture inset is excluded (the system's own home gesture wins there).
+- **Dock:** swiping up from the dock opens the drawer like anywhere else. Tapping a dock item still launches.
+- **Keyboard:** the keyboard request (§2) fires when the open animation starts, so the first keystroke isn't lost.
+  With `Open keyboard with drawer` off, no keyboard.
+- **Tap / accessibility alternative:** the `Apps` button in the top bar (current build) is the tap path, label
+  `Apps`, TalkBack `Apps, button`, hint `open app list`. It stays even with swipe-up working. (It replaces the
+  `⌃ handle` in the wireframe; one tap target is enough.) A TalkBack custom action `Open app list` is also on the home grid.
+- **Reduced motion:** the drawer appears with a fade (150 ms) instead of sliding with the finger; the threshold is the same.
+- **Close:** swipe down at the top of the list, Back (keyboard first, §2), Home, or launching an app.
 
 ### 1.2 Reconciliation with installed apps (spike §4)
 - Entries for **uninstalled or unknown** apps, unpublished shortcuts and paused or removed work apps show as dimmed
@@ -138,7 +194,7 @@ Gestures and taps (home):
 
 | Item | Spec |
 |---|---|
-| Open / close | Swipe up from home, or tap the handle. Close: swipe down at the top of the list, Back, or Home |
+| Open / close | Swipe up from home, or tap `Apps` (§1.4). Close: swipe down at the top of the list, Back, or Home |
 | Search | Field at top, hint `Search apps`. **Opening the drawer focuses the field and shows the keyboard** (Q-C2, search-first). Scrolling the list hides the keyboard, and tapping the field brings it back. Swipe-down or Back with the keyboard up hides the keyboard first; a second Back closes the drawer (§18.2). Setting `Open keyboard with drawer` (default on) turns auto-open off, e.g. for wall displays. A swipe up from home that's still in motion must not drop the first keystroke: focus is requested when the open animation starts. |
 | Search: accessibility | With TalkBack on, the field gets accessibility focus and is announced `Search apps, edit box`, but the **keyboard is not shown automatically**, because it would cover half the list during exploration. Double-tap the field to type. Results update a polite live region: `5 apps` / `No apps match "xyz".` With reduced motion, the keyboard appears without waiting for the drawer animation |
 | Search: hardware keyboard | With a physical keyboard attached, the field is focused, the on-screen keyboard stays hidden (system default), and typing filters immediately. `Enter` launches the first result. `↓`/`Tab` moves focus into the results, `↑` at the first result returns to the field. `Esc` clears a non-empty query, then closes the drawer. Arrow focus shows a 2 dp focus ring |
@@ -543,6 +599,45 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | R9 | New pages from `Add to home` | Confirmed: id `page-N` (lowest unused N), no `title`, max 20 pages. **Change the full copy** from `No room on home. Remove a page first.` to `No room on home: all 20 pages are full.` | Change `home_full` | MVP |
 | R10 | No Settings screen; ⋮ menu holds folder and home-app items | **Acceptable interim**, but use the doc's names: `Choose folder` (not `Pick config folder…`), `Reload layout` (not `Reload launcher.json`), `Set as home app`, `Hidden apps`. Until the screen exists, the home menu's `Settings` opens the same ⋮ menu | Rename `menu_pick_folder` → `Choose folder`, `menu_reload` → `Reload layout`; route home-menu `Settings` to the ⋮ menu | MVP interim |
 | R11 | Which Settings are MVP | **MVP:** Config folder (Choose folder / Use phone storage / Reload layout), Home app, Hidden apps, Ask before merging, Open keyboard with drawer, Label backdrop, Include work apps in config (only shown if a work profile exists), Restore previous layout. **Later:** Grid (edit the file), About (version only in the ⋮ menu is fine) | — | — |
+
+## 15. Proposal: config-driven title bar (#79, later, not v1-gating)
+UX side only, a proposal for Archimedes. The architecture and schema decisions are his. Builds on §1.3.
+
+**What it shows.** An optional bar at the top of the home screen (under the status bar, above the grid), replacing the
+§1.3 page label when it's on. Slots, left to right: `start`, `center`, `end`. Each slot holds one element from a small
+fixed set: `pageTitle` (the §1.3 label, including its tap target), `clock` (system 12/24 h), `date` (locale medium,
+e.g. `Sun, Oct 18`), or empty. No free text in v1 of the feature, so nothing in the file can impersonate a system
+message.
+
+**Defaults.** Off (absent = today's §1.3 page label). When turned on without slots: `center: pageTitle`.
+
+**Missing or invalid config.** Missing → default. Invalid (unknown element, bad colour) is a normal validation error
+(B2, last working layout). There's no partial rendering of a bad bar. Unknown future elements behave like `widget` today.
+
+**Length and truncation.** 1 line, 14 sp default. `center` gets at least 50 % of the width. Side slots ellipsize first,
+then `center`. Clock and date never truncate (they're short); the page title ellipsizes at the end.
+
+**Styling (keep it small).** Size: `small` / `medium` / `large` (12 / 14 / 18 sp), not free numbers. Alignment comes
+from the slots. Colour: white (default) or a dark variant for light wallpapers. Backdrop: none, or the same 60 % scrim
+as `Label backdrop` (one rounded bar behind the whole row). Rule: white text always gets the shadow, and if
+`Label backdrop` is on, the bar gets the scrim too (≥ 5.7:1 worst case, §12). A dark text colour gets a 60 % *white*
+scrim when the backdrop is on, for the same ratio.
+
+**TalkBack.** One focusable row per slot, in reading order. `pageTitle` keeps the §1.3 button semantics and
+`List pages` action. Clock/date are plain text (`10:42 PM`, `Sunday, October 18`), with no live region (no ticking
+announcements).
+
+**#78 tap target.** The page list opens only from the `pageTitle` element (48 dp min height). Clock and date aren't
+tappable in v1 (later maybe: clock → alarms app). If no slot holds `pageTitle`, the page list is still reachable
+through the TalkBack action `List pages` and from the long-press home menu (`Pages`).
+
+> **Note for Archimedes (schema shape, suggestion only):** an optional top-level object, e.g.
+> `"titleBar": { "enabled": true, "slots": { "start": "date", "center": "pageTitle", "end": "clock" }, "size": "medium", "color": "light", "backdrop": "auto" }`,
+> enums only, no free strings or colours. Alternative: model it as the first *widget* type when schema v2 lands
+> (#79 says it should fit the widgets work), with v1 keeping only the page label. Open questions:
+> (1) top-level object vs per-page override? (UX prefers top-level only.)
+> (2) does a v1 `titleBar` key need schemaVersion 2, given unknown keys are invalid in v1?
+> (3) should the backdrop follow the app's `Label backdrop` setting (DataStore) or live in the file? (UX: follow the setting, `auto`.)
 
 ## Open questions for Christopher
 
