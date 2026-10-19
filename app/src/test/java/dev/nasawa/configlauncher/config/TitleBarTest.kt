@@ -6,6 +6,7 @@ import dev.nasawa.configlauncher.model.TitleBarModel
 import dev.nasawa.configlauncher.model.TitleBarModel.Slot
 import dev.nasawa.configlauncher.ui.TitleBarLayout
 import kotlinx.serialization.json.*
+import androidx.compose.ui.graphics.toArgb
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.ZonedDateTime
@@ -164,6 +165,26 @@ class TitleBarTest {
         assertEquals(Triple(500, 0, 500), TitleBarLayout.widths(1000, 900, 0, 900))
     }
 
+    @Test fun fixedSidesGiveUpCentringBeforeTruncating() {
+        // #149 (Grace, 320 dp bar): date 170 + clock 60 fit in 272, so neither is cut and the centre takes what's between.
+        val (s, c, e) = TitleBarLayout.widths(272, 170, 120, 60, fixed = setOf(0, 2))
+        assertTrue("start $s", s >= 170); assertTrue("end $e", e >= 60); assertEquals(272, s + c + e)
+        assertEquals(Triple(170, 42, 60), TitleBarLayout.widths(272, 170, 120, 60, fixed = setOf(0, 2), page = 1, pageMin = 32))
+        // A non-fixed side still ellipsizes first (ux.md §15), here all the way, while the centre keeps its width.
+        assertEquals(Triple(170, 102, 0), TitleBarLayout.widths(272, 170, 120, 300, fixed = setOf(0), page = 1, pageMin = 32))
+        // The {page} button never collapses: before #149 this gave the centre 0 (2 × 140 > 272).
+        assertEquals(Triple(140, 32, 100), TitleBarLayout.widths(272, 140, 120, 100, fixed = setOf(0, 2), page = 1, pageMin = 32))
+        // ...or its own width, if that's less.
+        assertEquals(20, TitleBarLayout.widths(272, 300, 20, 300, page = 1, pageMin = 32).second)
+        // Page button on a side: it keeps its minimum there too.
+        assertEquals(Triple(32, 0, 240), TitleBarLayout.widths(272, 200, 0, 240, fixed = setOf(2), page = 0, pageMin = 32))
+        // Too narrow for everything: shared by need, nothing at zero.
+        val (a, b, d) = TitleBarLayout.widths(200, 170, 120, 60, fixed = setOf(0, 2), page = 1, pageMin = 32)
+        assertTrue(a > 0 && b > 0 && d > 0); assertEquals(200, a + b + d)
+        // Still centred whenever the fixed sides allow it.
+        assertEquals(Triple(100, 800, 100), TitleBarLayout.widths(1000, 100, 900, 50, fixed = setOf(0, 2), page = 1, pageMin = 32))
+    }
+
     @Test fun clockAndDateNeverTruncate() {
         // #123: a long date on the start side takes its width from the centre, which still stays centred.
         assertEquals(Triple(300, 400, 300), TitleBarLayout.widths(1000, 300, 800, 100, fixed = setOf(0)))
@@ -185,6 +206,22 @@ class TitleBarTest {
         assertEquals(26f, TitleBarLayout.cappedSp(40f, 2f))
     }
 
+    @Test fun overrideColoursAreContrastChecked() {
+        // #118: a page override that darkens the text gets the same §15 warning, at the override's path.
+        val ov = ""","overrides":{"t-main":{"style":{"color":"dark"}}}"""
+        val c = ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"light","backdrop":"scrim"}}""", ov))
+        assertEquals(listOf("pages[0].overrides.t-main.style.color: contrast 1.2:1 on the backdrop (4.5:1 recommended). Shown anyway."), Elements.warnings(c))
+        // Hidden on that page, or not touching colours: nothing extra.
+        val hidden = ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"light","backdrop":"scrim"}}""", ""","overrides":{"t-main":{"enabled":false,"style":{"color":"dark"}}}"""))
+        assertTrue(Elements.warnings(hidden).isEmpty())
+        val size = ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"dark","backdrop":"scrim"}}""", ""","overrides":{"t-main":{"style":{"size":"large"}}}"""))
+        assertEquals(1, Elements.warnings(size).size)   // only the element's own warning
+        // The phone-only theme check covers overrides too.
+        val theme = ok(doc("""{"id":"t-main","type":"titleBar","style":{"backdrop":"scrim"}}""", ""","overrides":{"t-main":{"style":{"color":"primary"}}}"""))
+        assertEquals(listOf("pages[0].overrides.t-main.style.color: contrast 1.2:1 on the backdrop (4.5:1 recommended), checked on this phone in light theme. Shown anyway."),
+            Elements.phoneWarnings(theme, false) { mapOf("primary" to "#202020")[it] })
+    }
+
     @Test fun spokenLabelExpandsEachTokenOnce() {
         // #133: a page titled "1" next to {pageNumber}/{pageCount} was read "1, page 1 of 2 1, page 1 of 2/2".
         val parts = (Template.parse("{page} {pageNumber}/{pageCount}") as Template.Ok).parts
@@ -197,5 +234,21 @@ class TitleBarTest {
         assertEquals("Oct · Oct 18 Oct, Pages", TitleBarModel.spoken(oct, one.copy(pageName = "Oct", date = { "18 Oct" }), button = true, pages = pages))
         // One page: not a button, so no ", Pages".
         assertEquals("Home 1/1", TitleBarModel.spoken(parts, TitleBarModel.Values("Home", 1, 1, { "" }, { "" }), button = false, pages = pages))
+    }
+
+    @Test fun themeCheckMeasuresTheSchemeHomeDraws() {
+        // #150 (Grace): the check measured the default light scheme while the bar draws home's dark one.
+        val scheme = dev.nasawa.configlauncher.ui.HomeTheme.scheme()
+        val hex = TitleBarLayout.themeHex(scheme)
+        for (t in TitleBarLayout.THEME_TOKENS) {
+            val drawn = TitleBarLayout.color(t) { TitleBarLayout.themeColor(scheme, it) }
+            assertEquals(t, String.format(java.util.Locale.ROOT, "#%06X", drawn.toArgb() and 0xFFFFFF), hex[t])
+        }
+        assertEquals("#141218", hex["surface"])  // the colour Grace sampled on screen
+        val bar = { bg: String -> ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"surface","backdrop":{"color":"$bg","opacity":100}}}""")) }
+        // Repro 1: dark surface text on white is readable, so no warning.
+        assertTrue(Elements.phoneWarnings(bar("#FFFFFF"), false) { hex[it] }.isEmpty())
+        // Repro 2: the same text on black is nearly invisible, so it's warned.
+        assertEquals(1, Elements.phoneWarnings(bar("#000000"), false) { hex[it] }.size)
     }
 }

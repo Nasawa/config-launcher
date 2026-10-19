@@ -61,7 +61,9 @@ fun HomeScreen(vm: HomeViewModel) {
     // #125: theme-colour contrast is measured with this phone's theme, at load and whenever the theme or the
     // wallpaper (dynamic) colours change; the engine adds the warnings to status.json.
     val themeDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val themeHex = TitleBarLayout.themeHex(MaterialTheme.colorScheme)
+    // #150: measure the scheme home (and so the title bar) is drawn with, not the default one outside it.
+    val homeScheme = HomeTheme.scheme()
+    val themeHex = remember(homeScheme) { TitleBarLayout.themeHex(homeScheme) }
     LaunchedEffect(themeDark, themeHex) { vm.store.engine.setPhoneTheme(themeDark, themeHex) }
     // #79: load warnings for the file that's showing (none while a problem banner is up: that's the last-good layout),
     // then the phone-only theme-colour ones (#125), the same lines as status.json.
@@ -219,7 +221,7 @@ fun HomeScreen(vm: HomeViewModel) {
     LaunchedEffect(editing, ui.load.config) { if (editing) { kotlinx.coroutines.delay(30_000); if (drag.dragged == null) editing = false } }
     androidx.activity.compose.BackHandler(editing) { editing = false }
 
-    MaterialTheme(colorScheme = darkColorScheme()) {
+    MaterialTheme(colorScheme = homeScheme) {
         // Transparent over the system wallpaper (theme windowShowWallpaper, #58).
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
             Column(Modifier.fillMaxSize().systemBarsPadding().swipeUpToOpen(

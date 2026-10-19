@@ -543,6 +543,12 @@
   "valid/no-revision.json": {
     "canonicalSha256": "3e4c7d6cd74f1f88b8b6444ff7afc48fdd9e7f622211cca47d39d817acdfa8f4"
   },
+  "valid/override-low-contrast.json": {
+    "canonicalSha256": "b32f17147dc86496f22b55e9e4bca90b0828c8ccc16043a0ad55fe7398cc01e9",
+    "warnings": [
+      "pages[0].overrides.t-main.style.color: contrast 1.2:1 on the backdrop (4.5:1 recommended). Shown anyway."
+    ]
+  },
   "valid/revision-lower.json": {
     "canonicalSha256": "9e003b82fd07589b65a9ce97f51611f1be0b99645cee566a9bade83e499fc111"
   },

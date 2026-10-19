@@ -51,25 +51,40 @@ object TitleBarLayout {
      * less), and the side slots share what's left equally around it, so the centre stays centred. Side slots ellipsize
      * first, then `center`. A slot in [fixed] (clock and date only, #123) never truncates: it gets the width it needs,
      * taken from the other slots, up to the whole bar.
+     *
+     * #149: when the fixed sides can't both fit symmetrically, centring is given up instead of clipping them: each fixed
+     * side gets its own width and the centre takes what's between. The slot holding the `{page}` button ([page], its
+     * index) never gets less than [pageMin] (or its own width, if less), so its tap target can't disappear. Only on a bar
+     * too narrow for all of that do the fixed slots and the page button shrink, in proportion to what they need.
      */
-    fun widths(w: Int, start: Int, center: Int, end: Int, fixed: Set<Int> = emptySet()): Triple<Int, Int, Int> {
-        val sNeed = maxOf(if (0 in fixed) start else 0, if (2 in fixed) end else 0)
-        if (center <= 0) {
-            // No centre: the sides split the bar, unless a fixed side needs more than half.
-            val half = w / 2
-            return when {
-                0 in fixed && start > half -> minOf(start, w).let { Triple(it, 0, w - it) }
-                2 in fixed && end > w - half -> minOf(end, w).let { Triple(w - it, 0, it) }
-                else -> Triple(half, 0, w - half)
-            }
+    fun widths(w: Int, start: Int, center: Int, end: Int, fixed: Set<Int> = emptySet(), page: Int? = null, pageMin: Int = 0): Triple<Int, Int, Int> {
+        if (w <= 0) return Triple(0, 0, 0)
+        val want = intArrayOf(start, center.coerceAtLeast(0), end)
+        // What each slot can't go below: a fixed slot its whole width, the page button pageMin.
+        val min = IntArray(3) { k -> minOf(w, when { k in fixed -> want[k]; k == page -> minOf(want[k], pageMin); else -> 0 }) }
+        val total = min.sum()
+        if (total > w) {
+            // Too narrow for everything that mustn't shrink: share the bar by need, so nothing collapses to zero.
+            val a = (w.toLong() * min[0] / total).toInt()
+            val b = (w.toLong() * min[1] / total).toInt()
+            return Triple(a, b, w - a - b)
         }
-        val side = maxOf(start, end)
-        var c = if (1 in fixed) minOf(center, w) else minOf(center, w, maxOf(w / 2, w - 2 * side))
-        // A fixed side slot takes its width from the centre (unless the centre is fixed too).
-        if (1 !in fixed && 2 * sNeed > w - c) c = maxOf(0, minOf(c, w - 2 * sNeed))
-        val s = (w - c) / 2
-        return Triple(s, c, w - c - s)
+        var c = when {
+            want[1] <= 0 -> 0
+            1 in fixed -> minOf(want[1], w)
+            else -> minOf(want[1], w, maxOf(w / 2, w - 2 * maxOf(start, end)))
+        }
+        // Centred if the fixed/page sides allow it at the same width on both sides; otherwise each side keeps its minimum.
+        val symmetric = w - 2 * maxOf(min[0], min[2])
+        c = if (symmetric >= min[1]) minOf(c, symmetric) else minOf(c, w - min[0] - min[2])
+        c = c.coerceAtLeast(min[1])
+        val rest = w - c
+        val s = (rest / 2).coerceIn(min[0], rest - min[2])
+        return Triple(s, c, rest - s)
     }
+
+    /** #149: the smallest a `{page}` button slot gets: the ▾, its 4 dp gap and an ellipsis at the default size. */
+    const val PAGE_MIN_DP = 32
 
     fun textAlignOf(a: Align): TextAlign = when (a) { Align.START -> TextAlign.Start; Align.CENTER -> TextAlign.Center; Align.END -> TextAlign.End }
 
@@ -81,10 +96,16 @@ object TitleBarLayout {
         else -> theme(token) ?: Color.White
     }
 
-    /** #125: the theme tokens as `#RRGGBB` (opaque), for the phone-only contrast check. */
+    /** Theme tokens, resolved through [scheme]: one rule for drawing the bar and for measuring it (#150). */
+    val THEME_TOKENS = listOf("primary", "secondary", "onSurface", "surface")
+
+    fun themeColor(scheme: androidx.compose.material3.ColorScheme, token: String): Color? = when (token) {
+        "primary" -> scheme.primary; "secondary" -> scheme.secondary; "onSurface" -> scheme.onSurface; "surface" -> scheme.surface; else -> null
+    }
+
+    /** #125: the theme tokens as `#RRGGBB` (opaque), for the phone-only contrast check. Pass the scheme the bar draws with. */
     fun themeHex(scheme: androidx.compose.material3.ColorScheme): Map<String, String> =
-        mapOf("primary" to scheme.primary, "secondary" to scheme.secondary, "onSurface" to scheme.onSurface, "surface" to scheme.surface)
-            .mapValues { (_, c) -> String.format(Locale.ROOT, "#%06X", c.toArgb() and 0xFFFFFF) }
+        THEME_TOKENS.associateWith { String.format(Locale.ROOT, "#%06X", themeColor(scheme, it)!!.toArgb() and 0xFFFFFF) }
 
     /** ux.md §15: light text always gets the label shadow; dark text never does. */
     fun shadow(c: Color) = c.luminance() > 0.5f
@@ -132,7 +153,7 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
     val st = bar.style
     val dark = isSystemInDarkTheme()
     val scheme = MaterialTheme.colorScheme
-    val theme: (String) -> Color? = { when (it) { "primary" -> scheme.primary; "secondary" -> scheme.secondary; "onSurface" -> scheme.onSurface; "surface" -> scheme.surface; else -> null } }
+    val theme: (String) -> Color? = { TitleBarLayout.themeColor(scheme, it) }
     val textColor = TitleBarLayout.color(if (dark) st.color.dark else st.color.light, theme)
     val fontScale = LocalConfiguration.current.fontScale
     val size = TitleBarLayout.cappedSp(st.sizeSp, fontScale)
@@ -184,7 +205,10 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
             val w = cs.maxWidth
             val want = ms.map { it.maxIntrinsicWidth(cs.maxHeight) }
             val fixed = Slot.entries.filter { bar.slots[it]?.let(TitleBarModel::clockOnly) == true }.map { it.ordinal }.toSet()
-            val (sw, cw, ew) = TitleBarLayout.widths(w, want[0], if (bar.slots[Slot.CENTER] == null) 0 else want[1], want[2], fixed)
+            // #149: the {page} button keeps room for its ▾ and an ellipsis; Compose widens its touch area to 48 dp.
+            val page = if (tappable) Slot.entries.firstOrNull { bar.slots[it]?.let(TitleBarModel::hasPage) == true }?.ordinal else null
+            val (sw, cw, ew) = TitleBarLayout.widths(w, want[0], if (bar.slots[Slot.CENTER] == null) 0 else want[1], want[2], fixed,
+                page, TitleBarLayout.PAGE_MIN_DP.dp.roundToPx())
             val ps = listOf(sw, cw, ew).mapIndexed { k, width -> ms[k].measure(Constraints.fixedWidth(width.coerceAtLeast(0)).copy(minHeight = 0, maxHeight = cs.maxHeight)) }
             val h = ps.maxOf { it.height }
             layout(w, h) {
