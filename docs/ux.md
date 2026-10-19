@@ -839,7 +839,8 @@ Assumptions A1–A5, all **✅ resolved** in the [#116 comment](https://github.c
   writes `launcher.json`, whether an agent, a sync or a git merge, can approve its own widget.
 - ✅ **A2** Approval is keyed by **element `id` + a capability fingerprint**: a canonical serialization of the
   capabilities only: each `kind` plus its kind-specific field (`packages`, `origins`; `data.file`, `ui.reload` and
-  `ui.openUrl` have none), plus the widget's `source` when it declares `ui.openUrl` (Q-D5), sorted. Layout, text, style, span and `author` are left
+  `ui.openUrl` have none), plus the canonical card `source` (Q-D5, confirmed by Archimedes in [#146](https://github.com/Nasawa/config-launcher/pull/146)), sorted. Always-allow sites
+  aren't in the fingerprint. Layout, text, style, span and `author` are left
   out, so editing them never prompts (Q-A2). It's compared against the widget's **approved set**, which never shrinks
   (§17.2, Claw #3).
 - ✅ **A3** Capabilities are **enforced, not just shown**: a widget can't use anything it didn't declare, because the
@@ -860,7 +861,7 @@ The prompt groups capabilities by what they mean to a person, not by API. Each t
 | **Show** | `data.file` (no fields: the file is always `.configlauncher/widgets-data/<elementId>.json`, from the element `id`, so a card can't point at another card's file) | Static text, `{time}`/`{date}`/`{page}`, the widget's own data file | `Show data from widgets-data/w-anigeek.json in your config folder` | **No.** It's listed in the review screen, but on its own it never prompts (Q-D1). The folder is already yours, and displaying data can't reach anything |
 | **Show** | `ui.reload` (no fields) | A tap or button that re-reads this widget's own data file now | `Reload its data when you tap it` | **No** (#117: Show tier, silent). It only re-reads a file the card can already show (§17.9) |
 | **Open** | `ui.openApp` (`packages`) | Tap to open an app, or a launcher target (drawer, page list) | `Open Signal when you tap it` (the app label; the package if it isn't installed) | **No**, same rule as title-bar tap targets |
-| **Open** | `ui.openUrl` (no fields, proposed) + the widget's **`source`** (its data source site, e.g. `"https://blog.anigeek.com"`; field name **pending Archimedes**, Q-D5) | Tap to open a link in the browser | `Open links to its source, blog.anigeek.com, when you tap it` + `Links to other sites ask you each time.` An http source is written in full (`http://nas.lan`) with `cap_http_note_link` under it. Without `source`: `Open links when you tap it, asking you each time` (review list and detail only) | **Yes, when it has a `source`** (approve the source once; a new or changed `source` → `Needs your OK again`). Without `source` there's nothing to pre-approve, so no prompt: every tap asks (§17.9). Taps to any host other than the approved source **always** show the confirm sheet, unless the user ticked `Always allow` for that host on this phone (Q-D5) |
+| **Open** | `ui.openUrl` (bare, no fields) + the card's **`source`** (its data source site: `"https://blog.anigeek.com"`, `"http://nas.lan"`, or a bare host = https; exact match, IDNA, no subdomains, no port, path or user info). Both **confirmed by Archimedes** in [#146](https://github.com/Nasawa/config-launcher/pull/146) (Q-D5) | Tap to open a link in the browser | `Open links to its source, blog.anigeek.com, when you tap it` + `Links to other sites ask you each time.` An http source is written in full (`http://nas.lan`) with `cap_http_note_link` under it. Without `source`: `Open links when you tap it, asking you each time` (review list and detail only) | **Yes, when it has a `source`** (approve the source once; a new or changed `source` → `Needs your OK again`). **UX decision, for Archimedes to match:** without `source` there's nothing to pre-approve, so `ui.openUrl` needs no Allow prompt and every tap confirms (§17.9). [#146](https://github.com/Nasawa/config-launcher/pull/146) currently has the kind prompt on first enable either way. Removing `source` likewise needs no prompt, since every tap then confirms. Taps to any host other than the approved source **always** show the confirm sheet, unless the user ticked `Always allow` for that host on this phone (Q-D5) |
 | **Internet** (feature level 5, a later release: Christopher's Q-C1/Q-C2, #117) | `net.fetch` (`origins`: full `https://host[:port]` or `http://host[:port]`, approved by name; literal URLs only) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (https hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable). An http origin is always written in full, `Connect to http://nas.lan:3001`, followed by `cap_http_note`: `The connection to http://nas.lan:3001 isn't private. Others on your network could see or change it. Only allow this if you trust this network. You're choosing a less secure connection.` Private-network origins get `cap_private_note` and self-signed ones `cap_tofu_note` (§17.13) | **Yes** |
 | **Phone data** (later, no v1 kinds) | — (future `phone.*`) | Calendar, next alarm, battery, notification counts | `Read your calendar` · `See notification counts` | **Yes.** After `Allow`, Android may ask for its own permission too |
 | **Act** (later, no v1 kinds) | — | Write back to the data file, toggles, webhooks. In v1 buttons only Open | `Change values in widgets-data/w-anigeek.json` | **Yes** |
@@ -900,11 +901,12 @@ the prompt opens from a tap.
 
 **One approval model (Claw #3; adopted by Archimedes as the approval *ceiling*, Q-A9).** Each widget `id` has one
 stored **approved set** on this phone, a **cumulative union** that approvals at different times add to: every capability line
-(each kind with each of its `packages` / `origins` entries, the approved `source` host, and every host the user ticked
-`Always allow` for on the tap confirm sheet; `data.file` and `ui.reload` are a line each) the user has allowed for it.
-`Allow` adds the lines the prompt showed. The set **never shrinks** when the file narrows. Only the user on this phone
-takes lines out (`Forget approval`, or `Remove` on an always-allowed site, §17.6), and `Remove from home` or the element
-leaving the file (GC) clears it. On every load:
+(each kind with each of its `packages` / `origins` entries, plus the approved `source`; `data.file` and `ui.reload`
+are a line each) the user has allowed for it. `Allow` adds the lines the prompt showed. The set **never shrinks** when
+the file narrows. Only `Forget approval` (§17.6), `Remove from home` or the element leaving the file (GC) clears it.
+Sites the user ticked `Always allow` for on the tap confirm sheet live in a **separate device-local list** per element
+id ([#146](https://github.com/Nasawa/config-launcher/pull/146)): not ceiling lines, not in the fingerprint, never synced or written to the folder or `status.json`. The
+user can `Remove` one (§17.6); `Forget approval` and GC clear the list too. On every load:
 - **Everything the widget declares is within the approved set → live, no prompt, no badge, no dot.** This covers
   narrowing, returning to an earlier version, and any mix of approved lines.
 - **Anything beyond it → `Needs your OK again`** (or `Needs your OK` when the set is empty). Only the lines outside the
@@ -1051,8 +1053,8 @@ Widget detail (from the review list, or item sheet → `Review` / `Permissions`)
 - `Approved on this phone:` the full approved set, including lines the current version no longer uses (secondary
   text, `not used now`).
 - **`Always allowed sites`** (shown only when there's at least one): each host the user ticked `Always allow` for, in
-  full when it's http, with a `Remove` text button per row. `Remove` takes it out of the ceiling at once (taps there
-  ask again), snackbar `blog.example.net removed.` [`Undo`] (10 s), history `No longer always allowed:
+  full when it's http, with a `Remove` text button per row. `Remove` takes it out of the Always-allow list at once
+  (taps there ask again), snackbar `blog.example.net removed.` [`Undo`] (10 s), history `No longer always allowed:
   blog.example.net`. **No file write.**
 - Actions: `Turn off` (live widget) or `Allow` (off). `Turn off` takes effect immediately: the tile turns to `Turned off`,
   the data stops and the snackbar says `"<Title>" turned off.` [`Undo`]. **No file write**, because consent is device-local
@@ -1067,7 +1069,7 @@ Widget detail (from the review list, or item sheet → `Review` / `Permissions`)
                                             [Cancel]  [Forget]
   ```
   `Cancel` has initial focus. `Forget` is in the `error` colour. After `Forget`: the snackbar `Approval forgotten.`
-  (4 s, **no Undo**), the history entry `<time> · Approval forgotten`, `Approved on this phone:` empties, the tile
+  (4 s, **no Undo**), the history entry `<time> · Approval forgotten`, `Approved on this phone:` and `Always allowed sites` empty, the tile
   shows `Turned off`, and the action button reads `Allow`. The next `Allow` opens the first-time prompt (`Allow
   "<Title>"?`): every line is listed under `This widget can:` and nothing under `Already allowed`. **No file write.**
   The approval is also GC'd when the element leaves the file (§17.2). The history list is kept, since it's the record
@@ -1178,10 +1180,11 @@ launcher resolves it and checks the **resolved** URL, in this order:
 1. **Blocked** (nothing opens): a scheme other than `https` / `http` (`intent:`, `javascript:`, `file:`, `content:`, …),
    or a user name or password in the URL (`https://anigeek.com@evil.net`). Snackbar (4 s, no action, TalkBack says the
    same) `This link isn't allowed for this widget.`, never a dialog and no "open anyway", plus a `status.json` warning
-   (`warn_tap_scheme_blocked` / `warn_tap_userinfo`). These are the only cases that say "not allowed".
-2. **Empty** binding: nothing opens. Snackbar `This link has no address yet.` and `warn_tap_empty`.
-3. **Matches the ceiling**: the host (exact, after §17.1 normalisation) and scheme match the approved `source` or an
-   always-allowed host → **opens straight away**, no sheet.
+   (`warn_tap_scheme` / `warn_tap_userinfo`). These are the only cases that say "not allowed".
+2. **Empty** binding: nothing opens. Snackbar `This link has no address yet.` and `warn_tap_empty`. A value that isn't a
+   valid web address is treated the same, with `warn_tap_host`.
+3. **Matches**: scheme and host (exact, after §17.1 normalisation) match the approved `source`, or a site in this
+   widget's Always-allow list → **opens straight away**, no sheet.
 4. **Anything else → confirm sheet, every time**, showing the real resolved address:
    ```
    Open news.example.org?
@@ -1195,15 +1198,17 @@ launcher resolves it and checks the **resolved** URL, in this order:
      Long-press the URL to see it whole. TalkBack reads the full URL.
    - `Cancel` and `Open`; **`Cancel` has initial focus** (TalkBack lands on it first after the title). Back or a
      swipe-down = `Cancel`. `Open` is the filled button, so sighted users aren't slowed down.
-   - `Always allow <host>` checkbox, **unticked every time**. Ticking it and tapping `Open` adds that host (with its
-     scheme) to this widget's ceiling on this phone, with the history entry `Always allowed <host>`. It's a choice
+   - `Always allow <host>` checkbox, **unticked every time**. Ticking it and tapping `Open` adds that scheme + host to
+     this widget's device-local Always-allow list (separate from the ceiling, [#146](https://github.com/Nasawa/config-launcher/pull/146)), with the history entry
+     `Always allowed <host>`. #146 calls it "Always allow this site"; the UI copy is `Always allow <host>` (Christopher). It's a choice
      made on the phone: no field in `launcher.json` or the data file can pre-tick it or add a host, and `author` never
      changes that.
    - **http**: the same sheet, with the URL in full (`http://nas.lan/status`) and `cap_http_note_link` under it; the
      checkbox reads `Always allow http://nas.lan`. An http link to a host approved for https only is "anything else":
      it gets this sheet, never a silent downgrade.
    - One sheet at a time; a second tap while it's open does nothing.
-- No `status.json` warning for a confirm-sheet tap; it's normal use, not a mistake.
+- No `status.json` warning for a confirm-sheet tap or a `Cancel`; it's normal use, not a mistake (Archimedes to match:
+  #146 step 6 mentions `warn_tap_host` on Cancel).
 
 **Reload taps (`ui.reload`).** A tap or `button` with `{ "kind": "ui.reload" }` re-reads this widget's data file
 right away instead of waiting for the next poll. It doesn't ask the agent for new data; it only re-reads the file.
@@ -1271,12 +1276,13 @@ The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may
 Normative names from the [#116 comment](https://github.com/Nasawa/config-launcher/pull/116#issuecomment-6270653131): the kinds `data.file` / `ui.openApp` / `ui.openUrl` / `net.fetch`, `author`,
 `minSpan` `{w,h}`, `layouts` keyed `"WxH"` with a **lowercase `x`** (confirmed, e.g. `"4x3"`, pattern `^[1-9][0-9]*x[1-9][0-9]*$`; max 3), `priority` 0–9, `showIn`, `staleAfter` (ISO-8601 duration), and
 `updatedAt` (ISO-8601) at the root of the data file. Capability entries use kind-specific fields, matching #117:
-`data.file`, `ui.reload` and `ui.openUrl` → no fields (`ui.openUrl` dropping `hosts` is proposed with Q-D5, pending Archimedes), `ui.openApp` → `packages`, `net.fetch` → `origins` (exact
+`data.file`, `ui.reload` and `ui.openUrl` → no fields (bare `ui.openUrl`, no `hosts`: confirmed by Archimedes in [#146](https://github.com/Nasawa/config-launcher/pull/146)), `ui.openApp` → `packages`, `net.fetch` → `origins` (exact
 `https://host[:port]`, or `http://` when approved by name). Taps are `{ "kind": "ui.openUrl", "url": "…" }`, `{ "kind": "ui.openApp", "package": "…" }` or `{ "kind": "ui.reload" }`.
 `net.fetch` URLs are literals and never use `{data:…}`. A `ui.openUrl` tap `url` may use `{data:…}`: the check runs on the
 **resolved** URL at tap time, so the data file can send a tap anywhere, but only the approved `source` (or a host the
-user always-allowed) opens without the confirm sheet (§17.9). `source` is the widget's data source site (proposed name,
-**pending Archimedes**): an `https://` or `http://` origin with no port or path. `data.file` has no `path`: the file comes from the element `id`, so this card reads
+user always-allowed) opens without the confirm sheet (§17.9). `source` is the card's data source site, on the element
+(not inside `capabilities[]`), **confirmed by Archimedes** in [#146](https://github.com/Nasawa/config-launcher/pull/146): `https://host` or `http://host`, or a bare host
+(= https), with no port, path, query or user info. It isn't a fetch origin and doesn't imply `net.fetch`. `data.file` has no `path`: the file comes from the element `id`, so this card reads
 `.configlauncher/widgets-data/w-anigeek.json`, which the agent writes, e.g.
 `{ "updatedAt": "2026-10-19T08:38:00-06:00", "picspin": { "value": "up · 96 ms", "status": "ok" }, "unhealthy": [ … ] }`.
 Prompt: `ui.openUrl` only (`Open links to its source, blog.anigeek.com, when you tap it` / `Links to other sites ask you
@@ -1290,7 +1296,7 @@ time, with the not-private note, until the user ticks `Always allow http://nas.l
 - [ ] Consent tile (§17.3), B9 + count chip + menu badges (§17.4), review list, prompt sheet with preview, detail with
   Turn off + Undo, Forget approval (confirm, no Undo), `status.json` consent fields.
 - [ ] Link taps (§17.9): blocked schemes / user info, source match opens, confirm sheet otherwise, `Always allow` adds
-  to the ceiling, `Always allowed sites` with Remove + Undo.
+  to the device-local Always-allow list, `Always allowed sites` with Remove + Undo.
 - [ ] Tokens and tiers (§17.8), six primitives + three containers (§17.9), layout selection and priority drops, card
   chrome with `as of` / stale.
 - [ ] Contrast measurement for custom colours (warnings only), 200 % font and TalkBack passes on a phone and a tablet.
@@ -1379,7 +1385,7 @@ builds S3-C from it.
 | `cap_show_file` | `Show data from %1$s in your config folder` | 1 = `widgets-data/<id>.json` | R · S3 | `data.file` |
 | `cap_reload` | `Reload its data when you tap it` | — | R · S3 | `ui.reload` |
 | `cap_open_app` | `Open %1$s when you tap it` | 1 = app label, or the package if it isn't installed | R · S3 | `ui.openApp`, one line per package |
-| `cap_open_source` | `Open links to its source, %1$s, when you tap it` | 1 = `source` host (bare for https, `http://host` for http) | R · S3 | `ui.openUrl` with `source` (Q-D5; field name pending Archimedes) |
+| `cap_open_source` | `Open links to its source, %1$s, when you tap it` | 1 = `source` host (bare for https, `http://host` for http) | R · S3 | `ui.openUrl` with `source` (Q-D5, [#146](https://github.com/Nasawa/config-launcher/pull/146)) |
 | `cap_open_others` | `Links to other sites ask you each time.` | — | R · S3 | Secondary line under `cap_open_source` |
 | `cap_open_ask` | `Open links when you tap it, asking you each time` | — | R · S3 | `ui.openUrl` without `source` (review list and detail; no prompt) |
 | `cap_http_note_link` | `Links to %1$s aren't private. Others on your network could see or change them. Only allow this if you trust this network. You're choosing a less secure connection.` | 1 = `http://host` | R · S3 | Under an http `source` in the prompt, and on the link confirm sheet for an http link (Q-C3) |
@@ -1468,7 +1474,8 @@ to expand. Each http entry stays in full and gets its own note line under the li
 | `warn_surface_none` | `%1$s: "none" needs room for the header row, so the default card surface was used.` | 1 = path (`….surface`) | S3 |
 | `warn_data_missing` | `%1$s: widgets-data/%2$s.json is missing or unreadable, so the last values are shown.` | 1 = path, 2 = element id | S3 |
 | `warn_cert_changed` | `%1$s: the certificate for %2$s changed. Fetching from it is paused until someone approves the new certificate on this phone; the last good data is shown as stale.` | 1 = path, 2 = origin | S5 |
-| `warn_tap_scheme_blocked` | `%1$s: the tap link uses "%2$s:", which widgets can't open, so the tap was ignored. Use https or http.` | 1 = path, 2 = scheme | S3 |
+| `warn_tap_scheme` | `%1$s: the tap link uses "%2$s:", which widgets can't open, so the tap was ignored. Use https or http.` | 1 = path, 2 = scheme | S3 |
+| `warn_tap_host` | `%1$s: the tap link "%2$s" isn't a valid web address, so the tap was ignored.` | 1 = path, 2 = resolved value | S3 |
 | `warn_tap_userinfo` | `%1$s: the tap link has a user name or password in it, so the tap was ignored.` | 1 = path | S3 |
 | `warn_tap_empty` | `%1$s: the tap link %2$s has no value, so the tap was ignored.` | 1 = path, 2 = template | S3 |
 
@@ -1484,8 +1491,8 @@ title and `as of`. With and without author, the prompt reads: title → source �
 gap left behind.
 
 **Christopher's Q-D answers.** Q-D1, Q-D2, Q-D4, Q-D6 and Q-D7 were accepted as recommended, so no string is
-provisional any more. Q-D5 was answered with the `source` rule (§17.9); its strings above are final. Only the field
-name `source` (and dropping `ui.openUrl` `hosts`) is pending Archimedes, and that changes no English.
+provisional any more. Q-D5 was answered with the `source` rule (§17.9); its strings above are final. The `source`
+field and the bare `ui.openUrl` are confirmed by Archimedes in [#146](https://github.com/Nasawa/config-launcher/pull/146).
 
 ## Open questions for Christopher
 
@@ -1520,7 +1527,7 @@ Dashboard widgets (§17). All answered by Christopher; the original recommendati
 - ✅ **Q-D5** (answered with a new rule) v1 tap actions are `ui.openApp` and `ui.openUrl` only (no Act kinds). Is it right that opening an app goes
   live without a prompt while opening a link needs one? [Yes: a link an agent writes is the phishing path. Write-back
   and toggles (Act) stay later. Never intents with extras or scripts.] **Answer:** `ui.openApp` stays silent. Each
-  widget declares its data source site (`source`, name pending Archimedes), approved once in the Allow prompt. A link
+  widget declares its data source site (`source`, confirmed by Archimedes in [#146](https://github.com/Nasawa/config-launcher/pull/146)), approved once in the Allow prompt. A link
   tap to that host opens with no prompt. Any other host gets a confirm sheet every time with the real address, and an
   `Always allow <host>` checkbox only the user can tick on the phone (§17.9).
 - ✅ **Q-D6** (accepted as recommended) Should an approval on your phone carry over to your tablet? [No: each device asks once per widget. Syncing
@@ -1556,7 +1563,7 @@ Dashboard capability model (§17): all eight are answered in the [#116 comment](
   scheme-qualified `http://host` / `https://host`; `origins` take full `http://` / `https://` origins. The prompt shows
   `http://` when it applies, and there's no silent https → http downgrade. Approval is a cumulative per-widget ceiling
   (a union that never shrinks), and the Phone data + Internet combination prompts once (§17.1, §17.2). For
-  `ui.openUrl`, `hosts` is superseded by Christopher's Q-D5 rule (`source` + tap confirm sheet), pending Archimedes.
+  `ui.openUrl`, `hosts` is superseded by Christopher's Q-D5 rule (`source` + tap confirm sheet), confirmed by Archimedes in [#146](https://github.com/Nasawa/config-launcher/pull/146).
 
 ~~Follow-up (Pragma): an unknown `kind` rejecting the whole file~~ ✅ Resolved in the [#116 follow-up](https://github.com/Nasawa/config-launcher/pull/116) and [#117](https://github.com/Nasawa/config-launcher/pull/117): on the phone it skips
 only that element (§17.3 tile `Update Config Launcher to show this`). New kinds bump the feature level and set
