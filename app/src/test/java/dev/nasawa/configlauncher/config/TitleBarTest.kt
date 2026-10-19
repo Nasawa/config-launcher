@@ -185,6 +185,24 @@ class TitleBarTest {
         assertEquals(Triple(100, 800, 100), TitleBarLayout.widths(1000, 100, 900, 50, fixed = setOf(0, 2), page = 1, pageMin = 32))
     }
 
+    @Test fun slotsKeepAGapBetweenThem() {
+        // #149 (Pragma, ux.md §15): 8 dp between adjacent non-empty slots; an empty slot takes no gap.
+        assertEquals(8 to 8, TitleBarLayout.gaps(100, 50, 100, 8))
+        assertEquals(0 to 8, TitleBarLayout.gaps(0, 50, 100, 8))
+        assertEquals(8 to 0, TitleBarLayout.gaps(100, 50, 0, 8))
+        assertEquals(0 to 0, TitleBarLayout.gaps(0, 50, 0, 8))
+        assertEquals(8 to 0, TitleBarLayout.gaps(100, 0, 100, 8))
+        assertEquals(0 to 0, TitleBarLayout.gaps(100, 0, 0, 8))
+        // widths reserves them first: Grace's 272 px case plus two 8 px gaps lays out the same, gaps outside the slots.
+        assertEquals(Triple(170, 42, 60), TitleBarLayout.widths(288, 170, 120, 60, fixed = setOf(0, 2), page = 1, pageMin = 32, gap = 8))
+        // Centred layouts stay centred (a gap each side of the centre).
+        assertEquals(Triple(296, 400, 296), TitleBarLayout.widths(1008, 100, 400, 200, gap = 8))
+        // Clock + date with no centre: one gap; neither truncates.
+        assertEquals(Triple(170, 0, 110), TitleBarLayout.widths(288, 170, 0, 110, fixed = setOf(0, 2), gap = 8))
+        // The page minimum survives the gaps on a tight bar.
+        assertTrue(TitleBarLayout.widths(240, 170, 120, 60, fixed = setOf(0, 2), page = 1, pageMin = 32, gap = 8).second > 0)
+    }
+
     @Test fun clockAndDateNeverTruncate() {
         // #123: a long date on the start side takes its width from the centre, which still stays centred.
         assertEquals(Triple(300, 400, 300), TitleBarLayout.widths(1000, 300, 800, 100, fixed = setOf(0)))

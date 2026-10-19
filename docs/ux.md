@@ -306,6 +306,7 @@ apps in the drawer.
 
 ### 6.1 Banner
 - Full-width card, 12 dp margin, amber ▲ icon (error red ■ for access loss), 1–2 lines of text, one or two text buttons, and `×`.
+  Colours follow the home theme (light or dark, §12.1); both banner palettes meet 4.5:1 for text and 3:1 for icons.
 - `×` collapses it to a small ▲ chip in the top-right corner that reopens it. It stays until the problem is fixed (no auto-dismiss).
 - When fixed (a valid version appears): the banner clears automatically and the snackbar `Layout loaded.` shows.
 - TalkBack: announced once when it appears (polite live region).
@@ -583,9 +584,62 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | Banners | Polite live region, announced once. Buttons are focusable. The error detail view reads as a list of problems |
 | Touch targets | ≥ **48 × 48 dp** for everything (cells 64 × 80 dp, dock slots 64 dp, chip ≥ 48 dp hit area, banner buttons 48 dp tall) |
 | Font scaling | Labels and text use sp and follow the system font size up to 200 %. Grid labels stay 1 line and ellipsize; at ≥ 150 % labels may be hidden on the home grid (still spoken by TalkBack) if cells can't fit them. The drawer always shows labels (wrapping to 2 lines). Banners and settings wrap, never truncate |
-| Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (follow the system theme; Material 3 dynamic colour off for status colours). Home labels over wallpaper: white text with a 1 dp 50 % black shadow. With `Label backdrop` on, the 60 % black scrim is added (§1.1). Over a pure white wallpaper, white text on that scrim alone measures 5.7:1 (WCAG, worst case), so it meets 4.5:1 on any wallpaper |
+| Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (the home theme, §12.1: follows the system unless `launcher.json` overrides it; no dynamic colour in this release). Home labels over wallpaper: white text with a 1 dp 50 % black shadow. With `Label backdrop` on, the 60 % black scrim is added (§1.1). Over a pure white wallpaper, white text on that scrim alone measures 5.7:1 (WCAG, worst case), so it meets 4.5:1 on any wallpaper |
 | Reduced motion | Respect `Settings.Global.ANIMATOR_DURATION_SCALE == 0` and "Remove animations": no page-slide spring, folder open as a fade, no shake (use a red outline), no jiggle ever |
 | Colour | Status is never colour-only: ▲ warning / ■ error glyphs, dimmed tiles also say "not installed" to TalkBack |
+
+
+### 12.1 Home theme: light and dark (Q-T6)
+**Christopher (Q-T6):** home follows the phone's **system light/dark setting** by default, and `launcher.json` can
+override it. Everything the launcher draws follows the **home theme**: menus, sheets, dialogs, banners and chips,
+snackbars, the drawer, folders, the page list, Settings, the error detail view and first run. Home labels over the
+wallpaper don't change: they stay white with the label shadow (and the 60 % scrim with `Label backdrop` on, §1.1), because
+the wallpaper doesn't change with the theme. Wallpaper (dynamic) colours aren't used in this release (Q-T7).
+
+**Override (confirmed by Archimedes, Q-A10):** an optional **top-level** `"theme"` key (not nested), with `"system"`
+(default, also when the key is absent), `"light"` or `"dark"`. `"dynamic"` is reserved for Q-T7 and **not accepted
+yet**. It stays on **schemaVersion 1**, with no feature level. It's in the synced file, so it applies on every device
+that reads it. There's no phone-side Settings row for it in this release.
+- **`validate.py` / CI:** a non-string or unknown value is an error: `theme must be system, light or dark.`
+- **Phone:** a non-string value (`"theme": 1`) is a normal validation error (B2, last good layout kept) with the same
+  message. An **unknown string** (`"dynamic"`, a typo) does **not** reject the file: home follows the system setting,
+  and `status.json` gets the warning `warn_theme_value` (Warnings list too, no banner or snackbar):
+  `theme "dynamic" isn't supported by this Config Launcher, so home follows the system setting. Update the app, or
+  check for a typo.`
+- **Caveat:** builds from before `theme` existed have strict root keys, so they reject a file that has it (B2). That's
+  acceptable pre-release.
+
+**Live switching.** A system light/dark change, or a reload that changes `theme`, restyles everything in place: **no
+restart, no recreate, no flash**. Open sheets, the drawer and edit mode stay open, and the scroll position and focus are
+kept (the activity handles `uiMode` itself and recomposes). With reduced motion the swap is instant; otherwise a 150 ms
+cross-fade. The contrast checks re-run on the switch (§15).
+
+**Palettes.** Dark is the **current** palette (Material 3 baseline dark, `HomeTheme`, #153), unchanged. Light is
+new: Material 3 baseline light, plus the banner colours below. Ratios are WCAG 2.x, computed as in `tools/contrast.py`.
+Text needs **4.5:1**, icons, outlines and controls **3:1**.
+
+| Role | Dark (current) | Ratio | Light (new) | Ratio |
+|---|---|---|---|---|
+| Surface (drawer, Settings, detail view, first run) | `#141218` | | `#FEF7FF` | |
+| On-surface text | `#E6E0E9` on surface | 14.35 | `#1D1B20` on surface | 16.23 |
+| Secondary text (`onSurfaceVariant`) | `#CAC4D0` on surface | 10.91 | `#49454F` on surface | 8.88 |
+| Menu / long-press sheet (`surfaceContainer`) | `#211F26` | | `#F3EDF7` | |
+| Menu text / secondary | `#E6E0E9` / `#CAC4D0` | 12.57 / 9.56 | `#1D1B20` / `#49454F` | 14.85 / 8.13 |
+| Dialog, folder card, prompt sheet (`surfaceContainerHigh`) | `#2B2930` | | `#ECE6F0` | |
+| Dialog text / secondary | `#E6E0E9` / `#CAC4D0` | 11.08 / 8.42 | `#1D1B20` / `#49454F` | 13.94 / 7.63 |
+| Dialog buttons (`primary`) on the dialog | `#D0BCFF` | 8.42 | `#6750A4` | 5.26 |
+| Outline (text fields, checkboxes, dashed consent tile) on dialog / on surface | `#938F99` | 4.53 / 5.87 | `#79747E` | 3.72 / 4.33 |
+| Snackbar (`inverseSurface`) text / action | `#322F35` / `#6750A4` on `#E6E0E9` | 10.17 / 4.97 | `#F5EFF7` / `#D0BCFF` on `#322F35` | 11.65 / 7.73 |
+| Scrim behind folders and dialogs | black 50 % | | black 50 % (same: it dims the wallpaper either way) | |
+| Banner, warning (B1, B2, B4–B9) | `#4A3B00` | | `#FFF0C2` | |
+| Warning banner text / ▲ icon / buttons | `#FFFFFF` / `#FFC400` / `#D0BCFF` | 10.96 / 6.86 / 6.43 | `#3D2E00` / `#7A5900` / `#5C4300` | 11.64 / 5.68 / 8.19 |
+| Banner, error (B3, invalid config) | `#5C1F1F` | | `#FFDAD6` | |
+| Error banner title / detail lines / hint / ■ icon / buttons | `#FFFFFF` / `#FFCDD2` / `#CAC4D0` / `#FF8A80` / `#D0BCFF` | 12.57 / 8.93 / 7.37 / 5.51 / 7.37 | `#410002` / `#8C1D18` / `#49454F` / `#B3261E` / `#8C1D18` | 13.26 / 7.05 / 7.23 / 5.06 / 7.05 |
+
+Every pair passes. The tightest are dark outline on a dialog (4.53:1) and light outline on a dialog (3.72:1), both
+above the 3:1 needed for controls. Status is never colour-only in either theme (▲ / ■ glyphs). The error banner's hint
+line uses `onSurfaceVariant` (`#CAC4D0`) in dark, replacing `LightGray`, so both themes take every banner colour from
+this table.
 
 ---
 
@@ -677,20 +731,20 @@ The `{light, dark}` variant `#F1F0F4` would need 57 % (4.52:1), so the example u
 in `status.json`. With `none` nothing is measured (the wallpaper is unknown).
 
 **System-theme colours (#125).** `primary`, `secondary`, `onSurface` and `surface` (as text or backdrop colour) are only
-known on the device. **Home is currently always dark** (one fixed dark scheme, no dynamic colour; #153): the phone's
-dark mode setting only picks the bar's `color.light` / `color.dark` variant. Q-T6 asks whether home should follow the
-system theme and wallpaper colours. The **phone** measures them with the same rules
-(worst-case wallpaper for see-through backdrops): at load, and again whenever the system theme (light/dark) or the
-wallpaper colours change (`onConfigurationChanged` / `WallpaperColors` updates). It **doesn't** re-measure on every
-frame. The phone checks **only the variant currently shown**, measured against the scheme home actually draws with (#153),
-and says whether **dark mode was on or off**. The other variant is checked after the next dark-mode switch. Results are **phone-only warnings**: in
+known on the device. They resolve through the **home theme** (§12.1, Q-T6): light or dark, following the system
+unless `launcher.json` sets `theme`. The bar's `color.light` / `color.dark` variant follows the **home theme**, not the
+raw phone setting, so with `"theme": "dark"` on a phone in light mode the bar uses `color.dark`. The **phone** measures
+them with the same rules (worst-case wallpaper for see-through backdrops): at load, and again on every home-theme switch
+(system light/dark change, or a reload that changes `theme`). It **doesn't** re-measure on every frame. It checks
+**only the theme that's showing**, measured against the scheme home actually draws with (#153), and says which one
+(`in light theme` / `in dark theme`). The other theme is checked after the next switch. Results are **phone-only warnings**: in
 `status.json` `warnings` (a string array) they're marked by the words `checked on this phone`, with no separate key.
 They appear in the Warnings list like any other. The path names the key that holds the theme token
 (`style.color`, `style.color.dark`, `style.backdrop.color`). A theme change that fixes or causes one updates
 `status.json` silently, with no snackbar, the same as Q-T2. `validate.py` can't measure them, so it prints **one**
 info line per run (not per colour), only when a shown bar's contrast depends on a theme colour, and doesn't count it as
 a warning. Final strings (#132):
-- `status.json`: `elements[0].style.color: contrast 3.2:1 on the backdrop (4.5:1 recommended), checked on this phone with dark mode on. Shown anyway.` (`with dark mode off.` when it's off)
+- `status.json`: `elements[0].style.color: contrast 3.2:1 on the backdrop (4.5:1 recommended), checked on this phone in dark theme. Shown anyway.` (`in light theme` when the light theme is showing)
 - `validate.py`: `info: theme colours (primary, secondary, onSurface, surface) are only checked on the phone; see "checked on this phone" in .configlauncher/status.json.`
 
 **Skipped elements (Q-T4).** Nothing on home: no placeholder, banner or snackbar (an element is decoration and must
@@ -806,13 +860,17 @@ Resources (character positions are 1-based, like line and column):
     <item quantity="one">Layout loaded · %d warning</item>
     <item quantity="other">Layout loaded · %d warnings</item>
 </plurals>
-<!-- %3$s = theme_dark_on or theme_dark_off (the phone's dark mode setting; home itself is always dark for now, #153). -->
+<!-- %3$s = theme_light or theme_dark: the home theme that's showing (§12.1), not the raw phone setting. -->
 <!-- code, not strings.xml (status.json) -->
-<string name="warn_contrast_theme">%1$s: contrast %2$s:1 on the backdrop (4.5:1 recommended), checked on this phone with %3$s. Shown anyway.</string>
+<string name="warn_contrast_theme">%1$s: contrast %2$s:1 on the backdrop (4.5:1 recommended), checked on this phone in %3$s. Shown anyway.</string>
 <!-- code, not strings.xml (status.json) -->
-<string name="theme_dark_on">dark mode on</string>
+<string name="theme_light">light theme</string>
 <!-- code, not strings.xml (status.json) -->
-<string name="theme_dark_off">dark mode off</string>
+<string name="theme_dark">dark theme</string>
+<!-- code, not strings.xml (status.json): validator error for the top-level theme key (§12.1, Q-A10) -->
+<string name="err_theme">%1$s must be system, light or dark.</string>
+<!-- code, not strings.xml (status.json): phone warning for an unknown theme string; %1$s = the value as written -->
+<string name="warn_theme_value">theme \"%1$s\" isn\'t supported by this Config Launcher, so home follows the system setting. Update the app, or check for a typo.</string>
 <string name="warnings_copied">Warnings copied.</string>
 <string name="warnings_copy_done">Copied</string>
 <string name="titlebar_custom">Custom (set in the file)</string>
@@ -839,7 +897,7 @@ The other counts in the messages above (the maxima) are always ≥ 2, so they do
 text so agents and the phone say the same thing.
 
 **status.json text is code, not strings.xml.** Every message written to `status.json` (the `warn_*` warnings above,
-including `warn_contrast_theme` and its `dark mode on` / `dark mode off` words) is an English string built in code
+including `warn_contrast_theme` and its `light theme` / `dark theme` words) is an English string built in code
 (`Validator`, `Template`, `TitleBar`), not a `strings.xml` resource. It never follows the phone's language, so the file
 stays stable for agents and matches `validate.py` word for word. The rows marked `code, not strings.xml` are listed here
 in resource form only so the copy has one reference. The phone shows the same English text in the Warnings list. Only
@@ -1015,7 +1073,7 @@ The prompt groups capabilities by what they mean to a person, not by API. Each t
 | **Show** | `data.file` (no fields: the file is always `.configlauncher/widgets-data/<elementId>.json`, from the element `id`, so a card can't point at another card's file) | Static text, `{time}`/`{date}`/`{page}`, the widget's own data file | `Show data from widgets-data/w-anigeek.json in your config folder` | **No.** It's listed in the review screen, but on its own it never prompts (Q-D1). The folder is already yours, and displaying data can't reach anything |
 | **Show** | `ui.reload` (no fields) | A tap or button that re-reads this widget's own data file now | `Reload its data when you tap it` | **No** (#117: Show tier, silent). It only re-reads a file the card can already show (§17.9) |
 | **Open** | `ui.openApp` (`packages`) | Tap to open an app, or a launcher target (drawer, page list) | `Open Signal when you tap it` (the app label; the package if it isn't installed) | **No**, same rule as title-bar tap targets |
-| **Open** | `ui.openUrl` (bare, no fields) + the card's **`source`** (its data source site: `"https://blog.anigeek.com"`, `"http://nas.lan"`, or a bare host = https; exact match, IDNA, no subdomains, no port, path or user info). Both **confirmed by Archimedes** in [#146](https://github.com/Nasawa/config-launcher/pull/146) (Q-D5) | Tap to open a link in the browser | `Open links to its source, blog.anigeek.com, when you tap it` + `Links to other sites ask you each time.` An http source is written in full (`http://nas.lan`) with `cap_http_note_link` under it. Without `source`: `Open links when you tap it, asking you each time` (review list and detail only) | **Yes, when it has a `source`** (approve the source once; a new or changed `source` → `Needs your OK again`). Without `source` there's nothing to pre-approve, so `ui.openUrl` needs no Allow prompt and every tap confirms (§17.9). Removing `source` likewise needs no prompt (no `needsApprovalAgain`), since every tap then confirms. Both matches [#146](https://github.com/Nasawa/config-launcher/pull/146) (3237674). Taps to any host other than the approved source **always** show the confirm sheet, unless the user ticked `Always allow` for that host on this phone (Q-D5) |
+| **Open** | `ui.openUrl` (bare, no fields) + the card's **`source`** (its data source site: `"https://blog.anigeek.com"`, `"http://nas.lan"`, or a bare host = https; exact match, IDNA, no subdomains, no port, path or user info). Both **confirmed by Archimedes** in [#146](https://github.com/Nasawa/config-launcher/pull/146) (Q-D5) | Tap to open a link in the browser | `Open links to its source, blog.anigeek.com, when you tap it` + `Links to other sites ask you each time.` An http source is written in full (`http://nas.lan`) with `cap_http_note_link` under it. Without `source`: `Open links when you tap it, asking you each time` (review list and detail, and in the prompt when another line makes the widget prompt; on its own it never prompts) | **Yes, when it has a `source`** (approve the source once; a new or changed `source` → `Needs your OK again`). Without `source` there's nothing to pre-approve, so `ui.openUrl` needs no Allow prompt and every tap confirms (§17.9). Removing `source` likewise needs no prompt (no `needsApprovalAgain`), since every tap then confirms. Both matches [#146](https://github.com/Nasawa/config-launcher/pull/146) (3237674). Taps to any host other than the approved source **always** show the confirm sheet, unless the user ticked `Always allow` for that host on this phone (Q-D5) |
 | **Internet** (feature level 5, a later release: Christopher's Q-C1/Q-C2, #117) | `net.fetch` (`origins`: full `https://host[:port]` or `http://host[:port]`, approved by name; literal URLs only) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (https hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable). An http origin is always written in full, `Connect to http://nas.lan:3001`, followed by `cap_http_note`: `The connection to http://nas.lan:3001 isn't private. Others on your network could see or change it. Only allow this if you trust this network. You're choosing a less secure connection.` Private-network origins get `cap_private_note` and self-signed ones `cap_tofu_note` (§17.13) | **Yes** |
 | **Phone data** (later, no v1 kinds) | — (future `phone.*`) | Calendar, next alarm, battery, notification counts | `Read your calendar` · `See notification counts` | **Yes.** After `Allow`, Android may ask for its own permission too |
 | **Act** (later, no v1 kinds) | — | Write back to the data file, toggles, webhooks. In v1 buttons only Open | `Change values in widgets-data/w-anigeek.json` | **Yes** |
@@ -1056,14 +1114,16 @@ the prompt opens from a tap.
 **One approval model (Claw #3; adopted by Archimedes as the approval *ceiling*, Q-A9).** Each widget `id` has one
 stored **approved set** on this phone, a **cumulative union** that approvals at different times add to: every capability line
 (each kind with each of its `packages` / `origins` entries, plus the approved `source`; `data.file` and `ui.reload`
-are a line each) the user has allowed for it. `Allow` adds the lines the prompt showed. The set **never shrinks** when
+are a line each) the user has allowed for it, plus the silent lines (no OK needed) recorded while it was live. `Allow`
+adds the lines the prompt showed. The set **never shrinks** when
 the file narrows. Only `Forget approval` (§17.6), `Remove from home` or the element leaving the file (GC) clears it.
 Sites the user ticked `Always allow` for on the tap confirm sheet live in a **separate device-local list** per element
 id ([#146](https://github.com/Nasawa/config-launcher/pull/146)): not ceiling lines, not in the fingerprint, never synced or written to the folder or `status.json`. The
 user can `Remove` one (§17.6); `Forget approval` and GC clear the list too. On every load:
 - **Everything the widget declares is within the approved set → live, no prompt, no badge, no dot.** This covers
   narrowing, returning to an earlier version, and any mix of approved lines.
-- **Anything beyond it → `Needs your OK again`** (or `Needs your OK` when the set is empty). Only the lines outside the
+- **Anything beyond it → `Needs your OK again`** when the set is non-empty (including silent lines recorded while it
+  was live), or `Needs your OK` when the set is empty. It's the set that decides, not whether the user ever tapped `Allow`. Only the lines outside the
   set are marked `New`.
 - The one exception (later): the **first time** a widget has both Phone data and Internet, the combination prompt
   (§17.1 combination line) shows once, even if each was approved on its own earlier. After `Allow` the pair joins the
@@ -1089,6 +1149,18 @@ phone"** (its own write, history-tracked) vs **"in launcher.json"** (anything el
 `author` field (string, max 40, bidi and zero-width characters stripped; Q-A4), it's shown as a quote: `Changed in launcher.json · says "Claw"`. It is never a trust signal: an agent and a
 person editing on a PC get the same prompt, and no author is ever auto-approved (Q-D7).
 
+**The name shown for a widget (Archimedes: `title` stays optional).** A `card`'s `title` is optional, as the S3-A
+validator already has it. Wherever §17 shows `<Title>` or a widget's title, it means the `title` after stripping (bidi
+and zero-width characters, §13), or, when that's missing or empty, the element **`id`** as written: `Allow "w-1"?`,
+`w-1, widget, needs your OK. Double-tap to review.` That covers the consent tile and its TalkBack node, the prompt and
+broadened titles, the review list rows, the detail header, the Turn off snackbar, the Forget dialog, the link confirm
+sheet's `From "…"`, the card header, `card_a11y` and the `status.json` warnings. There's no separate untitled copy, and
+a missing title is never a reason to skip a card. Agents should still set a `title`. It's recommended, because a person
+recognises `Anigeek LLC` far faster than `w-anigeek`. **Neither name is trusted.** The agent writes both the title and
+the id, so either one can imitate another widget or a system message (`Allow "Android System"?`). That's why no
+decision rests on the name: the prompt always lists the real capability lines with the real file path, app labels and
+hosts (§17.5), and the link confirm sheet always shows the real resolved address (§17.9).
+
 **Phone edits never broaden.** In this release the phone edits only placement, size and the §16.6 presets. It never
 edits capabilities, so a phone-side edit can't trigger a prompt.
 
@@ -1098,14 +1170,14 @@ could imitate system UI, e.g. a fake "Tap to verify your account"). It shows a *
 the §16.2 placeholder so every non-live widget looks like the same family:
 - 12 dp-radius frame (scaled, §17.8), white 12 % fill, **1 dp dashed white 40 % outline** (the dash is the "not live"
   cue; amber stays reserved for size problems, §16.5).
-- Centre: a 24 dp `shield` outline icon, then the widget's **title** from the file (14 sp, 1 line, bidi and
+- Centre: a 24 dp `shield` outline icon, then the widget's **title** from the file, or its `id` when it has none (§17.2) (14 sp, 1 line, bidi and
   zero-width characters stripped, §13), then the reason (12 sp, secondary).
 - 1×1: icon only, with the title and reason in TalkBack and on long-press. 2×1: icon + reason, no title.
 
 | State | Reason (exact) | Tap |
 |---|---|---|
-| New, never allowed | `Needs your OK` | Prompt (§17.5) |
-| Broadened | `Needs your OK again` | Broadened prompt |
+| Asks for OK, empty ceiling (e.g. new) | `Needs your OK` | Prompt (§17.5) |
+| Asks for more than a non-empty ceiling (including silent lines recorded while it was live) | `Needs your OK again` | Broadened prompt |
 | User chose `Keep off` on a prompt | Unchanged (`Needs your OK` / `Needs your OK again`) | Prompt again |
 | User revoked it | `Turned off` | Same |
 | Above this launcher's feature level (`requires`, e.g. `net.fetch` at 5 on a level-4 phone) | `Update Config Launcher to show this` | Hint sheet. Same skip-and-keep rule as §15, but it **keeps its cells and shows the tile**, because a dashboard card going missing looks broken |
@@ -1179,6 +1251,17 @@ A bottom sheet (not a dialog, so it can scroll and show a preview), opened only 
 - Buttons: `Allow` (primary) · `Keep off`. Back or a swipe-down = no decision (the tile stays `Needs your OK`). The
   prompt approves only the `source` host. Other link hosts are never listed here and can't be pre-approved by the file:
   the only way to always allow one is the user ticking `Always allow` on the tap confirm sheet (§17.9).
+- **`Allow` approves only what the sheet showed (Archimedes' ruling, from the [#158](https://github.com/Nasawa/config-launcher/pull/158) review).** The sheet keeps
+  the fingerprint (A2) it was built from. If the card's fingerprint changes while the sheet is open (a reload brings a
+  new kind, package, origin or `source`), the sheet must never keep a stale list under the user's finger. It either
+  **closes with no decision** (recommended for S3-C: the tile shows the new state and the next tap opens a fresh
+  prompt), or **rebuilds visibly** with the new lines, and in that case nothing is approved by a tap that started
+  before the rebuild. A cosmetic-only change (not in the fingerprint) leaves an open sheet alone. The store enforces this
+  on its own as well: `allow(id, shown, current)` **refuses, and changes nothing, unless the card in the current
+  launcher.json still has exactly the `shown` fingerprint**; a card that has left the file (or is skipped) is refused
+  too. After a refusal the card keeps its state: `needsApprovalAgain` when its ceiling is non-empty (including silent
+  lines recorded while it was live), `needsApproval` when the ceiling is empty, `off` if turned off (e.g. after
+  `Forget approval`). So the UI can't approve lines the user never saw, even by accident.
 - After `Allow`, Android runtime permissions follow if needed, one system dialog per permission, but only those that
   are missing. If one is denied, the widget is live, the affected bindings show `—`, and the detail shows `Android
   permission off: Calendar` with `Open settings`.
@@ -1286,12 +1369,13 @@ status dots paired with words.
    `2×1`, `4×2`, `4×3`). The launcher uses the **largest that fits** the actual span. If even the smallest doesn't fit,
    it uses the smallest and drops children by `priority` (low first), then ellipsizes. With **no** declared layouts, the
    single layout reflows by the same rules.
-5. **Surface and contrast over wallpaper** (extends §12). The default `surface: "auto"` is a dark card, `#121218` at
+5. **Surface and contrast over wallpaper** (extends §12). The default `surface: "auto"` follows the home theme (§12.1):
+   in the dark theme it's a dark card, `#121218` at
    **≥ 85 %** opacity, which is the floor (Claw's feel). Worst case over pure white wallpaper (computed like
    `tools/contrast.py`): white text **12.1:1**, secondary white 70 % **6.8:1**, inside a 6 % white tile **10.1:1** /
    **5.9:1**; status dots green `#4CD964` **5.5:1**, amber `#FFC400` **6.3:1**, red `#FF6363` **3.4:1** (all ≥ 3:1 as
    non-text graphics). Red is never used for text: `down` is white with a red dot and ■. `surface: "light"` mirrors
-   this. Any custom colour is measured against the surface: below 4.5:1 (text) or 3:1 (dots, bars) it **renders anyway
+   this, and `auto` uses it in the light theme. Any custom colour is measured against the surface: below 4.5:1 (text) or 3:1 (dots, bars) it **renders anyway
    with a §15-style warning** (`status.json` + Warnings section, no banner). `surface: "none"` (text right on the
    wallpaper, always with the header row, §17.9) gets the label shadow, plus the 60 % scrim behind each text run when `Label backdrop` is on (§1.1). It
    isn't measured.
@@ -1318,8 +1402,9 @@ a widget. The header never shows `author`. It turns `as of 08:38 · stale` with 
 interval, else 30 min). **The header can't be turned off.** At `short` heights (h = 1) it collapses to a leading title
 caption on the same row, ellipsized before the content, so even a 1-row card says what it is. This way a live card
 (even a Show-only one, which needs no prompt) can't pass for a system dialog, a notification or the status bar.
-- `title` is required on every `card`. Missing or empty → that element is **skipped** (skip-and-keep, tile `Can't show
-  this widget`) with the warning `elements[4]: a card needs a title, so it was skipped. It stays in the file.`
+- `title` is optional (Archimedes, the S3-A validator). Missing or empty → the header shows the element `id` in the
+  same `title` role, so the card still says what it is (§17.2 "The name shown for a widget"). It's never skipped for
+  this and gets no warning. Agents should still set a `title`, since it's recommended.
 - `surface: "none"` is allowed only with the full header. A `none` card that's 1 row tall, or whose chosen layout
   leaves no room for the header, is **drawn on the default `auto` surface** instead, with the warning
   `elements[4].surface: "none" needs room for the header row, so the default card surface was used.` (No B2, no banner.)
@@ -1449,6 +1534,8 @@ time, with the not-private note, until the user ticks `Always allow http://nas.l
 - [ ] Consent store (device-local), approved-set check on every load (it never shrinks), the states in §17.2, no dialog from a load.
 - [ ] Consent tile (§17.3), B9 + count chip + menu badges (§17.4), review list, prompt sheet with preview, detail with
   Turn off + Undo, Forget approval (confirm, no Undo), `status.json` consent fields.
+- [ ] `allow(id, shown, current)`: refuse (no change) unless the card in the current launcher.json still has exactly the `shown` fingerprint, and refuse a card that has left the file or is skipped; an open prompt closes (or rebuilds visibly) when the fingerprint changes (§17.5).
+- [ ] Name fallback: the element `id` wherever there's no `title` (§17.2).
 - [ ] Link taps (§17.9): blocked schemes / user info, source match opens, confirm sheet otherwise, `Always allow` adds
   to the device-local Always-allow list, `Always allowed sites` with Remove + Undo.
 - [ ] Tokens and tiers (§17.8), six primitives + three containers (§17.9), layout selection and priority drops, card
@@ -1475,9 +1562,7 @@ builds S3-C from it.
 | `tile_off` | `Turned off` | — | R · S3 | Consent tile reason (user turned it off) |
 | `tile_update` | `Update Config Launcher to show this` | — | R · S3 | Tile reason: `requires` too high or unknown kind |
 | `tile_update_hint` | `This widget needs a newer Config Launcher. It stays in your layout file.` | — | R · S3 | Hint sheet from the tile above |
-| `tile_cant_show` | `Can't show this widget` | — | R · S3 | Tile reason: card without a title (reuses §16.2 copy) |
-| `tile_a11y` | `%1$s, widget, %2$s. Double-tap to review.` | 1 = title, 2 = reason in lower case (e.g. `needs your OK`) | A · S3 | Consent tile node |
-| `tile_a11y_untitled` | `Widget, %1$s.` | 1 = reason | A · S3 | Consent tile for a card skipped for having no title |
+| `tile_a11y` | `%1$s, widget, %2$s. Double-tap to review.` | 1 = name (title, or the element id, §17.2), 2 = reason in lower case (e.g. `needs your OK`) | A · S3 | Consent tile node |
 | `widget_sheet_source_file` | `Widget · from launcher.json` | — | R · S3 | Long-press item sheet subtitle |
 | `widget_action_review` | `Review` | — | R · S3 | Item sheet action and tile custom action (consent tile) |
 | `widget_action_permissions` | `Permissions` | — | R · S3 | Item sheet action and custom action (live card) → detail |
@@ -1516,8 +1601,8 @@ builds S3-C from it.
 
 | Resource | English | Placeholders | Where · stage | Used in |
 |---|---|---|---|---|
-| `consent_title` | `Allow "%1$s"?` | 1 = title | R · S3 | New widget prompt title |
-| `consent_title_more` | `"%1$s" wants more access` | 1 = title | R · S3 | Broadened prompt title |
+| `consent_title` | `Allow "%1$s"?` | 1 = name (title, or the element id) | R · S3 | New widget prompt title |
+| `consent_title_more` | `"%1$s" wants more access` | 1 = name (title, or the element id) | R · S3 | Broadened prompt title |
 | `consent_source_file` | `Added in launcher.json · %1$s` | 1 = time | R · S3 | Prompt source line |
 | `consent_source_phone` | `Added on this phone` | — | R · S3 | Prompt source line (inline add) |
 | `consent_author` | `says "%1$s"` | 1 = `author` | R · S3 | Prompt line under the source, **only when `author` is present** |
@@ -1541,7 +1626,7 @@ builds S3-C from it.
 | `cap_open_app` | `Open %1$s when you tap it` | 1 = app label, or the package if it isn't installed | R · S3 | `ui.openApp`, one line per package |
 | `cap_open_source` | `Open links to its source, %1$s, when you tap it` | 1 = `source` host (bare for https, `http://host` for http) | R · S3 | `ui.openUrl` with `source` (Q-D5, [#146](https://github.com/Nasawa/config-launcher/pull/146)) |
 | `cap_open_others` | `Links to other sites ask you each time.` | — | R · S3 | Secondary line under `cap_open_source` |
-| `cap_open_ask` | `Open links when you tap it, asking you each time` | — | R · S3 | `ui.openUrl` without `source` (review list and detail; no prompt) |
+| `cap_open_ask` | `Open links when you tap it, asking you each time` | — | R · S3 | `ui.openUrl` without `source`: review list, detail, and the prompt when another line makes the widget prompt (A3: the prompt lists everything). On its own it never prompts. It adds no ceiling line, so in a broadened prompt it's listed under `Already allowed`. Every tap still gets the confirm sheet, with `cap_http_note_link` for http (Q-D5, Q-C3) |
 | `cap_http_note_link` | `Links to %1$s aren't private. Others on your network could see or change them. Only allow this if you trust this network. You're choosing a less secure connection.` | 1 = `http://host` | R · S3 | Under an http `source` in the prompt, and on the link confirm sheet for an http link (Q-C3) |
 | `cap_net` | `Connect to %1$s` | 1 = origin list; https origins without `https://` and `:443`, http in full | R · S5 | `net.fetch` |
 | `cap_http_note` | `The connection to %1$s isn't private. Others on your network could see or change it. Only allow this if you trust this network. You're choosing a less secure connection.` | 1 = `http://host[:port]` | R · S5 | Under each `http://` origin in `cap_net` (Q-C3/Q-C7) |
@@ -1580,10 +1665,10 @@ to expand. Each http entry stays in full and gets its own note line under the li
 | `detail_approved` | `Approved on this phone:` | — | R · S3 | Full ceiling list |
 | `detail_not_used` | `not used now` | — | R · S3 | Secondary text on ceiling lines the current version doesn't use |
 | `detail_turn_off` / `detail_allow` | `Turn off` / `Allow` | — | R · S3 | Action button |
-| `turned_off_snack` | `"%1$s" turned off.` | 1 = title | R · S3 | Snackbar after Turn off, with `merge_undo` (`Undo`, §9.1), 10 s |
+| `turned_off_snack` | `"%1$s" turned off.` | 1 = name (title, or the element id) | R · S3 | Snackbar after Turn off, with `merge_undo` (`Undo`, §9.1), 10 s |
 | `detail_forget` | `Forget approval` | — | R · S3 | Detail-page text button (`error` colour) |
-| `detail_forget_a11y` | `Forget approval for %1$s. Can't be undone.` | 1 = title | A · S3 | `contentDescription` of that button |
-| `forget_title` | `Forget approval for "%1$s"?` | 1 = title | R · S3 | Confirm dialog title |
+| `detail_forget_a11y` | `Forget approval for %1$s. Can't be undone.` | 1 = name (title, or the element id) | A · S3 | `contentDescription` of that button |
+| `forget_title` | `Forget approval for "%1$s"?` | 1 = name (title, or the element id) | R · S3 | Confirm dialog title |
 | `forget_body` | `It stays off. Next time you allow it, you'll be asked about everything again.` | — | R · S3 | Confirm dialog body |
 | `forget_confirm` / `forget_cancel` | `Forget` / `Cancel` | — | R · S3 | Dialog buttons (`Cancel` has initial focus) |
 | `forget_snack` | `Approval forgotten.` | — | R · S3 | Snackbar, 4 s, **no Undo** |
@@ -1603,7 +1688,7 @@ to expand. Each http entry stays in full and gets its own note line under the li
 |---|---|---|---|---|
 | `card_as_of` | `as of %1$s` | 1 = time of `updatedAt` | R · S3 | Card header |
 | `card_stale` | `as of %1$s · stale` | 1 = time | R · S3 | Card header after `staleAfter` (+ ▲ glyph) |
-| `card_a11y` | `%1$s, widget` | 1 = title | A · S3 | Live card root node |
+| `card_a11y` | `%1$s, widget` | 1 = name (title, or the element id) | A · S3 | Live card root node |
 | `card_stale_a11y` | `stale` | — | A · S3 | Appended to `as of` when stale |
 | `reload_in_progress` | `Reloading…` | — | R · S3 | Header while re-reading |
 | `reload_a11y_updated` / `reload_a11y_same` | `Updated` / `No new data` | — | A · S3 | Polite announcement after reload |
@@ -1611,7 +1696,7 @@ to expand. Each http entry stays in full and gets its own note line under the li
 | `tap_link_blocked` | `This link isn't allowed for this widget.` | — | R · S3 | Snackbar, 4 s, no action. **Only** for a blocked scheme or user info in the URL |
 | `tap_link_empty` | `This link has no address yet.` | — | R · S3 | Snackbar, 4 s, when the `{data:…}` link is empty |
 | `open_confirm_title` | `Open %1$s?` | 1 = host (punycode form) | R · S3 | Link confirm sheet title; also its pane title |
-| `open_confirm_from` | `From "%1$s"` | 1 = widget title | R · S3 | Sheet line under the title |
+| `open_confirm_from` | `From "%1$s"` | 1 = widget name (title, or the element id) | R · S3 | Sheet line under the title |
 | `open_confirm_url_a11y` | `Address: %1$s` | 1 = full resolved URL | A · S3 | URL line (the visible text is middle-truncated) |
 | `open_confirm_always` | `Always allow %1$s` | 1 = host; `http://host` for http | R · S3 | Checkbox, unticked every time |
 | `open_confirm_open` / `open_confirm_cancel` | `Open` / `Cancel` | — | R · S3 | Sheet buttons (`Cancel` has initial focus) |
@@ -1620,11 +1705,10 @@ to expand. Each http entry stays in full and gets its own note line under the li
 
 | Name (in code) | English | Placeholders | Stage |
 |---|---|---|---|
-| `warn_consent_pending` | `%1$s: widget "%2$s" is waiting for approval on this phone. It isn't shown until then.` | 1 = path, 2 = title | S3 |
+| `warn_consent_pending` | `%1$s: widget "%2$s" is waiting for approval on this phone. It isn't shown until then.` | 1 = path, 2 = name (title, or the element id) | S3 |
 | `warn_consent_again` | `%1$s: widget "%2$s" asks for more access and is waiting for approval on this phone. It isn't shown until then.` | same | S3 |
 | `warn_consent_off` | `%1$s: widget "%2$s" is turned off on this phone.` | same | S3 |
 | `warn_capability_kind` | `%1$s: capability kind "%2$s" isn't supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo.` | 1 = path, 2 = kind | S3 |
-| `warn_card_title` | `%1$s: a card needs a title, so it was skipped. It stays in the file.` | 1 = path | S3 |
 | `warn_surface_none` | `%1$s: "none" needs room for the header row, so the default card surface was used.` | 1 = path (`….surface`) | S3 |
 | `warn_data_missing` | `%1$s: widgets-data/%2$s.json is missing or unreadable, so the last values are shown.` | 1 = path, 2 = element id | S3 |
 | `warn_cert_changed` | `%1$s: the certificate for %2$s changed. Fetching from it is paused until someone approves the new certificate on this phone; the last good data is shown as stale.` | 1 = path, 2 = origin | S5 |
@@ -1689,13 +1773,18 @@ Dashboard widgets (§17). All answered by Christopher; the original recommendati
 - ✅ **Q-D7** (accepted as recommended) Should any author (e.g. Claw) ever be trusted to add widgets without asking? [No, not in this release. The
   author is quoted, never verified.]
 
-Title bar and home theme (§15). Open; the recommendation is in brackets:
-- **Q-T6** Home is always dark today (#153); the system dark-mode setting only picks the title bar's `color.light` /
+Title bar and home theme (§12.1, §15):
+- ✅ **Q-T6** (answered by Christopher: home follows the system light/dark setting by default, and `launcher.json` can
+  override it, §12.1; dynamic colours not decided, see Q-T7) Home was always dark (#153); the system dark-mode setting only picks the title bar's `color.light` /
   `color.dark` variant. Should home follow the system light/dark setting and wallpaper (dynamic) colours? That would
   also restyle menus and dialogs. [Yes: follow system light/dark, with dynamic colours on Android 12+, falling back to
   the current dark palette. Contrast checks then run against whatever is showing, and the `dark mode on/off` warning
   words still fit.] Raised by Grace and Sprite in [#152](https://github.com/Nasawa/config-launcher/pull/152) and
   [#153](https://github.com/Nasawa/config-launcher/pull/153).
+- **Q-T7** Should home use wallpaper (dynamic) colours on Android 12+? It would change menus, dialogs, banners and
+  the title bar's theme tokens with the wallpaper, and the contrast checks would follow. [Later, as an extra `theme`
+  value, `"dynamic"`, so it's opt-in and `system` stays predictable. Status colours (banners, ▲ / ■) would stay fixed
+  in either case.]
 
 ## UI questions for Sprite
 
@@ -1730,6 +1819,12 @@ Dashboard capability model (§17): all eight are answered in the [#116 comment](
 ~~Follow-up (Pragma): an unknown `kind` rejecting the whole file~~ ✅ Resolved in the [#116 follow-up](https://github.com/Nasawa/config-launcher/pull/116) and [#117](https://github.com/Nasawa/config-launcher/pull/117): on the phone it skips
 only that element (§17.3 tile `Update Config Launcher to show this`). New kinds bump the feature level and set
 `requires`, and `validate.py`/CI may stay strict for typos.
+
+- ~~Q-A10~~ ✅ Resolved by Archimedes (home theme, §12.1): optional top-level `"theme"`, `"system"` (default when
+  absent) | `"light"` | `"dark"`; `"dynamic"` reserved for Q-T7, not accepted yet. schemaVersion 1, no feature level.
+  `validate.py`/CI: non-string or unknown → `theme must be system, light or dark.` Phone: non-string → B2; unknown
+  string → follows the system setting + `warn_theme_value`. Older strict-root builds reject a file with `theme` (B2),
+  acceptable pre-release.
 
 All seven are answered in ARCHITECTURE §16 and applied above:
 
