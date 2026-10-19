@@ -23,7 +23,7 @@ class ReloadReceiptTest {
 
     @Test fun appliedRevisionNextToHash() = runBlocking {
         val (e, src) = setup()
-        assertTrue(e.reloadForAgent())
+        assertEquals(ReloadOutcome.RELOADED, e.reloadForAgent())
         val s = status(src)
         assertEquals("ok", s["result"]!!.jsonPrimitive.content)
         assertEquals(7L, s["revision"]!!.jsonPrimitive.long)
@@ -33,7 +33,7 @@ class ReloadReceiptTest {
     @Test fun rejectedFileHasNullRevision() = runBlocking {
         val (e, src) = setup(); e.poll()
         src.file.writeText(doc(8).replace("\"x\":0", "\"x\":99")); src.file.setLastModified(5000)
-        assertFalse(e.reloadForAgent())
+        assertEquals("#75: not reported as unchanged", ReloadOutcome.REJECTED, e.reloadForAgent())
         val s = status(src)
         assertNotEquals("ok", s["result"]!!.jsonPrimitive.content)
         assertEquals(JsonNull, s["revision"])
@@ -43,7 +43,24 @@ class ReloadReceiptTest {
         val (e, src) = setup(); e.poll()
         val t1 = status(src)["time"]!!.jsonPrimitive.content
         now += 60_000
-        assertFalse(e.reloadForAgent())
+        assertEquals(ReloadOutcome.UNCHANGED, e.reloadForAgent())
         assertNotEquals(t1, status(src)["time"]!!.jsonPrimitive.content)
+    }
+
+    @Test fun missingFileIsUnavailable() = runBlocking {
+        val (e, src) = setup(); e.poll()
+        src.file.delete()
+        assertEquals(ReloadOutcome.UNAVAILABLE, e.reloadForAgent())
+    }
+
+    @Test fun pendingEditIsBusy() = runBlocking {
+        val (e, _) = setup(); e.poll()
+        e.edit(dev.nasawa.configlauncher.model.Edit.MoveToCell("a", "home", 1, 1))
+        assertEquals(ReloadOutcome.BUSY, e.reloadForAgent())
+    }
+
+    @Test fun codesAreDistinct() {
+        assertEquals(ReloadOutcome.entries.size, ReloadOutcome.entries.map { it.code }.toSet().size)
+        assertEquals(listOf(0, 1), listOf(ReloadOutcome.UNCHANGED.code, ReloadOutcome.RELOADED.code))   // as documented before #75
     }
 }
