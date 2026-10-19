@@ -68,9 +68,10 @@ private fun Shield(color: Color, shadow: Boolean = false) = Canvas(Modifier.size
 @Composable
 fun ConsentTile(tile: ConsentUi.Tile, onReview: () -> Unit, modifier: Modifier = Modifier) {
     val reason = reasonText(tile.reason)
-    val title = consentText(tile.title)
+    // title is optional (#160): an untitled card is named by its id, on screen and in TalkBack.
+    val title = consentText(tile.title) ?: tile.id
     val lower = reason.replaceFirstChar { it.lowercase() }
-    val said = if (title != null) stringResource(R.string.tile_a11y, title, lower) else stringResource(R.string.tile_a11y_untitled, lower)
+    val said = stringResource(R.string.tile_a11y, title ?: "", lower)
     val review = stringResource(R.string.widget_action_review)
     val outline = Color(0x66FFFFFF)
     Box(

@@ -222,7 +222,6 @@
     <!-- %1$s = title, %2$s = reason in lower case (e.g. "needs your OK"). TalkBack only. -->
     <string name="tile_a11y">%1$s, widget, %2$s. Double-tap to review.</string>
     <!-- %1$s = reason. TalkBack only. -->
-    <string name="tile_a11y_untitled">Widget, %1$s.</string>
     <string name="widget_action_review">Review</string>
     <string name="consent_title">Allow \"%1$s\"?</string>
     <string name="consent_title_more">\"%1$s\" wants more access</string>
