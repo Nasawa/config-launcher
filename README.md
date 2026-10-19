@@ -190,6 +190,9 @@ Shape in brief:
 `.configlauncher/` holds:
 - `status.json`: the last load result (ok or the list of errors, the hash and the time), any `warnings` (for example an
   element this launcher skipped, which stays in the file) and any sync-conflict copies it noticed. **Read this to find out why your edit was rejected** without picking up the phone.
+  Once dashboard cards render, `consent` lists each card's state on this phone, keyed by element `id`: `needsApproval`, `needsApprovalAgain`,
+  `off` or `allowed`, plus a `warning` sentence when the card is waiting or off. Approvals themselves stay on the
+  phone and never go into your folder, so an edit to `launcher.json` can't approve its own card.
 - `apps.json`: every launchable app the drawer shows (`package`, `activity`, `label`, `profile`, `installTime`), rewritten
   when apps are installed, removed or changed, and when *Include work apps in config*, *Include hidden apps in
   apps.json* or the hidden list changes. Use it to place apps by their real package and activity. Work apps are listed

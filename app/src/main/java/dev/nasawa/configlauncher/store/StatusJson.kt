@@ -31,6 +31,7 @@ object StatusJson {
         result: String, errors: List<String>, hash: String?, ms: Long,
         backupError: String? = null, conflictFiles: List<String> = emptyList(), folder: String? = null, revision: Long? = null,
         warnings: List<String> = emptyList(),
+        consent: Map<String, Pair<String, String?>>? = null,
     ): ByteArray = buildJsonObject {
         put("result", result)
         put("errors", JsonArray(errors.map { JsonPrimitive(it) }))
@@ -46,5 +47,9 @@ object StatusJson {
         put("conflictFiles", JsonArray(conflictFiles.map { JsonPrimitive(it) }))
         // #57: where this launcher.json is, so you can tell it's the active one.
         put("folder", folder)
+        // #138: per widget id, its state on this phone (+ the §17.13 sentence). Never the approvals themselves.
+        if (consent != null) put("consent", buildJsonObject {
+            consent.toSortedMap().forEach { (id, v) -> put(id, buildJsonObject { put("state", v.first); v.second?.let { put("warning", it) } }) }
+        })
     }.toString().plus("\n").toByteArray(Charsets.UTF_8)
 }
