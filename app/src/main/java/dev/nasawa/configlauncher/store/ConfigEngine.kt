@@ -46,6 +46,16 @@ sealed interface Issue {
     data class ReadFailed(val message: String) : Issue { override val details get() = listOf(message) }
 }
 
+/**
+ * #75: the RELOAD broadcast's reply. [code] is the broadcast result code, [word] its result data.
+ * REJECTED: the current file isn't valid (details in status.json). UNAVAILABLE: the folder or file can't be read.
+ * BUSY: a phone edit, drag or conflict is pending, so the file wasn't read. TIMEOUT: no answer within 8 s.
+ */
+enum class ReloadOutcome(val code: Int, val word: String) {
+    UNCHANGED(0, "unchanged"), RELOADED(1, "reloaded"), REJECTED(2, "rejected"),
+    UNAVAILABLE(3, "unavailable"), BUSY(4, "busy"), TIMEOUT(5, "timeout"),
+}
+
 /** Thrown by sources when the grant/tree is gone (B3) rather than the file (B4). */
 class AccessLostException(message: String) : IOException(message)
 
@@ -135,10 +145,14 @@ class ConfigEngine(
         data object Empty : Inspection
         data class Valid(val pages: Int, val items: Int) : Inspection
         data class Invalid(val errors: List<String>) : Inspection
+        /** #74: the folder couldn't be read. Its own outcome: never treated as Empty, never written over. */
+        data class Unreadable(val reason: String, val accessLost: Boolean) : Inspection
     }
 
     fun inspect(src: ConfigSource): Inspection {
-        val bytes = src.read(Limits.MAX_BYTES) ?: return Inspection.Empty
+        val bytes = try { src.read(Limits.MAX_BYTES) } catch (e: Exception) {
+            return Inspection.Unreadable(e.reason(), e is AccessLostException)
+        } ?: return Inspection.Empty
         return when (val r = ConfigCodec.decode(bytes)) {
             is ParseResult.Ok -> Inspection.Valid(r.config.pages.size, r.config.pages.sumOf { it.items.size } + r.config.dock.orEmpty().size)
             is ParseResult.Invalid -> Inspection.Invalid(r.errors)
@@ -205,10 +219,20 @@ class ConfigEngine(
      * #55 adb reload: the same pipeline as ⋮ → Reload, then make sure status.json reflects it
      * (rewritten even if unchanged, so its `time` is a receipt for this request).
      */
-    suspend fun reloadForAgent(): Boolean = mutex.withLock {
+    suspend fun reloadForAgent(): ReloadOutcome = mutex.withLock {
+        // pollLocked skips the read while an edit, drag or conflict is pending: say so instead of "unchanged".
+        val busy = dragging || pending.isNotEmpty() || _state.value.conflict
         val changed = pollLocked(force = true)
         lastStatusKey = null; emitStatus()
-        changed
+        when {
+            busy -> ReloadOutcome.BUSY
+            changed -> ReloadOutcome.RELOADED
+            else -> when (_state.value.issue) {
+                is Issue.ParseError, is Issue.Invalid, is Issue.TooNew -> ReloadOutcome.REJECTED
+                is Issue.AccessLost, Issue.Missing, is Issue.ReadFailed -> ReloadOutcome.UNAVAILABLE
+                else -> ReloadOutcome.UNCHANGED
+            }
+        }
     }
 
     private suspend fun pollLocked(force: Boolean): Boolean {

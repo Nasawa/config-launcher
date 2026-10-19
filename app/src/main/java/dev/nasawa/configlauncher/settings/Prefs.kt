@@ -47,4 +47,13 @@ class Prefs(context: Context) {
     var askBeforeMerging: Boolean
         get() = sp.getBoolean("askBeforeMerging", false)
         set(v) = sp.edit { putBoolean("askBeforeMerging", v) }
+
+    /** §20.1 *Add agent instructions to folder* (default on). */
+    var agentDocs: Boolean
+        get() = sp.getBoolean("agentDocs", true)
+        set(v) = sp.edit { putBoolean("agentDocs", v) }
+
+    /** §20.1: folders (tree URIs) that got an AGENTS.md once, so a deleted one isn't recreated. */
+    fun agentDocsWritten(uri: Uri) = uri.toString() in sp.getStringSet("agentDocsWritten", emptySet())!!
+    fun markAgentDocsWritten(uri: Uri) = sp.edit { putStringSet("agentDocsWritten", sp.getStringSet("agentDocsWritten", emptySet())!! + uri.toString()) }
 }

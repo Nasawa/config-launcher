@@ -45,5 +45,18 @@ class LocalFileSource(val dir: File, val sidecars: Boolean = true) : ConfigSourc
         if (!t.renameTo(f)) throw IOException("could not write ${f.name}")
     }
 
+    // Folder stand-in for tests only; app-only mode (sidecars = false) has no folder files (§20.1).
+    override fun readRoot(name: String, maxBytes: Int): ByteArray? {
+        if (!sidecars) throw UnsupportedOperationException("app-only mode")
+        return File(dir, name).takeIf { it.isFile }?.inputStream()?.use { it.readCapped(maxBytes) }
+    }
+
+    override fun writeRoot(name: String, bytes: ByteArray) {
+        if (!sidecars) throw UnsupportedOperationException("app-only mode")
+        val t = File(dir, "$name.tmp")
+        FileOutputStream(t).use { it.write(bytes); it.fd.sync() }
+        if (!t.renameTo(File(dir, name))) throw IOException("could not write $name")
+    }
+
     companion object { const val FILE_NAME = "launcher.json" }
 }

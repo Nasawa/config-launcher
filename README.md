@@ -236,6 +236,18 @@ versioning.
 - Commit `.configlauncher/launcher.json.tmp` or `status.json`, commit conflict markers, or force-push.
 - Copy unplaced apps into the file just to "list" them. The drawer already shows everything.
 
+## Debug builds: signing key
+
+Debug builds are signed with the committed, debug-only key `app/debug.keystore` (alias `androiddebugkey`, passwords
+`android`), so a debug APK built on any machine or CI runner installs over the previous one and keeps the folder grant,
+settings and home-app role. Certificate SHA-256:
+`3a0cb6b59a1140b4b76d6a6fd70fbf3744f3174fd2479d89a3a148810cfd3dca` (CI checks it). Check an APK before installing with
+`apksigner verify --print-certs app-debug.apk`.
+
+This key is public and proves nothing about who built an APK. Never use it for release builds, and never commit a real
+release key. Builds signed with the old per-machine keys (up to v0.0.1-dev2) need one uninstall before the first build
+with this key.
+
 ## Debug builds: pushing a config in app-only mode
 
 In app-only mode ("Skip for now"), launcher.json lives in app-private storage at

@@ -16,7 +16,21 @@ android {
         versionCode = 1
         versionName = "0.1.0"
     }
+    // #73: one stable, committed DEBUG-ONLY key, so every dev build (any machine or CI runner) installs over the last.
+    // Publicly known passwords; it proves nothing about who built the APK. Never use it for release: the release
+    // build type has no signing config here, and a real release key must never be committed (see README).
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+    // §20.1: templates/config-folder/AGENTS.md ships as the asset "config-folder/AGENTS.md".
+    sourceSets { getByName("main") { assets.srcDir("../templates") } }
     buildTypes {
+        debug { signingConfig = signingConfigs.getByName("debug") }
         release {
             // R8 for release builds (shrink + optimize); matters most on the older wall-display devices.
             isMinifyEnabled = true

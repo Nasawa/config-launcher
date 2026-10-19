@@ -137,3 +137,50 @@ class MoveLayoutTest {
         assertSame(phone, e.source)
     }
 }
+
+/** #74: an inspect that can't read the folder is its own outcome and never leads to a write. */
+class UnreadableFolderTest {
+    @get:Rule val tmp = TemporaryFolder()
+    private val theirs = """{"schemaVersion":1,"revision":5,"pages":[{"id":"p1","items":[{"id":"a","type":"app","package":"p.a","x":0,"y":0}]}]}"""
+
+    /** A folder whose read throws (no SAF grant yet), but which really holds [theirs]. */
+    private class NoGrant(dir: File) : ConfigSource by LocalFileSource(dir) {
+        var granted = false
+        override fun read(maxBytes: Int): ByteArray? = if (granted) LocalFileSource(dirOf).read(maxBytes) else throw AccessLostException("folder permission was revoked")
+        private val dirOf = dir
+    }
+
+    @Test fun readFailureIsUnreadableNotEmpty() {
+        val e = ConfigEngine(LocalFileSource(tmp.newFolder("phone")), LastGoodStore(tmp.newFolder("lg")), 0)
+        val d = tmp.newFolder("f"); File(d, "launcher.json").writeText(theirs)
+        val ins = e.inspect(NoGrant(d))
+        assertEquals(Inspection.Unreadable("folder permission was revoked", accessLost = true), ins)
+        assertEquals(dev.nasawa.configlauncher.ui.FolderPick.Next.PROBLEM, dev.nasawa.configlauncher.ui.FolderPick.next(ins))
+    }
+
+    @Test fun pickDecisions() {
+        val n = dev.nasawa.configlauncher.ui.FolderPick
+        assertEquals(dev.nasawa.configlauncher.ui.FolderPick.Next.CREATE, n.next(Inspection.Empty))
+        assertEquals(dev.nasawa.configlauncher.ui.FolderPick.Next.ASK, n.next(Inspection.Valid(1, 1)))
+        assertEquals(dev.nasawa.configlauncher.ui.FolderPick.Next.ASK, n.next(Inspection.Invalid(listOf("x"))))
+    }
+
+    @Test fun moveToAnUnreadableFolderWritesNothing() = runBlocking {
+        val e = ConfigEngine(LocalFileSource(tmp.newFolder("phone")), LastGoodStore(tmp.newFolder("lg")), 0)
+        val d = tmp.newFolder("f"); val f = File(d, "launcher.json"); f.writeText(theirs)
+        assertFalse(e.moveTo(NoGrant(d), useMine = true))
+        assertFalse(e.moveTo(NoGrant(d), useMine = false))
+        assertEquals(theirs, f.readText())
+        assertFalse(File(d, ".configlauncher").exists())
+    }
+
+    @Test fun createPathAdoptsAFileThatAppearedAfterTheInspect() = runBlocking {
+        val e = ConfigEngine(LocalFileSource(tmp.newFolder("phone")), LastGoodStore(tmp.newFolder("lg")), 0)
+        val d = LocalFileSource(tmp.newFolder("f"))
+        assertEquals(Inspection.Empty, e.inspect(d))
+        d.file.writeText(theirs)                       // e.g. sync landed between inspect and move
+        assertTrue(e.moveTo(d, useMine = false))       // the CREATE path
+        assertEquals(theirs, d.file.readText())
+        assertEquals(listOf("p1"), e.state.value.config.pages.map { it.id })
+    }
+}
