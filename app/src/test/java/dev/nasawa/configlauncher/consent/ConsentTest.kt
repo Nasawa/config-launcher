@@ -163,7 +163,10 @@ class ConsentTest {
         assertFalse(File(dir, ".configlauncher/status.json").readText().contains("ceiling"))
         assertFalse(dir.walk().any { it.name == "consent.json" })
 
-        store.allow("w-1", e.consentReport().single { it.id == "w-1" }.lines, e.state.value.config)
+        // The engine checks against the file it has loaded: lines the card doesn't declare are refused.
+        assertFalse(e.allowConsent("w-1", listOf("ui.openUrl https://evil.example")))
+        assertFalse(e.allowConsent("w-gone", e.consentReport().single { it.id == "w-1" }.lines))
+        assertTrue(e.allowConsent("w-1", e.consentReport().single { it.id == "w-1" }.lines))
         e.consentChanged()
         assertEquals("allowed", status()["consent"]!!.jsonObject["w-1"]!!.jsonObject["state"]!!.jsonPrimitive.content)
         store.turnOff("w-1"); e.consentChanged()
