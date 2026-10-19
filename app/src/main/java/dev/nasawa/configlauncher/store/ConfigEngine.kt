@@ -191,6 +191,8 @@ class ConfigEngine(
                 val hash = ConfigCodec.sha256(existing!!)
                 lastStamp = target.stamp()
                 _state.value = LoadState(adopted, Origin.FILE, target.displayName, hash, reconnectable = target.reconnectable)
+                // #103: a fresh receipt for the adopted file, so status.json isn't left from an earlier install.
+                writeStatus("ok", emptyList(), hash, adopted.revision)
                 saveLastGood(existing)
             } else writeLocked(oldState.config)
             true
@@ -255,6 +257,8 @@ class ConfigEngine(
         if (hash == _state.value.baseHash && _state.value.origin == Origin.FILE || hash in selfWrites) {
             lastStamp = stamp
             if (_state.value.issue != null) _state.update { it.copy(issue = null) }
+            // #103: first look at a newly connected folder holding the file we already show: still write a receipt.
+            if (statusResult == null) writeStatus("ok", emptyList(), hash, _state.value.config.revision)
             return false
         }
         if (stabilityMs > 0) {

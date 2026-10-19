@@ -28,6 +28,12 @@ data class ItemSheetModel(
     val folderSize: Int?,
     val actions: List<ItemAction>,
 ) {
+    /**
+     * #103: the real-name line is shown whenever it differs from the title (that's the anti-disguise check); when the
+     * title already is the real name, it would only repeat it ("Clock / Clock / package"). The package always shows.
+     */
+    val showRealName: Boolean get() = realName != null && realName != title
+
     companion object {
         fun of(r: ResolvedItem): ItemSheetModel {
             val pkg = when (val i = r.item) { is AppItem -> i.packageName; is ShortcutItem -> i.packageName; is FolderItem -> null }
@@ -55,7 +61,7 @@ fun ItemSheet(r: ResolvedItem, onAction: (ItemAction) -> Unit, onDismiss: () -> 
                 m.folderSize != null -> Text(pluralStringResource(R.plurals.sheet_folder_apps, m.folderSize, m.folderSize), color = Color.Gray)
                 m.realName == null -> Text(stringResource(R.string.sheet_not_installed, m.packageName.orEmpty()), color = Color.Gray)
                 else -> {
-                    Text(m.realName, style = MaterialTheme.typography.bodyMedium)
+                    if (m.showRealName) Text(m.realName, style = MaterialTheme.typography.bodyMedium)
                     Text(m.packageName.orEmpty(), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                 }
             }
