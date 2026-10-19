@@ -1073,7 +1073,7 @@ The prompt groups capabilities by what they mean to a person, not by API. Each t
 | **Show** | `data.file` (no fields: the file is always `.configlauncher/widgets-data/<elementId>.json`, from the element `id`, so a card can't point at another card's file) | Static text, `{time}`/`{date}`/`{page}`, the widget's own data file | `Show data from widgets-data/w-anigeek.json in your config folder` | **No.** It's listed in the review screen, but on its own it never prompts (Q-D1). The folder is already yours, and displaying data can't reach anything |
 | **Show** | `ui.reload` (no fields) | A tap or button that re-reads this widget's own data file now | `Reload its data when you tap it` | **No** (#117: Show tier, silent). It only re-reads a file the card can already show (§17.9) |
 | **Open** | `ui.openApp` (`packages`) | Tap to open an app, or a launcher target (drawer, page list) | `Open Signal when you tap it` (the app label; the package if it isn't installed) | **No**, same rule as title-bar tap targets |
-| **Open** | `ui.openUrl` (bare, no fields) + the card's **`source`** (its data source site: `"https://blog.anigeek.com"`, `"http://nas.lan"`, or a bare host = https; exact match, IDNA, no subdomains, no port, path or user info). Both **confirmed by Archimedes** in [#146](https://github.com/Nasawa/config-launcher/pull/146) (Q-D5) | Tap to open a link in the browser | `Open links to its source, blog.anigeek.com, when you tap it` + `Links to other sites ask you each time.` An http source is written in full (`http://nas.lan`) with `cap_http_note_link` under it. Without `source`: `Open links when you tap it, asking you each time` (review list and detail only) | **Yes, when it has a `source`** (approve the source once; a new or changed `source` → `Needs your OK again`). Without `source` there's nothing to pre-approve, so `ui.openUrl` needs no Allow prompt and every tap confirms (§17.9). Removing `source` likewise needs no prompt (no `needsApprovalAgain`), since every tap then confirms. Both matches [#146](https://github.com/Nasawa/config-launcher/pull/146) (3237674). Taps to any host other than the approved source **always** show the confirm sheet, unless the user ticked `Always allow` for that host on this phone (Q-D5) |
+| **Open** | `ui.openUrl` (bare, no fields) + the card's **`source`** (its data source site: `"https://blog.anigeek.com"`, `"http://nas.lan"`, or a bare host = https; exact match, IDNA, no subdomains, no port, path or user info). Both **confirmed by Archimedes** in [#146](https://github.com/Nasawa/config-launcher/pull/146) (Q-D5) | Tap to open a link in the browser | `Open links to its source, blog.anigeek.com, when you tap it` + `Links to other sites ask you each time.` An http source is written in full (`http://nas.lan`) with `cap_http_note_link` under it. Without `source`: `Open links when you tap it, asking you each time` (review list and detail, and in the prompt when another line makes the widget prompt; on its own it never prompts) | **Yes, when it has a `source`** (approve the source once; a new or changed `source` → `Needs your OK again`). Without `source` there's nothing to pre-approve, so `ui.openUrl` needs no Allow prompt and every tap confirms (§17.9). Removing `source` likewise needs no prompt (no `needsApprovalAgain`), since every tap then confirms. Both matches [#146](https://github.com/Nasawa/config-launcher/pull/146) (3237674). Taps to any host other than the approved source **always** show the confirm sheet, unless the user ticked `Always allow` for that host on this phone (Q-D5) |
 | **Internet** (feature level 5, a later release: Christopher's Q-C1/Q-C2, #117) | `net.fetch` (`origins`: full `https://host[:port]` or `http://host[:port]`, approved by name; literal URLs only) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (https hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable). An http origin is always written in full, `Connect to http://nas.lan:3001`, followed by `cap_http_note`: `The connection to http://nas.lan:3001 isn't private. Others on your network could see or change it. Only allow this if you trust this network. You're choosing a less secure connection.` Private-network origins get `cap_private_note` and self-signed ones `cap_tofu_note` (§17.13) | **Yes** |
 | **Phone data** (later, no v1 kinds) | — (future `phone.*`) | Calendar, next alarm, battery, notification counts | `Read your calendar` · `See notification counts` | **Yes.** After `Allow`, Android may ask for its own permission too |
 | **Act** (later, no v1 kinds) | — | Write back to the data file, toggles, webhooks. In v1 buttons only Open | `Change values in widgets-data/w-anigeek.json` | **Yes** |
@@ -1147,6 +1147,18 @@ phone"** (its own write, history-tracked) vs **"in launcher.json"** (anything el
 `author` field (string, max 40, bidi and zero-width characters stripped; Q-A4), it's shown as a quote: `Changed in launcher.json · says "Claw"`. It is never a trust signal: an agent and a
 person editing on a PC get the same prompt, and no author is ever auto-approved (Q-D7).
 
+**The name shown for a widget (Archimedes: `title` stays optional).** A `card`'s `title` is optional, as the S3-A
+validator already has it. Wherever §17 shows `<Title>` or a widget's title, it means the `title` after stripping (bidi
+and zero-width characters, §13), or, when that's missing or empty, the element **`id`** as written: `Allow "w-1"?`,
+`w-1, widget, needs your OK. Double-tap to review.` That covers the consent tile and its TalkBack node, the prompt and
+broadened titles, the review list rows, the detail header, the Turn off snackbar, the Forget dialog, the link confirm
+sheet's `From "…"`, the card header, `card_a11y` and the `status.json` warnings. There's no separate untitled copy, and
+a missing title is never a reason to skip a card. Agents should still set a `title`. It's recommended, because a person
+recognises `Anigeek LLC` far faster than `w-anigeek`. **Neither name is trusted.** The agent writes both the title and
+the id, so either one can imitate another widget or a system message (`Allow "Android System"?`). That's why no
+decision rests on the name: the prompt always lists the real capability lines with the real file path, app labels and
+hosts (§17.5), and the link confirm sheet always shows the real resolved address (§17.9).
+
 **Phone edits never broaden.** In this release the phone edits only placement, size and the §16.6 presets. It never
 edits capabilities, so a phone-side edit can't trigger a prompt.
 
@@ -1156,7 +1168,7 @@ could imitate system UI, e.g. a fake "Tap to verify your account"). It shows a *
 the §16.2 placeholder so every non-live widget looks like the same family:
 - 12 dp-radius frame (scaled, §17.8), white 12 % fill, **1 dp dashed white 40 % outline** (the dash is the "not live"
   cue; amber stays reserved for size problems, §16.5).
-- Centre: a 24 dp `shield` outline icon, then the widget's **title** from the file (14 sp, 1 line, bidi and
+- Centre: a 24 dp `shield` outline icon, then the widget's **title** from the file, or its `id` when it has none (§17.2) (14 sp, 1 line, bidi and
   zero-width characters stripped, §13), then the reason (12 sp, secondary).
 - 1×1: icon only, with the title and reason in TalkBack and on long-press. 2×1: icon + reason, no title.
 
@@ -1237,6 +1249,15 @@ A bottom sheet (not a dialog, so it can scroll and show a preview), opened only 
 - Buttons: `Allow` (primary) · `Keep off`. Back or a swipe-down = no decision (the tile stays `Needs your OK`). The
   prompt approves only the `source` host. Other link hosts are never listed here and can't be pre-approved by the file:
   the only way to always allow one is the user ticking `Always allow` on the tap confirm sheet (§17.9).
+- **`Allow` approves only what the sheet showed (Archimedes' ruling, from the [#158](https://github.com/Nasawa/config-launcher/pull/158) review).** The sheet keeps
+  the fingerprint (A2) it was built from. If the card's fingerprint changes while the sheet is open (a reload brings a
+  new kind, package, origin or `source`), the sheet must never keep a stale list under the user's finger. It either
+  **closes with no decision** (recommended for S3-C: the tile shows the new state and the next tap opens a fresh
+  prompt), or **rebuilds visibly** with the new lines, and in that case nothing is approved by a tap that started
+  before the rebuild. A cosmetic-only change (not in the fingerprint) leaves an open sheet alone. The store enforces this
+  on its own as well: `allow(id, shownFingerprint)` **refuses a mismatch** and changes nothing, and lines that are still
+  outside the ceiling stay `needsApprovalAgain` (`needsApproval` if nothing was ever approved), so the UI can't approve
+  lines the user never saw, even by accident.
 - After `Allow`, Android runtime permissions follow if needed, one system dialog per permission, but only those that
   are missing. If one is denied, the widget is live, the affected bindings show `—`, and the detail shows `Android
   permission off: Calendar` with `Open settings`.
@@ -1377,8 +1398,9 @@ a widget. The header never shows `author`. It turns `as of 08:38 · stale` with 
 interval, else 30 min). **The header can't be turned off.** At `short` heights (h = 1) it collapses to a leading title
 caption on the same row, ellipsized before the content, so even a 1-row card says what it is. This way a live card
 (even a Show-only one, which needs no prompt) can't pass for a system dialog, a notification or the status bar.
-- `title` is required on every `card`. Missing or empty → that element is **skipped** (skip-and-keep, tile `Can't show
-  this widget`) with the warning `elements[4]: a card needs a title, so it was skipped. It stays in the file.`
+- `title` is optional (Archimedes, the S3-A validator). Missing or empty → the header shows the element `id` in the
+  same `title` role, so the card still says what it is (§17.2 "The name shown for a widget"). It's never skipped for
+  this and gets no warning. Agents should still set a `title`, since it's recommended.
 - `surface: "none"` is allowed only with the full header. A `none` card that's 1 row tall, or whose chosen layout
   leaves no room for the header, is **drawn on the default `auto` surface** instead, with the warning
   `elements[4].surface: "none" needs room for the header row, so the default card surface was used.` (No B2, no banner.)
@@ -1508,6 +1530,8 @@ time, with the not-private note, until the user ticks `Always allow http://nas.l
 - [ ] Consent store (device-local), approved-set check on every load (it never shrinks), the states in §17.2, no dialog from a load.
 - [ ] Consent tile (§17.3), B9 + count chip + menu badges (§17.4), review list, prompt sheet with preview, detail with
   Turn off + Undo, Forget approval (confirm, no Undo), `status.json` consent fields.
+- [ ] `allow(id, shownFingerprint)`: refuse a mismatch; an open prompt closes (or rebuilds visibly) when the fingerprint changes (§17.5).
+- [ ] Name fallback: the element `id` wherever there's no `title` (§17.2).
 - [ ] Link taps (§17.9): blocked schemes / user info, source match opens, confirm sheet otherwise, `Always allow` adds
   to the device-local Always-allow list, `Always allowed sites` with Remove + Undo.
 - [ ] Tokens and tiers (§17.8), six primitives + three containers (§17.9), layout selection and priority drops, card
@@ -1534,9 +1558,7 @@ builds S3-C from it.
 | `tile_off` | `Turned off` | — | R · S3 | Consent tile reason (user turned it off) |
 | `tile_update` | `Update Config Launcher to show this` | — | R · S3 | Tile reason: `requires` too high or unknown kind |
 | `tile_update_hint` | `This widget needs a newer Config Launcher. It stays in your layout file.` | — | R · S3 | Hint sheet from the tile above |
-| `tile_cant_show` | `Can't show this widget` | — | R · S3 | Tile reason: card without a title (reuses §16.2 copy) |
-| `tile_a11y` | `%1$s, widget, %2$s. Double-tap to review.` | 1 = title, 2 = reason in lower case (e.g. `needs your OK`) | A · S3 | Consent tile node |
-| `tile_a11y_untitled` | `Widget, %1$s.` | 1 = reason | A · S3 | Consent tile for a card skipped for having no title |
+| `tile_a11y` | `%1$s, widget, %2$s. Double-tap to review.` | 1 = name (title, or the element id, §17.2), 2 = reason in lower case (e.g. `needs your OK`) | A · S3 | Consent tile node |
 | `widget_sheet_source_file` | `Widget · from launcher.json` | — | R · S3 | Long-press item sheet subtitle |
 | `widget_action_review` | `Review` | — | R · S3 | Item sheet action and tile custom action (consent tile) |
 | `widget_action_permissions` | `Permissions` | — | R · S3 | Item sheet action and custom action (live card) → detail |
@@ -1575,8 +1597,8 @@ builds S3-C from it.
 
 | Resource | English | Placeholders | Where · stage | Used in |
 |---|---|---|---|---|
-| `consent_title` | `Allow "%1$s"?` | 1 = title | R · S3 | New widget prompt title |
-| `consent_title_more` | `"%1$s" wants more access` | 1 = title | R · S3 | Broadened prompt title |
+| `consent_title` | `Allow "%1$s"?` | 1 = name (title, or the element id) | R · S3 | New widget prompt title |
+| `consent_title_more` | `"%1$s" wants more access` | 1 = name (title, or the element id) | R · S3 | Broadened prompt title |
 | `consent_source_file` | `Added in launcher.json · %1$s` | 1 = time | R · S3 | Prompt source line |
 | `consent_source_phone` | `Added on this phone` | — | R · S3 | Prompt source line (inline add) |
 | `consent_author` | `says "%1$s"` | 1 = `author` | R · S3 | Prompt line under the source, **only when `author` is present** |
@@ -1600,7 +1622,7 @@ builds S3-C from it.
 | `cap_open_app` | `Open %1$s when you tap it` | 1 = app label, or the package if it isn't installed | R · S3 | `ui.openApp`, one line per package |
 | `cap_open_source` | `Open links to its source, %1$s, when you tap it` | 1 = `source` host (bare for https, `http://host` for http) | R · S3 | `ui.openUrl` with `source` (Q-D5, [#146](https://github.com/Nasawa/config-launcher/pull/146)) |
 | `cap_open_others` | `Links to other sites ask you each time.` | — | R · S3 | Secondary line under `cap_open_source` |
-| `cap_open_ask` | `Open links when you tap it, asking you each time` | — | R · S3 | `ui.openUrl` without `source` (review list and detail; no prompt) |
+| `cap_open_ask` | `Open links when you tap it, asking you each time` | — | R · S3 | `ui.openUrl` without `source`: review list, detail, and the prompt when another line makes the widget prompt (A3: the prompt lists everything). On its own it never prompts. It adds no ceiling line, so in a broadened prompt it's listed under `Already allowed`. Every tap still gets the confirm sheet, with `cap_http_note_link` for http (Q-D5, Q-C3) |
 | `cap_http_note_link` | `Links to %1$s aren't private. Others on your network could see or change them. Only allow this if you trust this network. You're choosing a less secure connection.` | 1 = `http://host` | R · S3 | Under an http `source` in the prompt, and on the link confirm sheet for an http link (Q-C3) |
 | `cap_net` | `Connect to %1$s` | 1 = origin list; https origins without `https://` and `:443`, http in full | R · S5 | `net.fetch` |
 | `cap_http_note` | `The connection to %1$s isn't private. Others on your network could see or change it. Only allow this if you trust this network. You're choosing a less secure connection.` | 1 = `http://host[:port]` | R · S5 | Under each `http://` origin in `cap_net` (Q-C3/Q-C7) |
@@ -1639,10 +1661,10 @@ to expand. Each http entry stays in full and gets its own note line under the li
 | `detail_approved` | `Approved on this phone:` | — | R · S3 | Full ceiling list |
 | `detail_not_used` | `not used now` | — | R · S3 | Secondary text on ceiling lines the current version doesn't use |
 | `detail_turn_off` / `detail_allow` | `Turn off` / `Allow` | — | R · S3 | Action button |
-| `turned_off_snack` | `"%1$s" turned off.` | 1 = title | R · S3 | Snackbar after Turn off, with `merge_undo` (`Undo`, §9.1), 10 s |
+| `turned_off_snack` | `"%1$s" turned off.` | 1 = name (title, or the element id) | R · S3 | Snackbar after Turn off, with `merge_undo` (`Undo`, §9.1), 10 s |
 | `detail_forget` | `Forget approval` | — | R · S3 | Detail-page text button (`error` colour) |
-| `detail_forget_a11y` | `Forget approval for %1$s. Can't be undone.` | 1 = title | A · S3 | `contentDescription` of that button |
-| `forget_title` | `Forget approval for "%1$s"?` | 1 = title | R · S3 | Confirm dialog title |
+| `detail_forget_a11y` | `Forget approval for %1$s. Can't be undone.` | 1 = name (title, or the element id) | A · S3 | `contentDescription` of that button |
+| `forget_title` | `Forget approval for "%1$s"?` | 1 = name (title, or the element id) | R · S3 | Confirm dialog title |
 | `forget_body` | `It stays off. Next time you allow it, you'll be asked about everything again.` | — | R · S3 | Confirm dialog body |
 | `forget_confirm` / `forget_cancel` | `Forget` / `Cancel` | — | R · S3 | Dialog buttons (`Cancel` has initial focus) |
 | `forget_snack` | `Approval forgotten.` | — | R · S3 | Snackbar, 4 s, **no Undo** |
@@ -1662,7 +1684,7 @@ to expand. Each http entry stays in full and gets its own note line under the li
 |---|---|---|---|---|
 | `card_as_of` | `as of %1$s` | 1 = time of `updatedAt` | R · S3 | Card header |
 | `card_stale` | `as of %1$s · stale` | 1 = time | R · S3 | Card header after `staleAfter` (+ ▲ glyph) |
-| `card_a11y` | `%1$s, widget` | 1 = title | A · S3 | Live card root node |
+| `card_a11y` | `%1$s, widget` | 1 = name (title, or the element id) | A · S3 | Live card root node |
 | `card_stale_a11y` | `stale` | — | A · S3 | Appended to `as of` when stale |
 | `reload_in_progress` | `Reloading…` | — | R · S3 | Header while re-reading |
 | `reload_a11y_updated` / `reload_a11y_same` | `Updated` / `No new data` | — | A · S3 | Polite announcement after reload |
@@ -1670,7 +1692,7 @@ to expand. Each http entry stays in full and gets its own note line under the li
 | `tap_link_blocked` | `This link isn't allowed for this widget.` | — | R · S3 | Snackbar, 4 s, no action. **Only** for a blocked scheme or user info in the URL |
 | `tap_link_empty` | `This link has no address yet.` | — | R · S3 | Snackbar, 4 s, when the `{data:…}` link is empty |
 | `open_confirm_title` | `Open %1$s?` | 1 = host (punycode form) | R · S3 | Link confirm sheet title; also its pane title |
-| `open_confirm_from` | `From "%1$s"` | 1 = widget title | R · S3 | Sheet line under the title |
+| `open_confirm_from` | `From "%1$s"` | 1 = widget name (title, or the element id) | R · S3 | Sheet line under the title |
 | `open_confirm_url_a11y` | `Address: %1$s` | 1 = full resolved URL | A · S3 | URL line (the visible text is middle-truncated) |
 | `open_confirm_always` | `Always allow %1$s` | 1 = host; `http://host` for http | R · S3 | Checkbox, unticked every time |
 | `open_confirm_open` / `open_confirm_cancel` | `Open` / `Cancel` | — | R · S3 | Sheet buttons (`Cancel` has initial focus) |
@@ -1679,11 +1701,10 @@ to expand. Each http entry stays in full and gets its own note line under the li
 
 | Name (in code) | English | Placeholders | Stage |
 |---|---|---|---|
-| `warn_consent_pending` | `%1$s: widget "%2$s" is waiting for approval on this phone. It isn't shown until then.` | 1 = path, 2 = title | S3 |
+| `warn_consent_pending` | `%1$s: widget "%2$s" is waiting for approval on this phone. It isn't shown until then.` | 1 = path, 2 = name (title, or the element id) | S3 |
 | `warn_consent_again` | `%1$s: widget "%2$s" asks for more access and is waiting for approval on this phone. It isn't shown until then.` | same | S3 |
 | `warn_consent_off` | `%1$s: widget "%2$s" is turned off on this phone.` | same | S3 |
 | `warn_capability_kind` | `%1$s: capability kind "%2$s" isn't supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo.` | 1 = path, 2 = kind | S3 |
-| `warn_card_title` | `%1$s: a card needs a title, so it was skipped. It stays in the file.` | 1 = path | S3 |
 | `warn_surface_none` | `%1$s: "none" needs room for the header row, so the default card surface was used.` | 1 = path (`….surface`) | S3 |
 | `warn_data_missing` | `%1$s: widgets-data/%2$s.json is missing or unreadable, so the last values are shown.` | 1 = path, 2 = element id | S3 |
 | `warn_cert_changed` | `%1$s: the certificate for %2$s changed. Fetching from it is paused until someone approves the new certificate on this phone; the last good data is shown as stale.` | 1 = path, 2 = origin | S5 |
