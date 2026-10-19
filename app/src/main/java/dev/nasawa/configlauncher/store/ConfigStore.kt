@@ -89,7 +89,22 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         prefs.folderUri = uri; prefs.appOnly = false
         switch()
+        scope.launch(Dispatchers.IO) { syncAgentDocs(uri) }
     }
+
+    /**
+     * §20.1: after a folder is chosen or connected, put AGENTS.md there (if the setting is on). [force] is the setting's
+     * *Add again* action. Folder sources only; app-only mode has no folder.
+     */
+    fun syncAgentDocs(uri: Uri? = prefs.folderUri, force: Boolean = false): AgentDocs.Outcome {
+        uri ?: return AgentDocs.Outcome.OFF
+        val bundled = runCatching { context.assets.open(AgentDocs.ASSET).use { it.readBytes() } }.getOrNull() ?: return AgentDocs.Outcome.FAILED
+        val o = AgentDocs.sync(SafSource(context.contentResolver, uri), bundled, prefs.agentDocsWritten(uri), prefs.agentDocs, force)
+        if (AgentDocs.remember(o)) prefs.markAgentDocsWritten(uri)
+        return o
+    }
+
+    fun addAgentDocsAgain() { scope.launch(Dispatchers.IO) { syncAgentDocs(force = true) } }
 
     /** First run "Skip for now": app-only storage; a folder can be chosen later. */
     fun skipOnboarding() {
@@ -131,7 +146,7 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         stop()
         scope.launch(Dispatchers.IO) {
             val ok = engine.moveTo(SafSource(context.contentResolver, uri), useMine)
-            if (ok) { prefs.folderUri = uri; prefs.appOnly = false; if (old != uri) release(old) }
+            if (ok) { prefs.folderUri = uri; prefs.appOnly = false; if (old != uri) release(old); syncAgentDocs(uri) }
             else if (old != uri) release(uri)
             if (wasRunning) withContext(Dispatchers.Main) { start() }
         }

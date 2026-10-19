@@ -29,6 +29,13 @@ interface ConfigSource {
 
     @Throws(IOException::class)
     fun writeSidecar(subdir: String, name: String, bytes: ByteArray)
+
+    /** §20.1: a file next to launcher.json (e.g. AGENTS.md); null when absent. Only folder sources have one. */
+    fun readRoot(name: String, maxBytes: Int): ByteArray? = throw UnsupportedOperationException("no folder")
+
+    /** §20.1: write a file next to launcher.json through the same temp + verify path as launcher.json. */
+    @Throws(IOException::class)
+    fun writeRoot(name: String, bytes: ByteArray): Unit = throw UnsupportedOperationException("no folder")
 }
 
 internal fun java.io.InputStream.readCapped(maxBytes: Int): ByteArray {
