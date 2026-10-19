@@ -81,7 +81,8 @@ Responsive: up to 3 `layouts` keyed by `"WxH"` with a **lowercase** `x` (e.g. `"
 - Caps: response bytes, timeout, min refresh interval.
 - **HTTP client:** one isolated client per element id (no shared cache, no cookies, fixed `User-Agent` naming Config Launcher).
 - **Redirects:** follow only if the next hop stays on the **same pinned origin**; otherwise fail the fetch.
-- **Request URLs are literals** in the element (or fixed under the pinned origin). They must **not** be built from `{data:…}`. Data from one origin must not be interpolated into `ui.openUrl` / fetch URLs for another (closes most path/query exfil).
+- **`net.fetch` request URLs are literals** in the element (fixed under a pinned origin). They must **not** be built from `{data:…}`.
+- **`ui.openUrl` tap `url` MAY use `{data:…}`** (Outer Shell needs this for "latest post"). At tap time the launcher resolves the template and **opens only if** the resulting URL's host is in that element's approved `hosts`, scheme is `https` (or `http` only if Christopher allows via Q-C7), and there is no `userinfo`. If the host does not match, the tap is ignored and a `status.json` warning is written. Data from fetch responses must not feed a host outside the allowlist.
 - **Connect-time IP check:** on every connection, resolve and refuse RFC1918 / link-local / metadata addresses unless that exact origin was approved under the private-origin allow flow. **DNS rebinding:** re-check the connected IP on each request, not only at approval time.
 - **Cleartext / LAN:** v1 `net.fetch` is HTTPS-only in the public case. Homelab `http://192.168.x` and self-signed TLS are an open question for Christopher (Q-C7) — default deny until decided.
 - **Secrets:** never in synced files. Device Keystore / encrypted prefs, entered on phone, scoped to `(elementId, origin)`. Agents declare that a secret slot exists; user fills it. **When the pinned origin set changes, delete secrets for origins that were removed** before any new fetch runs.
@@ -103,6 +104,22 @@ Normative kinds (Archimedes; supersede §17.11 sample names):
 | `phone.*` | — | Phone data | **not in v1** |
 | Act kinds | — | Act | **not in v1** (buttons = Open only) |
 
+
+
+### Capability field names (normative)
+
+Prefer **kind-specific keys**, not a generic `targets` array (easier for schema and agents):
+
+| kind | Fields |
+|---|---|
+| `data.file` | `path` (filename under `widgets-data/`, usually `<elementId>.json`) |
+| `ui.openApp` | `packages` (string array) |
+| `ui.openUrl` | `hosts` (string array of hostnames) |
+| `net.fetch` | `origins` (string array of exact `https://host[:port]`) |
+
+Fingerprint serializes `kind` + those fields (sorted). Pragma's illustrative `targets` is **not** the schema shape.
+
+**Tap actions** on a node: `{ "kind": "ui.openUrl", "url": "…" }` or `{ "kind": "ui.openApp", "package": "…" }`. The `url` / `package` must be allowed by a declared capability on the same element.
 
 **Open-tier split (Pragma #116):** `ui.openApp` stays **silent** (installing an app is already a user act). `ui.openUrl` **always prompts** on first enable / host broaden, even though the UX sentence sits in the Open tier — agent-written links are a phishing risk. Christopher confirms via Pragma Q-D5. Show-tier `data.file` stays silent.
 **Never offered** (absent from schema entirely): SMS, calls, contacts, messages, mic, camera, location, VPN/tunnels, run code.
@@ -170,7 +187,7 @@ APK-level `INTERNET` is coarse (see §7). Capability approval is the real contro
 Honest holes in "local files + opt-in URL fetch + per-widget manifest":
 
 1. **APK `INTERNET` is all-or-nothing.** Once granted, a launcher bug or future capability mistake is higher stakes. Mitigation: keep fetch code tiny, origin-pin in one module, default deny private IPs, feature-flag fetch behind `requires`.
-2. **Same origin, new path/query can still exfiltrate** (tokens in query). Mitigation: re-prompt on origin change only is not enough long-term — consider path prefix pins or forbidding query strings on secret-bearing fetches.
+2. **Path/query on taps:** `{data:…}` openUrl is host-pinned at tap time (see §3). Fetch URLs stay literal. Secret-bearing fetches should still avoid query strings; path prefix pins remain a later option.
 3. **LAN allow prompts will be tempting to click through** for homelab users. Prefer agent → local file for HA/Uptime Kuma data; treat private `net.fetch` as advanced.
 4. **Shared refresh schedules** can still DDoS a Pi. Enforce global and per-origin rate limits, not only per-widget.
 5. **Approvals don't sync** (correct for security) → every tablet re-consents (Pragma). Accept the friction.
@@ -262,4 +279,4 @@ See answers on [#116](https://github.com/Nasawa/config-launcher/pull/116#issueco
 }
 ```
 
-Data file: `.configlauncher/widgets-data/w-anigeek.json` (agent-written). First load on a phone shows the consent tile for `ui.openUrl` only if taps are present; Show-only cards with just `data.file` go live with no prompt (Pragma Show tier).
+Data file: `.configlauncher/widgets-data/w-anigeek.json` (agent-written). First load prompts for `ui.openUrl` (phishing rule) when that capability is present; Show-only cards with just `data.file` go live with no prompt. The sample tap uses `{data:blog.url}` — allowed because the host must match `hosts` after resolution.
