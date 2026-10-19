@@ -43,7 +43,7 @@ Decision: **root `elements[]` holds every element; an element is either anchored
 | `size: small \| medium \| large` | `style.size`: the names map to 14 / 18 / 24 sp, or a number of sp within bounds |
 | `color: light \| dark` | `style.color`: `"light"` / `"dark"` tokens (white / near-black), or hex, or `{light, dark}` |
 | `backdrop: auto` | `style.backdrop: "auto"` (the default) |
-| centre keeps ≥ 50 %, page title truncates first | the default layout rules (§8), unchanged |
+| centre keeps ≥ 50 %; on narrow phones the overflow ladder, in order and only as far as needed: `{page}` shrinks to the ▾ alone, the date shortens, the text size steps down by one (named title-bar size only), the date truncates; the clock never truncates | the default layout rules (§8); the ladder is normative in ux.md §15 (#162) |
 
 ## 4. Shape (proposal, not in `schema/` yet)
 Pragma's default preset, as the phone would write it when the user turns the bar on:
@@ -177,7 +177,7 @@ Not in scope, ever: weather, battery percentage, notifications or calendar (perm
 - **Font scale:** sizes are sp, so the system font size applies, capped so the bar stays one line (max rendered size 40 sp × 1.3).
 
 ## 8. Layout, validation and write-back
-- **Layout (Pragma §15, unchanged):** one line; `center` keeps at least 50 % of the width; side slots ellipsize first, then `center`; clock and date never truncate; the page title ellipsizes at the end. The bar's height comes from size + vertical padding, and grid rows share the rest (never overlaps icons). Off = today's §1.3 page label.
+- **Layout (Pragma §15, unchanged):** one line; `center` keeps at least 50 % of the width; side slots ellipsize first, then `center`; the clock never truncates; the date may shorten and then truncate only as the last steps of the overflow ladder (ux.md §15, #162); the page title ellipsizes at the end. The bar's height comes from size + vertical padding, and grid rows share the rest (never overlaps icons). Off = today's §1.3 page label.
 - **Kotlin-only rules:** template grammar, `requires` handling, override keys must name an existing element ID (otherwise a warning; the override is ignored and kept), one `titleBar` element per file in this release (a second is an error), element IDs unique with item IDs.
 - **Limits:** 32 elements, 32 overrides per page, 120-char templates, 8 tokens per template, 32-char patterns. Negligible against the 2 MiB budget.
 - **Write-back:** not draggable in v1. The phone edits only on/off and the preset (Pragma's slot picker writes `{page}`/`{time}`/`{date}`), via a `SetElement(id, fields)` op with the usual debounce, hash check and ID-based replay. Any style or template the phone doesn't understand is kept verbatim. The launcher never creates or deletes an element on its own.
