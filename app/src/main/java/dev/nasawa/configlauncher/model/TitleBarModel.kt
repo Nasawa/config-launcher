@@ -92,6 +92,14 @@ object TitleBarModel {
     fun hasPage(parts: List<Template.Part>) = parts.any { it is Template.Tok && it.name == "page" }
 
     /**
+     * #133 / ux.md §15 TalkBack: the slot's label, built from its parts (each token expanded once, literal text as
+     * written), never by string-replacing the page name in the joined text. The `{page}` slot, when it's the page-list
+     * button, adds [pages] once: `<slot text>, Pages` ([pages] formats `titlebar_page_a11y`).
+     */
+    fun spoken(parts: List<Template.Part>, v: Values, button: Boolean, pages: (String) -> String): String =
+        text(parts, v).let { if (button) pages(it) else it }
+
+    /**
      * ux.md §15 / #123: a slot whose tokens are only `{time}` and `{date}` (with any literal text around them) never
      * truncates. A slot with `{page}`, `{pageNumber}` or `{pageCount}`, or with no token, can ellipsize.
      */

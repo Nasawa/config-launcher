@@ -146,6 +146,7 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
     }
     val tappable = PageList.tappable(pages)
     val hint = stringResource(R.string.pages_hint)
+    val res = androidx.compose.ui.platform.LocalResources.current
 
     @Composable
     fun slot(s: Slot) {
@@ -154,8 +155,7 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
         val text = TitleBarModel.text(parts, shown)
         // #124: a slot holding {page} is one tap target (≥ 2 pages) with one trailing ▾ after all its text.
         val button = TitleBarModel.hasPage(parts) && tappable
-        val spokenText = TitleBarModel.text(parts, spoken)
-        val said = if (button) stringResource(R.string.titlebar_page_a11y, spokenText) else spokenText
+        val said = TitleBarModel.spoken(parts, spoken, button) { t -> res.getString(R.string.titlebar_page_a11y, t) }
         val align = st.align[s] ?: Align.CENTER
         Box(
             Modifier.heightIn(min = if (button) 48.dp else 0.dp)
