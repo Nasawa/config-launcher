@@ -700,7 +700,10 @@ that has warnings, it's reachable from Settings (interim: the ⋮ menu) → `Con
 list** dialog:
 - Header `1 warning` / `N warnings` (`warnings_header`), then one `▲ <path>: <message>` line per warning, the same text
   as `status.json` (phone-only theme warnings included). The list scrolls, and ▲ is a glyph, not colour alone.
-- Buttons `Copy` (file name + header + every line to the clipboard, then the snackbar `Warnings copied.`) and `Close`.
+- Buttons `Copy` and `Close`. `Copy` puts the file name, header and every line on the clipboard and **keeps the dialog
+  open**. No snackbar. For about 2 s the button changes to a check icon + `Copied` (`warnings_copy_done`, same width,
+  so nothing shifts), then goes back to `Copy`. TalkBack announces `Warnings copied.` (`warnings_copied`, a polite
+  announcement), and the button's label follows the visible text. With reduced motion the swap is instant.
 - **Hidden while a problem banner (B1–B7) is up.** The screen is showing the last working layout then, and its warnings
   would mislead. The `Layout loaded · N warnings` line isn't shown then. When the banner clears, warnings **come back silently**
   (no snackbar, no badge).
@@ -780,9 +783,13 @@ Resources (character positions are 1-based, like line and column):
 <!-- %2$s = the run as written, %3$d = that letter's maximum (table below), %4$s = the letter repeated %3$d times -->
 <string name="err_pattern_run">%1$s: %2$s is too long. Use at most %3$d, like %4$s.</string>
 <string name="err_pattern_quote">%1$s: A \' quote isn\'t closed. Add a closing \' after the text.</string>
+<!-- code, not strings.xml (status.json) -->
 <string name="warn_element_type">%1$s: type \"%2$s\" isn\'t supported by this Config Launcher, so it was skipped. It stays in the file.</string>
+<!-- code, not strings.xml (status.json) -->
 <string name="warn_element_level">%1$s needs feature level %2$d, but this Config Launcher supports up to %3$d, so it was skipped. It stays in the file. Update the app to show it.</string>
+<!-- code, not strings.xml (status.json) -->
 <string name="warn_override_missing">%1$s: \"%2$s\" doesn\'t match any element, so it was ignored.</string>
+<!-- code, not strings.xml (status.json) -->
 <string name="warn_contrast">%1$s: contrast %2$s:1 on the backdrop (4.5:1 recommended). Shown anyway.</string>
 <plurals name="warnings_header">
     <item quantity="one">%d warning</item>
@@ -792,11 +799,15 @@ Resources (character positions are 1-based, like line and column):
     <item quantity="one">Layout loaded · %d warning</item>
     <item quantity="other">Layout loaded · %d warnings</item>
 </plurals>
-<!-- %3$s = theme_light or theme_dark. status.json uses the English text. -->
+<!-- %3$s = theme_light or theme_dark. -->
+<!-- code, not strings.xml (status.json) -->
 <string name="warn_contrast_theme">%1$s: contrast %2$s:1 on the backdrop (4.5:1 recommended), checked on this phone in %3$s. Shown anyway.</string>
+<!-- code, not strings.xml (status.json) -->
 <string name="theme_light">light theme</string>
+<!-- code, not strings.xml (status.json) -->
 <string name="theme_dark">dark theme</string>
 <string name="warnings_copied">Warnings copied.</string>
+<string name="warnings_copy_done">Copied</string>
 <string name="titlebar_custom">Custom (set in the file)</string>
 <string name="titlebar_custom_note">Picking another option replaces it.</string>
 ```
@@ -818,7 +829,14 @@ empty `{}` pair. `backdrop.opacity` (0–100) and `backdrop.radius` (0–24) use
 message.
 
 The other counts in the messages above (the maxima) are always ≥ 2, so they don't need plurals. `status.json` uses the same English
-text so agents and the phone say the same thing. The contrast ratio is formatted with one decimal, locale-independent (`2.1`).
+text so agents and the phone say the same thing.
+
+**status.json text is code, not strings.xml.** Every message written to `status.json` (the `warn_*` warnings above,
+including `warn_contrast_theme` and its `light theme` / `dark theme` words) is an English string built in code
+(`Validator`, `Template`, `TitleBar`), not a `strings.xml` resource. It never follows the phone's language, so the file
+stays stable for agents and matches `validate.py` word for word. The rows marked `code, not strings.xml` are listed here
+in resource form only so the copy has one reference. The phone shows the same English text in the Warnings list. Only
+UI around it (headers, buttons, `Layout loaded · N warnings`, `Warnings copied.`) is in `strings.xml`. The contrast ratio is formatted with one decimal, locale-independent (`2.1`).
 
 ### 15.2 Title bar settings (#130, interim)
 Until Settings exists, the controls live in the ⋮ menu (R10).
