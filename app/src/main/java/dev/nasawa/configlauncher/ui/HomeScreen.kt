@@ -14,6 +14,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.verticalScroll
@@ -56,6 +58,7 @@ fun HomeScreen(vm: HomeViewModel) {
     // ux.md §4.1 edit mode: entered from `Edit layout` or a drag; left on Done, Back, Home or 30 s idle.
     var editing by remember { mutableStateOf(false) }
     var sheetFor by remember { mutableStateOf<ResolvedItem?>(null) }
+    var homeMenu by remember { mutableStateOf(false) }
     val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }, onStart = { editing = true }) { vm.store.edit(it) } }
     var cloudUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var onboarded by remember { mutableStateOf(vm.store.prefs.onboarded) }
@@ -154,7 +157,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     pager, Modifier.weight(1f).fillMaxWidth(), key = { pages.getOrNull(it)?.id ?: it },
                     userScrollEnabled = drag.dragged == null,
                 ) { index ->
-                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong) }
+                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, onEmptyLong = { homeMenu = true }) }
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.currentPage)
                 }
@@ -168,6 +171,16 @@ fun HomeScreen(vm: HomeViewModel) {
 
         cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }, { cloudUri = null; pickFolder.launch(null) }) }
         moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it) }, { moveAsk = null }) }
+
+        if (homeMenu) HomeMenuSheet(onAction = { a ->
+            homeMenu = false
+            when (a) {
+                HomeAction.EDIT_LAYOUT -> editing = true
+                HomeAction.RELOAD -> vm.store.pollNow()
+                // No Settings screen yet: the settings live in the ⋮ menu, so open that (gap, noted).
+                HomeAction.SETTINGS -> menuOpen = true
+            }
+        }, onDismiss = { homeMenu = false })
 
         sheetFor?.let { r ->
             ItemSheet(r, onAction = { a ->
@@ -298,7 +311,7 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
 }
 
 @Composable
-private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit) {
+private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, onEmptyLong: () -> Unit) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = grid.rows
     Column(Modifier.fillMaxSize().padding(8.dp)) {
@@ -309,7 +322,10 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
                     for (x in 0 until grid.columns) {
                         // §4.1: in edit mode every cell shows a faint outline (white 16 %).
                         Box(Modifier.weight(1f).fillMaxHeight().padding(2.dp).then(
-                            if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier), contentAlignment = Alignment.Center) {
+                            if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier).then(
+                            // §1.1: long-press on empty space opens the home menu.
+                            if (byCell[x to y] == null) Modifier.pointerInput(Unit) { detectTapGestures(onLongPress = { onEmptyLong() }) } else Modifier),
+                            contentAlignment = Alignment.Center) {
                             byCell[x to y]?.let { r -> with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) })) } }
                         }
                     }
