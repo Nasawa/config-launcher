@@ -47,4 +47,8 @@ class Prefs(context: Context) {
     var askBeforeMerging: Boolean
         get() = sp.getBoolean("askBeforeMerging", false)
         set(v) = sp.edit { putBoolean("askBeforeMerging", v) }
+
+    /** §20.2: SHA-256 of the schema copy last written into the folder [uri] (rewritten when an update changes it). */
+    fun schemaCopySha(uri: Uri): String? = sp.getString("schemaCopy:$uri", null)
+    fun setSchemaCopySha(uri: Uri, sha: String) = sp.edit { putString("schemaCopy:$uri", sha) }
 }
