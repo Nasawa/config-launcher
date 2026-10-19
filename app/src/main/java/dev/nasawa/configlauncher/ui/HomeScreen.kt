@@ -173,7 +173,7 @@ fun HomeScreen(vm: HomeViewModel) {
     MaterialTheme(colorScheme = darkColorScheme()) {
         // Transparent over the system wallpaper (theme windowShowWallpaper, #58).
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
-            Column(Modifier.fillMaxSize().systemBarsPadding()) {
+            Column(Modifier.fillMaxSize().systemBarsPadding().swipeUpToOpen({ drag.dragged == null && !drawerOpen }) { drawerOpen = true }) {
                 if (editing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.editing_layout), color = Color.White, modifier = Modifier.weight(1f))
                     TextButton(leaveEdit) { Text(stringResource(R.string.done)) }
@@ -227,6 +227,9 @@ fun HomeScreen(vm: HomeViewModel) {
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.currentPage)
                 }
+                // ux.md §1: the ⌃ handle is the tap and TalkBack path to the drawer (swipe up is the gesture).
+                val openApps = stringResource(R.string.a11y_open_drawer)
+                TextButton({ drawerOpen = true }, Modifier.align(Alignment.CenterHorizontally).heightIn(min = 48.dp).semantics { contentDescription = openApps }) { Text("⌃", color = Color.White) }
                 Dock(ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y)
                 ui.load.merge?.let { m ->
                     MergeSnackbar(m, onUndo = { vm.store.undoMerge() }.takeIf { m.undo && ui.load.mergeUndo },

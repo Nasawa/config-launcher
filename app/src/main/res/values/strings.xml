@@ -94,6 +94,7 @@
     <string name="home_role_button">Set as home app</string>
     <string name="not_now">Not now</string>
     <string name="apps">Apps</string>
+    <string name="a11y_open_drawer">Open app list</string>
     <string name="cancel">Cancel</string>
 
     <!-- First run (ux.md §7, §18.2) -->
