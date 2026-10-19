@@ -134,6 +134,7 @@
 
     <!-- Long-press (ux.md §1.1, §4.1) -->
     <string name="action_edit_layout">Edit layout</string>
+    <string name="action_pages">Pages</string>
     <string name="action_app_info">App info</string>
     <string name="action_remove_home">Remove from home</string>
     <string name="sheet_not_installed">Not installed · %1$s</string>
@@ -170,8 +171,13 @@
     <string name="move_to_confirm">Move</string>
     <string name="a11y_decrease">Decrease: %1$s</string>
     <string name="a11y_increase">Increase: %1$s</string>
-    <!-- ARCHITECTURE.md §20.1 (#87). Placeholder copy, not yet in ux.md: Pragma to confirm. -->
-    <string name="menu_agent_docs">Add agent instructions to folder</string>
-    <string name="menu_agent_docs_again">Add agent instructions again</string>
-    <string name="first_run_agent_docs">It also adds an AGENTS.md file that tells AI coding agents how to edit your layout. You can turn this off in Settings.</string>
+    <!-- AGENTS.md in the config folder, ux.md §7.1 -->
+    <string name="menu_agent_docs">Agent instructions (AGENTS.md)</string>
+    <string name="agent_docs_add">Add agent instructions</string>
+    <string name="agent_docs_update">Update agent instructions</string>
+    <string name="agent_docs_updated">Agent instructions updated.</string>
+    <string name="agent_docs_replace_title">Replace your AGENTS.md?</string>
+    <string name="agent_docs_replace_body">Your edits will be saved to .configlauncher/backup/.</string>
+    <string name="agent_docs_replace">Replace</string>
+    <string name="first_run_agent_docs">It also adds AGENTS.md, a short guide for AI agents that edit your layout. You can turn this off in Settings.</string>
 </resources>
