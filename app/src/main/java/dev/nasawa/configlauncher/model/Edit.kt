@@ -104,14 +104,18 @@ object Edits {
     }
 
     private fun dropPages(c: LauncherConfig, e: Edit.DropPages): ApplyResult {
-        val drop = c.pages.filter { it.id in e.ids && it.items.isEmpty() }.map { it.id }.toSet()
+        val keep = dev.nasawa.configlauncher.config.Elements.pagesWithElements(c)
+        val drop = c.pages.filter { it.id in e.ids && it.items.isEmpty() && it.id !in keep }.map { it.id }.toSet()
         var kept = c.pages.filter { it.id !in drop }
         if (kept.isEmpty()) kept = c.pages.take(1)
         return ApplyResult(c.copy(pages = kept), kept.size != c.pages.size)
     }
 
     /** IDs of the pages that are empty now: what [Edit.DropPages] gets when edit mode ends. */
-    fun emptyPageIds(c: LauncherConfig): List<String> = c.pages.filter { it.items.isEmpty() }.map { it.id }
+    fun emptyPageIds(c: LauncherConfig): List<String> {
+        val keep = dev.nasawa.configlauncher.config.Elements.pagesWithElements(c)   // #79: element cells aren't empty
+        return c.pages.filter { it.items.isEmpty() && it.id !in keep }.map { it.id }
+    }
 
     const val MAX_PAGES = 20   // schema pages.maxItems
 
@@ -185,7 +189,8 @@ object Edits {
 
     fun freeCell(c: LauncherConfig, page: Page, fromX: Int = 0, fromY: Int = 0): Pair<Int, Int>? {
         val g = c.effectiveGrid
-        val used = page.items.map { it.x to it.y }.toSet()
+        // #79 Stage 1: cells reserved by grid-placed elements (even skipped ones) are never free.
+        val used = page.items.map { it.x to it.y }.toSet() + dev.nasawa.configlauncher.config.Elements.reserved(c, page.id)
         val cells = (0 until g.rows).flatMap { y -> (0 until g.columns).map { x -> x to y } }
         val start = cells.indexOf(fromX to fromY).coerceAtLeast(0)
         return (cells.drop(start) + cells.take(start)).firstOrNull { it !in used }
@@ -194,6 +199,7 @@ object Edits {
     private fun moveToCell(c: LauncherConfig, e: Edit.MoveToCell): ApplyResult {
         val g = c.effectiveGrid
         if (e.x !in 0 until g.columns || e.y !in 0 until g.rows) return ApplyResult(c, false)
+        if ((e.x to e.y) in dev.nasawa.configlauncher.config.Elements.reserved(c, e.pageId)) return ApplyResult(c, false)   // #79 Stage 1
         val loc = find(c, e.id) ?: return ApplyResult(c, false)
         val pIdx = c.pages.indexOfFirst { it.id == e.pageId }.takeIf { it >= 0 } ?: return ApplyResult(c, false)
         val (without, item) = remove(c, loc)

@@ -25,7 +25,7 @@ Schema: https://github.com/Nasawa/config-launcher/blob/main/schema/launcher-conf
 ## After you edit
 1. Validate: `python3 validate.py launcher.json` (get it from https://raw.githubusercontent.com/Nasawa/config-launcher/main/scripts/validate.py; stdlib only, optional `pip install jsonschema`). `--format` rewrites the file exactly as the phone would.
 2. Write the whole file in one go. Commit and push (git). Never force-push; on a rejected push, `git pull --rebase`, re-validate, push again. Never commit conflict markers.
-3. After the phone syncs, read `.configlauncher/status.json`. If it lists errors, the phone kept its last working layout: fix those errors (paths and messages are given) and write again.
+3. After the phone syncs, read `.configlauncher/status.json`. If it lists errors, the phone kept its last working layout: fix those errors (paths and messages are given) and write again. `warnings` (for example an element this version skipped) don't block loading; the element stays in the file.
 4. If reading `launcher.json` fails to parse, the phone may be mid-write: wait a second and retry.
 
 The phone never runs anything from this file. If the user edits on the phone at the same time, the phone keeps your version except for the items the user just touched.

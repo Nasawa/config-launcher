@@ -1,5 +1,7 @@
 package dev.nasawa.configlauncher.store
 
+import dev.nasawa.configlauncher.config.Elements
+
 import dev.nasawa.configlauncher.config.ConfigCodec
 import dev.nasawa.configlauncher.config.Limits
 import dev.nasawa.configlauncher.config.ParseResult
@@ -125,6 +127,7 @@ class ConfigEngine(
     private var statusResult: Triple<String, List<String>, String>? = null
     /** #55: revision of the file at the status hash, when it was applied (null when rejected). */
     private var statusRevision: Long? = null
+    private var statusWarnings: List<String> = emptyList()
     /** §17 Q4: last backup-copy failure (null once a later save succeeds). */
     private var backupError: String? = null
     /** OQ-21: sync/merge leftovers next to launcher.json. */
@@ -189,7 +192,7 @@ class ConfigEngine(
                 lastStamp = target.stamp()
                 _state.value = LoadState(adopted, Origin.FILE, target.displayName, hash, reconnectable = target.reconnectable)
                 // #103: a fresh receipt for the adopted file, so status.json isn't left from an earlier install.
-                writeStatus("ok", emptyList(), hash, adopted.revision)
+                writeStatus("ok", emptyList(), hash, adopted.revision, Elements.warnings(adopted))
                 saveLastGood(existing)
             } else writeLocked(oldState.config)
             true
@@ -255,7 +258,7 @@ class ConfigEngine(
             lastStamp = stamp
             if (_state.value.issue != null) _state.update { it.copy(issue = null) }
             // #103: first look at a newly connected folder holding the file we already show: still write a receipt.
-            if (statusResult == null) writeStatus("ok", emptyList(), hash, _state.value.config.revision)
+            if (statusResult == null) writeStatus("ok", emptyList(), hash, _state.value.config.revision, Elements.warnings(_state.value.config))
             return false
         }
         if (stabilityMs > 0) {
@@ -273,7 +276,7 @@ class ConfigEngine(
             }
             is ParseResult.Ok -> {
                 invalidHash = null; invalidBytes = null
-                writeStatus("ok", emptyList(), hash, r.config.revision)
+                writeStatus("ok", emptyList(), hash, r.config.revision, Elements.warnings(r.config))
                 // An external reload doesn't expire Undo (§18.2); it takes the "changed" path.
                 _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash, reconnectable = src.reconnectable,
                     mergeUndo = undoBytes != null, merge = _state.value.merge.takeIf { undoBytes != null })
@@ -448,7 +451,7 @@ class ConfigEngine(
         selfWrites.addLast(hash); while (selfWrites.size > 4) selfWrites.removeFirst()
         source.write(bytes)
         lastStamp = source.stamp()
-        writeStatus("ok", emptyList(), hash, config.revision)
+        writeStatus("ok", emptyList(), hash, config.revision, Elements.warnings(config))
         _state.value = LoadState(config, Origin.FILE, source.displayName, hash, reconnectable = source.reconnectable)
         saveLastGood(bytes)
         return hash
@@ -473,8 +476,8 @@ class ConfigEngine(
     }
 
     /** §16/§17: `.configlauncher/status.json` so an agent can see why an edit was rejected. Best effort. */
-    private fun writeStatus(result: String, errors: List<String>, hash: String, revision: Long? = null) {
-        statusResult = Triple(result, errors, hash); statusRevision = revision
+    private fun writeStatus(result: String, errors: List<String>, hash: String, revision: Long? = null, warnings: List<String> = emptyList()) {
+        statusResult = Triple(result, errors, hash); statusRevision = revision; statusWarnings = warnings
         emitStatus()
     }
 
@@ -495,10 +498,10 @@ class ConfigEngine(
 
     private fun emitStatus() {
         val (result, errors, hash) = statusResult ?: return
-        val key = "$result|$hash|$statusRevision|${errors.hashCode()}|$backupError|$conflictFiles"
+        val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${statusWarnings.hashCode()}|$backupError|$conflictFiles"
         if (key == lastStatusKey) return
         try {
-            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles, source.location, revision = statusRevision))
+            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles, source.location, revision = statusRevision, warnings = statusWarnings))
             lastStatusKey = key
         } catch (_: Exception) { /* folder may be read-only or gone; the banner already says so */ }
     }

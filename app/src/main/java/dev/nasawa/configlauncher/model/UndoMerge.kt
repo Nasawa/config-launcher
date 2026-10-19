@@ -50,6 +50,7 @@ object UndoMerge {
             val pi = pages.indexOfFirst { it.id == pos.pageId }.takeIf { it >= 0 } ?: return null
             if (pos.x >= g.columns || pos.y >= g.rows) return null
             if (pages[pi].items.any { (it.x ?: 0) == pos.x && (it.y ?: 0) == pos.y }) return null
+            if ((pos.x to pos.y) in dev.nasawa.configlauncher.config.Elements.reserved(now, pos.pageId)) return null   // #79 Stage 1
             pages = pages.toMutableList().also { it[pi] = it[pi].copy(items = it[pi].items + t.fileSide!!) }
         }
         for (t in touched.filter { it.filePos is Pos.Dock }.sortedBy { (it.filePos as Pos.Dock).index }) {

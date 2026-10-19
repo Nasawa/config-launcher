@@ -31,6 +31,12 @@ ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 PKG = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$")
 CLS = re.compile(r"^[A-Za-z0-9_.$]+$")
 CATEGORIES = {"game", "audio", "video", "image", "social", "news", "maps", "productivity", "accessibility", "undefined"}
+MAX_ELEMENTS = 32
+MAX_OVERRIDES = 32
+FEATURE_LEVEL = 1          # Elements.kt: #79 container release, no element type known yet
+ELEMENT_TYPES = {}         # known element types (name -> level); the title bar adds itself at level 2
+PLACEMENT = ("page", "x", "y", "w", "h")
+TYPE = re.compile(r"^[a-zA-Z][a-zA-Z0-9]{0,31}$")
 SCHEMA = pathlib.Path(__file__).resolve().parent.parent / "schema" / "launcher-config.v1.schema.json"
 
 
@@ -184,6 +190,7 @@ def _cps(s):
 class Run:
     def __init__(self):
         self.errors, self.ids, self.items, self.columns, self.rows = [], {}, 0, 4, 5
+        self.page_cells = {}   # page id -> {(x, y): path}, for grid-placed elements (#79 Stage 1)
 
     def err(self, path, msg):
         self.errors.append(f"{path}: {msg}" if path else msg)
@@ -246,7 +253,7 @@ class Run:
         o = self.obj(e, "")
         if o is None:
             return
-        self.keys(o, "", {"$schema", "schemaVersion", "revision", "grid", "pages", "dock", "drawer", "unsorted"}, ["schemaVersion", "pages"])
+        self.keys(o, "", {"$schema", "schemaVersion", "revision", "grid", "pages", "dock", "drawer", "elements", "unsorted"}, ["schemaVersion", "pages"])
         self.str(o, "$schema", "")
         if "schemaVersion" in o and not (isinstance(o["schemaVersion"], Num) and o["schemaVersion"] == "1"):
             self.err("schemaVersion", "must be 1")
@@ -267,6 +274,8 @@ class Run:
             self.item(it, f"dock[{i}]", "dock")
         if "drawer" in o:
             self.drawer(o["drawer"])
+        for i, e in enumerate(self.arr(o, "elements", "", mx=MAX_ELEMENTS) or []):
+            self.element(e, f"elements[{i}]")
         if self.items > MAX_ITEMS:
             self.err("", f"{self.items} items in total, at most {MAX_ITEMS} allowed")
         if "unsorted" in o:
@@ -277,6 +286,86 @@ class Run:
                 if m is not None and m not in ("drawer", "page", "hidden"):
                     self.err("unsorted.mode", "must be drawer, page or hidden")
                 self.str(uo, "pageTitle", "unsorted", mx=40)
+
+    def bool(self, o, k, path):
+        if k not in o:
+            return None
+        if not isinstance(o[k], bool):
+            self.err(f"{path}.{k}", "must be true or false")
+            return None
+        return o[k]
+
+    def element(self, e, path):
+        """#79: id, type, requires for every element; a skipped one (see skip()) gets nothing more."""
+        o = self.obj(e, path)
+        if o is None:
+            return
+        for k in ("id", "type"):
+            if k not in o:
+                self.err(path, f'missing required "{k}"')
+        if "id" in o:
+            self.id(o, path)
+        t = self.str(o, "type", path, rx=TYPE)
+        self.int(o, "requires", path, 1)
+        self.placement(o, path)
+        if t is None or skip(o) is not None:
+            return
+        # Known element types validate here (none at feature level 1).
+
+    def placement(self, o, path):
+        """#79 Stage 1: grid placement for every element, before the type check; skipped ones still reserve cells."""
+        placed = [k for k in PLACEMENT if k in o]
+        self.str(o, "anchor", path, mx=32)
+        if "anchor" in o and placed:
+            self.err(path, 'has both "anchor" and a grid position; use one')
+        if not placed:
+            return
+        for k in PLACEMENT:
+            if k not in o:
+                self.err(path, f'missing required "{k}" (grid-placed elements need page, x, y, w and h)')
+        page = self.str(o, "page", path, rx=ID)
+        x, y = self.int(o, "x", path, 0, 11), self.int(o, "y", path, 0, 11)
+        w, h = self.int(o, "w", path, 1, 12), self.int(o, "h", path, 1, 12)
+        if None in (page, x, y, w, h):
+            return
+        cells = self.page_cells.get(page)
+        if cells is None:
+            self.err(f"{path}.page", f'no page with id "{page}"')
+            return
+        if x + w > self.columns:
+            self.err(path, f"x {x} + w {w} is outside the grid ({self.columns} columns)")
+        if y + h > self.rows:
+            self.err(path, f"y {y} + h {h} is outside the grid ({self.rows} rows)")
+        for cy in range(y, min(y + h, self.rows)):
+            for cx in range(x, min(x + w, self.columns)):
+                other = cells.get((cx, cy))
+                cells[(cx, cy)] = path
+                if other is not None:
+                    self.err(path, f"overlaps {other} at cell ({cx}, {cy})")
+                    return
+
+    def overrides(self, e, path):
+        o = self.obj(e, path)
+        if o is None:
+            return
+        if len(o) > MAX_OVERRIDES:
+            self.err(path, f"has {len(o)} entries, at most {MAX_OVERRIDES} allowed")
+        for k, v in o.items():
+            if not ID.match(k):
+                self.err(path, f'"{k}" is not a valid element id')
+                continue
+            vp = f"{path}.{k}"
+            vo = self.obj(v, vp)
+            if vo is None:
+                continue
+            self.keys(vo, vp, {"enabled", "content", "style"}, [], x_keys=False)
+            if not vo:
+                self.err(vp, "needs at least one of enabled, content or style")
+            self.bool(vo, "enabled", vp)
+            if "content" in vo:
+                self.obj(vo["content"], f"{vp}.content")
+            if "style" in vo:
+                self.obj(vo["style"], f"{vp}.style")
 
     def id(self, o, path):
         s = self.str(o, "id", path, rx=ID)
@@ -291,10 +380,14 @@ class Run:
         o = self.obj(e, path)
         if o is None:
             return
-        self.keys(o, path, {"id", "title", "items"}, ["id", "items"])
+        self.keys(o, path, {"id", "title", "items", "overrides"}, ["id", "items"])
         self.id(o, path)
         self.str(o, "title", path, mx=40)
+        if "overrides" in o:
+            self.overrides(o["overrides"], f"{path}.overrides")
         cells = {}
+        if _is_str(o.get("id")):
+            self.page_cells.setdefault(o["id"], cells)
         for i, it in enumerate(self.arr(o, "items", path, mx=144) or []):
             ip = f"{path}.items[{i}]"
             self.item(it, ip, "page")
@@ -441,6 +534,40 @@ def schema_errors(tree):
     return out
 
 
+def _requires(o):
+    v = o.get("requires")
+    return int(v) if isinstance(v, Num) and v.is_int() else None
+
+
+def skip(o):
+    """Elements.skip: ("level", n) when requires > FEATURE_LEVEL, ("type", t) for an unknown type, else None."""
+    r = _requires(o)
+    if r is not None and r > FEATURE_LEVEL:
+        return ("level", r)
+    t = o.get("type")
+    if not _is_str(t):
+        return None
+    return None if t in ELEMENT_TYPES else ("type", t)
+
+
+def warnings(tree):
+    """Elements.warnings (ux.md §15.1): never reject the file; the phone puts them in status.json `warnings`."""
+    out, els = [], tree.get("elements") or []
+    for i, e in enumerate(els):
+        s = skip(e)
+        if s and s[0] == "level":
+            out.append(f"elements[{i}] needs feature level {s[1]}, but this Config Launcher supports up to {FEATURE_LEVEL}, "
+                       "so it was skipped. It stays in the file. Update the app to show it.")
+        elif s:
+            out.append(f'elements[{i}]: type "{s[1]}" isn\'t supported by this Config Launcher, so it was skipped. It stays in the file.')
+    ids = {e["id"] for e in els if _is_str(e.get("id"))}
+    for j, p in enumerate(tree["pages"]):
+        for k in p.get("overrides") or {}:
+            if k not in ids:
+                out.append(f'pages[{j}].overrides: "{k}" doesn\'t match any element, so it was ignored.')
+    return out
+
+
 def validate(raw, use_schema=True):
     """Returns (tree or None, errors). Semantic (phone) errors first, then schema-only findings."""
     tree, errors = parse(raw)
@@ -570,6 +697,8 @@ def canonical(tree):
         if "title" in p:
             po["title"] = p["title"]
         po["items"] = [_item(i) for i in p["items"]]
+        if "overrides" in p:
+            po["overrides"] = p["overrides"]   # verbatim (#79)
         po.update(_x(p))
         pages.append(po)
     out["pages"] = pages
@@ -583,6 +712,8 @@ def canonical(tree):
         if "rules" in d:
             do["rules"] = [_rule(r) for r in d["rules"]]
         out["drawer"] = do
+    if "elements" in tree:
+        out["elements"] = list(tree["elements"])   # verbatim, file order (#79)
     out.update(_x(tree))
     return dump(out) + "\n"
 
@@ -611,17 +742,19 @@ def main(argv=None):
             for e in errors:
                 print(f"  {e}")
             continue
+        ws = warnings(tree)
+        say = lambda msg: print(msg + "".join(f"\n  warning: {w}" for w in ws))
         if a.format:
             text = canonical(tree).encode("utf-8")
             if text != raw:
                 if a.check:
                     status = 1
-                    print(f"{f}: valid, not canonical (run with --format)")
+                    say(f"{f}: valid, not canonical (run with --format)")
                     continue
                 f.write_bytes(text)
-                print(f"{f}: valid, reformatted")
+                say(f"{f}: valid, reformatted")
                 continue
-        print(f"{f}: valid")
+        say(f"{f}: valid")
     return status
 
 
