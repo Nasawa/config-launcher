@@ -36,7 +36,7 @@
   },
   "invalid/depth-9.json": {
     "errors": [
-      "not valid JSON: nested deeper than 8 levels (line 87)"
+      "not valid JSON: nested deeper than 8 levels (line 84)"
     ]
   },
   "invalid/dock-8-items.json": {
@@ -307,7 +307,7 @@
   },
   "invalid/trailing-garbage.json": {
     "errors": [
-      "not valid JSON: Unexpected JSON token at offset 1570: Expected EOF after parsing, but had } instead at path: $"
+      "not valid JSON: Unexpected JSON token at offset 1528: Expected EOF after parsing, but had } instead at path: $"
     ]
   },
   "invalid/truncated.json": {
@@ -387,13 +387,16 @@
     "canonicalSha256": "ce48dcdaa79d40e86d4568485305f60bb363a2220eaafd75dd76e2c2cd8d2ba3"
   },
   "valid/size-257k.json": {
-    "canonicalSha256": "9ea17fe1de2cf1cf789353641a74e082d3f0fbe2c3d71e489bea952000f8c76e"
+    "canonicalSha256": "9c727e53479840945e2fc89632df688c543da9a15794516d6d238c7fecce7cf0"
   },
   "valid/size-just-under-2mib.json": {
-    "canonicalSha256": "26b4f4508381b56acc4905efa2678cb6bc1a705d752c97cb180de79d90dc5586"
+    "canonicalSha256": "c5b8839e421350cf879d3940a427cfff09f8e1f7bbccd1513bcfa51b97eaed5c"
   },
   "valid/unknown-package.json": {
     "canonicalSha256": "e55f86b5f43262fb41818b66cd17375554172aa589d33d039730dc7183830c59"
+  },
+  "valid/unsorted-deprecated.json": {
+    "canonicalSha256": "d0391dfa528a863a6fcefc53211172a82bb00c7dbc9ff37cae48bf3a91bfb800"
   },
   "valid/work-profile.json": {
     "canonicalSha256": "068cbc8fa0833d0da0b2b2af25c5224606d73670244627d60249a45ead209c0f"

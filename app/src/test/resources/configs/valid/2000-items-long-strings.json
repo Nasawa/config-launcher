@@ -20082,8 +20082,5 @@
     "sort": "label",
     "hidden": [],
     "rules": []
-  },
-  "unsorted": {
-    "mode": "drawer"
   }
 }

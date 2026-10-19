@@ -528,6 +528,13 @@
     "note": ""
   },
   {
+    "file": "valid/unsorted-deprecated.json",
+    "expect": "valid; deprecated unsorted block accepted and ignored (apps stay in the drawer; dropped on the next write)",
+    "layer": "both",
+    "ref": "A§18.5 AF-2, #100",
+    "note": "the only fixture with a valid unsorted block"
+  },
+  {
     "file": "invalid/unsorted-mode-bad.json",
     "expect": "invalid, B2",
     "layer": "both",
