@@ -70,6 +70,8 @@ object TitleBarLayout {
         return Triple(s, c, w - c - s)
     }
 
+    fun textAlignOf(a: Align): TextAlign = when (a) { Align.START -> TextAlign.Start; Align.CENTER -> TextAlign.Center; Align.END -> TextAlign.End }
+
     /** Hex or static token → ARGB; theme tokens resolve through [theme]. */
     fun color(token: String, theme: (String) -> Color?): Color = when {
         token.startsWith("#") -> Color(0xFF000000 or token.substring(1).toLong(16))
@@ -138,22 +140,34 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
     }
     val tappable = PageList.tappable(pages)
     val hint = stringResource(R.string.pages_hint)
-    val pageSpoken = stringResource(R.string.page_a11y, name, i + 1, pages.size)
 
     @Composable
     fun slot(s: Slot) {
         val parts = bar.slots[s]
         if (parts == null) { Box(Modifier); return }
         val text = TitleBarModel.text(parts, shown)
-        val hasPage = TitleBarModel.hasPage(parts)
-        val said = TitleBarModel.text(parts, spoken).let { if (hasPage && tappable) it.replace(name, pageSpoken) else it }
-        val align = when (st.align[s] ?: Align.CENTER) { Align.START -> TextAlign.Start; Align.CENTER -> TextAlign.Center; Align.END -> TextAlign.End }
+        // #124: a slot holding {page} is one tap target (≥ 2 pages) with one trailing ▾ after all its text.
+        val button = TitleBarModel.hasPage(parts) && tappable
+        val spokenText = TitleBarModel.text(parts, spoken)
+        val said = if (button) stringResource(R.string.titlebar_page_a11y, spokenText) else spokenText
+        val align = st.align[s] ?: Align.CENTER
         Box(
-            Modifier.heightIn(min = if (hasPage && tappable) 48.dp else 0.dp)
-                .then(if (hasPage && tappable) Modifier.clickable(enabled = enabled, onClickLabel = hint, role = Role.Button, onClick = onOpen) else Modifier)
+            Modifier.heightIn(min = if (button) 48.dp else 0.dp)
+                .then(if (button) Modifier.clickable(enabled = enabled, onClickLabel = hint, role = Role.Button, onClick = onOpen) else Modifier)
                 .semantics(mergeDescendants = true) { contentDescription = said },
             contentAlignment = androidx.compose.ui.Alignment.CenterStart,
-        ) { Text(text, style = style, textAlign = align, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth()) }
+        ) {
+            if (!button) Text(text, style = style, textAlign = TitleBarLayout.textAlignOf(align), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth())
+            else Row(
+                Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = when (align) { Align.START -> Arrangement.Start; Align.CENTER -> Arrangement.Center; Align.END -> Arrangement.End },
+            ) {
+                // The text takes what's left after the 4 dp gap and the ▾ (ux.md §15), so truncation ellipsizes the text and never clips the ▾.
+                Text(text, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Spacer(Modifier.width(4.dp))
+                Text("▾", style = style.copy(fontSize = 12.sp), maxLines = 1, softWrap = false)
+            }
+        }
     }
 
     Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
