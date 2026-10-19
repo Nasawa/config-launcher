@@ -87,6 +87,15 @@
     <string name="folder_app_only">Layout stored on this phone only</string>
     <string name="copy">Copy</string>
     <string name="copied">Copied</string>
+    <!-- Load warnings, ux.md §15 / §15.1 (#79) -->
+    <plurals name="warnings_header">
+        <item quantity="one">%d warning</item>
+        <item quantity="other">%d warnings</item>
+    </plurals>
+    <plurals name="status_loaded_warnings">
+        <item quantity="one">Layout loaded · %d warning</item>
+        <item quantity="other">Layout loaded · %d warnings</item>
+    </plurals>
 
     <!-- Home app (ux.md §7 step 4, §8) -->
     <string name="home_role_title">Set as home app</string>

@@ -46,13 +46,26 @@ import java.util.Locale
 /** Pure layout and colour rules for the bar (ux.md §15), unit-tested. */
 object TitleBarLayout {
     /**
-     * Widths for start, center, end in a bar [w] wide: `center` keeps at least half (or what it needs, if less),
-     * and the side slots share what's left equally around it, so the centre stays centred. Side slots ellipsize first.
+     * Widths for start, center, end in a bar [w] wide (ux.md §15). `center` keeps at least half (or what it needs, if
+     * less), and the side slots share what's left equally around it, so the centre stays centred. Side slots ellipsize
+     * first, then `center`. A slot in [fixed] (clock and date only, #123) never truncates: it gets the width it needs,
+     * taken from the other slots, up to the whole bar.
      */
-    fun widths(w: Int, start: Int, center: Int, end: Int): Triple<Int, Int, Int> {
-        if (center <= 0) return Triple(w / 2, 0, w - w / 2)
+    fun widths(w: Int, start: Int, center: Int, end: Int, fixed: Set<Int> = emptySet()): Triple<Int, Int, Int> {
+        val sNeed = maxOf(if (0 in fixed) start else 0, if (2 in fixed) end else 0)
+        if (center <= 0) {
+            // No centre: the sides split the bar, unless a fixed side needs more than half.
+            val half = w / 2
+            return when {
+                0 in fixed && start > half -> minOf(start, w).let { Triple(it, 0, w - it) }
+                2 in fixed && end > w - half -> minOf(end, w).let { Triple(w - it, 0, it) }
+                else -> Triple(half, 0, w - half)
+            }
+        }
         val side = maxOf(start, end)
-        val c = minOf(center, w, maxOf(w / 2, w - 2 * side))
+        var c = if (1 in fixed) minOf(center, w) else minOf(center, w, maxOf(w / 2, w - 2 * side))
+        // A fixed side slot takes its width from the centre (unless the centre is fixed too).
+        if (1 !in fixed && 2 * sNeed > w - c) c = maxOf(0, minOf(c, w - 2 * sNeed))
         val s = (w - c) / 2
         return Triple(s, c, w - c - s)
     }
@@ -163,7 +176,8 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
         ) { ms, cs ->
             val w = cs.maxWidth
             val want = ms.map { it.maxIntrinsicWidth(cs.maxHeight) }
-            val (sw, cw, ew) = TitleBarLayout.widths(w, want[0], if (bar.slots[Slot.CENTER] == null) 0 else want[1], want[2])
+            val fixed = Slot.entries.filter { bar.slots[it]?.let(TitleBarModel::clockOnly) == true }.map { it.ordinal }.toSet()
+            val (sw, cw, ew) = TitleBarLayout.widths(w, want[0], if (bar.slots[Slot.CENTER] == null) 0 else want[1], want[2], fixed)
             val ps = listOf(sw, cw, ew).mapIndexed { k, width -> ms[k].measure(Constraints.fixedWidth(width.coerceAtLeast(0)).copy(minHeight = 0, maxHeight = cs.maxHeight)) }
             val h = ps.maxOf { it.height }
             layout(w, h) {
