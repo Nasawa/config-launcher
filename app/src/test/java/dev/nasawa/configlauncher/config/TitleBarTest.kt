@@ -136,6 +136,25 @@ class TitleBarTest {
         assertEquals(Triple(100, 800, 100), TitleBarLayout.widths(1000, 100, 900, 50))
         // No centre: the sides split the bar.
         assertEquals(Triple(500, 0, 500), TitleBarLayout.widths(1000, 900, 0, 900))
+    }
+
+    @Test fun clockAndDateNeverTruncate() {
+        // #123: a long date on the start side takes its width from the centre, which still stays centred.
+        assertEquals(Triple(300, 400, 300), TitleBarLayout.widths(1000, 300, 800, 100, fixed = setOf(0)))
+        // Without the rule the centre would keep half and the date would ellipsize.
+        assertEquals(Triple(250, 500, 250), TitleBarLayout.widths(1000, 300, 800, 100))
+        // A clock in the centre keeps its full width even past half; the sides ellipsize.
+        assertEquals(Triple(150, 700, 150), TitleBarLayout.widths(1000, 900, 700, 900, fixed = setOf(1)))
+        // No centre: a fixed end slot can take more than half.
+        assertEquals(Triple(300, 0, 700), TitleBarLayout.widths(1000, 900, 0, 700, fixed = setOf(2)))
+        // Never wider than the bar.
+        assertEquals(Triple(0, 0, 1000), TitleBarLayout.widths(1000, 10, 0, 1500, fixed = setOf(2)))
+        val parts = { t: String -> (Template.parse(t) as Template.Ok).parts }
+        assertTrue(TitleBarModel.clockOnly(parts("{time:HH:mm}")))
+        assertTrue(TitleBarModel.clockOnly(parts("{date} · {time}")))
+        assertTrue(TitleBarModel.clockOnly(parts("clock")))
+        assertFalse(TitleBarModel.clockOnly(parts("{page} {time}")))
+        assertFalse(TitleBarModel.clockOnly(parts("Hello")))
         assertEquals(30f, TitleBarLayout.cappedSp(30f, 1f))
         assertEquals(26f, TitleBarLayout.cappedSp(40f, 2f))
     }
