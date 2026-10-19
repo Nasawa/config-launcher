@@ -20,7 +20,8 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     val prefs = Prefs(context)
     /** §18.5 AF-1 app-only source: app-private, separate from last-good.json and history/. */
     val localDir: File = File(context.filesDir, "config/source")
-    val engine = ConfigEngine(currentSource(), LastGoodStore(File(context.filesDir, "config")), scope = scope)
+    val engine = ConfigEngine(currentSource(), LastGoodStore(File(context.filesDir, "config")), scope = scope,
+        consent = dev.nasawa.configlauncher.consent.ConsentStore(File(context.filesDir, "consent")))
         .also { it.askBeforeMerge = prefs.askBeforeMerging }
     val state get() = engine.state
 

@@ -99,6 +99,8 @@ class ConfigEngine(
     private val scope: CoroutineScope? = null,
     private val debounceMs: Long = 750,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** #138: device-local widget approvals; null in tests that don't need them (no `consent` map then). */
+    val consent: dev.nasawa.configlauncher.consent.ConsentStore? = null,
 ) {
     private val pending = mutableListOf<Edit>()
     private var flushJob: Job? = null
@@ -482,6 +484,7 @@ class ConfigEngine(
     /** §16/§17: `.configlauncher/status.json` so an agent can see why an edit was rejected. Best effort. */
     private fun writeStatus(result: String, errors: List<String>, hash: String, revision: Long? = null, warnings: List<String> = emptyList(), config: LauncherConfig? = null) {
         statusResult = Triple(result, errors, hash); statusRevision = revision; statusWarnings = warnings; statusConfig = config
+        if (config != null) consent?.settle(config)
         emitStatus()
     }
 
@@ -514,13 +517,22 @@ class ConfigEngine(
         catch (_: Exception) { false }
     }
 
+    /** #138: the loaded file's widget consent states (empty when rejected or without a store). */
+    fun consentReport(): List<dev.nasawa.configlauncher.consent.Consent.Status> =
+        statusConfig?.let { c -> consent?.report(c) }.orEmpty()
+
+    /** #138: re-emit status.json after the UI changed an approval (Allow, Turn off, Undo, Forget approval). */
+    suspend fun consentChanged() = mutex.withLock { emitStatus() }
+
     private fun emitStatus() {
         val (result, errors, hash) = statusResult ?: return
-        val warnings = if (result == "ok") statusWarnings + phoneWarnings() else statusWarnings
-        val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${warnings.hashCode()}|$backupError|$conflictFiles"
+        val report = if (result == "ok") consentReport() else emptyList()
+        val warnings = if (result == "ok") statusWarnings + phoneWarnings() + report.mapNotNull { it.warning } else statusWarnings
+        val consentMap = if (consent == null) null else report.associate { it.id to (it.state.key to it.warning) }
+        val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${warnings.hashCode()}|$backupError|$conflictFiles|$consentMap"
         if (key == lastStatusKey) return
         try {
-            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles, source.location, revision = statusRevision, warnings = warnings))
+            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles, source.location, revision = statusRevision, warnings = warnings, consent = consentMap))
             lastStatusKey = key
         } catch (_: Exception) { /* folder may be read-only or gone; the banner already says so */ }
     }
