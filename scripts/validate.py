@@ -1121,8 +1121,8 @@ def warnings(tree):
             out.append(f"elements[{i}] needs feature level {s[1]}, but this Config Launcher supports up to {FEATURE_LEVEL}, "
                        "so it was skipped. It stays in the file. Update the app to show it.")
         elif s and s[0] == "kind":
-            out.append(f'elements[{i}]: capability "{s[1]}" isn\'t supported by this Config Launcher, so the card can\'t be shown. '
-                       "It stays in the file. Update the app to show it.")
+            out.append(f'elements[{i}]: capability kind "{s[1]}" isn\'t supported by this Config Launcher, so the widget was skipped. '
+                       "It stays in the file. Update the app, or check the kind for a typo.")
         elif s:
             out.append(f'elements[{i}]: type "{s[1]}" isn\'t supported by this Config Launcher, so it was skipped. It stays in the file.')
         elif e.get("type") in ELEMENT_TYPES:

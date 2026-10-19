@@ -28,7 +28,7 @@ class CardTest {
 
     @Test fun unknownCapabilityKindSkipsTheCardWithAWarning() {
         val c = ok(doc(card(""","capabilities":[{"kind":"data.file"},{"kind":"net.fetch","origins":["https://x.org"]}]""")))
-        assertEquals(listOf("elements[0]: capability \"net.fetch\" isn't supported by this Config Launcher, so the card can't be shown. It stays in the file. Update the app to show it."), Elements.warnings(c))
+        assertEquals(listOf("elements[0]: capability kind \"net.fetch\" isn't supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo."), Elements.warnings(c))
         assertTrue(Elements.shown(c).isEmpty())
         assertEquals(4, Elements.reserved(c, "home").size)   // cells kept
         assertTrue("net.fetch" in ConfigCodec.encode(c))      // kept verbatim

@@ -108,7 +108,7 @@ object Elements {
             when (val s = skip(e)) {
                 is Skip.TooNew -> out += "elements[$i] needs feature level ${s.requires}, but this Config Launcher supports up to $FEATURE_LEVEL, so it was skipped. It stays in the file. Update the app to show it."
                 is Skip.UnknownType -> out += "elements[$i]: type \"${s.type}\" isn't supported by this Config Launcher, so it was skipped. It stays in the file."
-                is Skip.UnknownCapability -> out += "elements[$i]: capability \"${s.kind}\" isn't supported by this Config Launcher, so the card can't be shown. It stays in the file. Update the app to show it."
+                is Skip.UnknownCapability -> out += "elements[$i]: capability kind \"${s.kind}\" isn't supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo."
                 null -> typeOf(e)?.let { out += it.warnings(e, "elements[$i]") }
             }
         }

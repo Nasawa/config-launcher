@@ -127,8 +127,8 @@ class CardKinds(unittest.TestCase):
         raw = json.dumps(self.doc).encode()
         tree, errs = V.validate(raw, use_schema=False)
         self.assertEqual([], errs)
-        self.assertEqual(['elements[0]: capability "net.fetch" isn\'t supported by this Config Launcher, so the card can\'t be shown. '
-                          'It stays in the file. Update the app to show it.'], V.warnings(tree))
+        self.assertEqual(['elements[0]: capability kind "net.fetch" isn\'t supported by this Config Launcher, so the widget was skipped. '
+                          'It stays in the file. Update the app, or check the kind for a typo.'], V.warnings(tree))
         _, errs = V.validate(raw, use_schema=False, ci=True)
         self.assertEqual(['elements[0].capabilities[1].kind: unknown capability "net.fetch". Use data.file, ui.reload, ui.openApp, ui.openUrl.'], errs)
 
