@@ -22,6 +22,12 @@ class MainActivity : ComponentActivity() {
         setContent { HomeScreen(vm) }
     }
 
+    // singleTask: the Home key while we're in front arrives here (leave edit mode, go to page 1).
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (intent.hasCategory(android.content.Intent.CATEGORY_HOME)) vm.homePresses.tryEmit(Unit)
+    }
+
     // Poll immediately when the user comes home, then every 2 s while visible (ARCHITECTURE.md §4).
     override fun onStart() { super.onStart(); vm.store.start() }
     override fun onStop() { vm.store.stop(); super.onStop() }

@@ -60,6 +60,12 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     /** Snackbar Undo after an automatic merge (§18.2). */
     fun retrySave() { scope.launch(Dispatchers.IO) { engine.retrySave() } }
 
+    /**
+     * Leaving edit mode (ux.md §4.1, §14 R4/R5): queue the empty-page cleanup and write now, so it goes out
+     * in the same write as any pending edit (or as one write if the edits were already saved).
+     */
+    fun leaveEditMode() { scope.launch(Dispatchers.IO) { engine.edit(dev.nasawa.configlauncher.model.Edit.DropEmptyPages); engine.retrySave() } }
+
     fun undoMerge() { scope.launch(Dispatchers.IO) { engine.undoMerge() } }
 
     fun setAskBeforeMerging(v: Boolean) { prefs.askBeforeMerging = v; engine.askBeforeMerge = v }

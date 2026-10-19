@@ -17,6 +17,16 @@ sealed interface Edit {
     data class AddToHome(val item: Item) : Edit
     /** Drawer `Hide` (ux.md §2): append the package to `drawer.hidden`. */
     data class Hide(val packageName: String) : Edit
+    /** `Unhide` (ux.md §14 R8): drop the package from `drawer.hidden`. Also the Hide snackbar's Undo. */
+    data class Unhide(val packageName: String) : Edit
+    /**
+     * Undo of `Remove from home` (ux.md §14 R3): put [item] (a folder keeps its items) back where it was.
+     * [dockIndex] set = dock; else page [pageId] at its own x/y, recreating that page at [pageIndex] if it was
+     * deleted meanwhile. A taken cell falls back to the next free cell after it (Edits.freeCell, as Add does).
+     */
+    data class Restore(val item: Item, val pageId: String?, val pageIndex: Int, val dockIndex: Int?) : Edit
+    /** Leaving edit mode (ux.md §4.2, §14 R5): delete empty pages, never the last one. */
+    data object DropEmptyPages : Edit
 }
 
 data class ApplyResult(val config: LauncherConfig, val applied: Boolean, val folder: FolderSkip? = null)
@@ -43,6 +53,40 @@ object Edits {
         is Edit.Remove -> remove(c, e)
         is Edit.AddToHome -> addToHome(c, e)
         is Edit.Hide -> hide(c, e)
+        is Edit.Unhide -> unhide(c, e)
+        is Edit.Restore -> restore(c, e)
+        Edit.DropEmptyPages -> dropEmptyPages(c)
+    }
+
+    /** The [Edit.Restore] that undoes removing top-level item [id] from [c], or null if it isn't on a page or in the dock. */
+    fun undoRemove(c: LauncherConfig, id: String): Edit.Restore? = when (val loc = find(c, id)) {
+        is Loc.OnPage -> Edit.Restore(c.pages[loc.page].items[loc.index], c.pages[loc.page].id, loc.page, null)
+        is Loc.InDock -> Edit.Restore(c.dock!![loc.index], null, 0, loc.index)
+        null -> null
+    }
+
+    private fun unhide(c: LauncherConfig, e: Edit.Unhide): ApplyResult {
+        val d = c.drawer ?: return ApplyResult(c, false)
+        val hidden = d.hidden.orEmpty()
+        if (e.packageName !in hidden) return ApplyResult(c, false)
+        return ApplyResult(c.copy(drawer = d.copy(hidden = hidden - e.packageName)), true)
+    }
+
+    private fun restore(c: LauncherConfig, e: Edit.Restore): ApplyResult {
+        if (e.dockIndex != null) return add(c, Edit.Add(e.item, null, index = e.dockIndex))
+        val pageId = e.pageId ?: return ApplyResult(c, false)
+        var base = c
+        if (c.pages.none { it.id == pageId }) {
+            if (c.pages.size >= MAX_PAGES) return ApplyResult(c, false)
+            base = c.copy(pages = c.pages.toMutableList().also { it.add(e.pageIndex.coerceIn(0, it.size), Page(pageId)) })
+        }
+        val r = add(base, Edit.Add(e.item, pageId, e.item.x ?: 0, e.item.y ?: 0))
+        return if (r.applied) r else ApplyResult(c, false, r.folder)
+    }
+
+    private fun dropEmptyPages(c: LauncherConfig): ApplyResult {
+        val kept = c.pages.filter { it.items.isNotEmpty() }.ifEmpty { c.pages.take(1) }
+        return ApplyResult(c.copy(pages = kept), kept.size != c.pages.size)
     }
 
     const val MAX_PAGES = 20   // schema pages.maxItems
@@ -54,7 +98,7 @@ object Edits {
         }
         if (c.pages.size >= MAX_PAGES) return ApplyResult(c, false)
         val taken = c.pages.map { it.id }.toSet()
-        val id = generateSequence(c.pages.size + 1) { it + 1 }.map { "page-$it" }.first { it !in taken }
+        val id = generateSequence(1) { it + 1 }.map { "page-$it" }.first { it !in taken }   // §14 R9: lowest unused N
         return add(c.copy(pages = c.pages + Page(id)), Edit.Add(e.item, id)).let { if (it.applied) it else ApplyResult(c, false) }
     }
 

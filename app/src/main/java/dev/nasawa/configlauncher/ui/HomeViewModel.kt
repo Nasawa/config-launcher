@@ -19,6 +19,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val apps = graph.apps
     val store = graph.store
     private val installed = MutableStateFlow<List<InstalledApp>>(emptyList())
+    val installedApps: StateFlow<List<InstalledApp>> = installed.asStateFlow()
+    /** Home key pressed while home is already in front (MainActivity.onNewIntent): ux.md §1, §4.1. */
+    val homePresses = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     val ui: StateFlow<HomeUi> = combine(store.state, installed) { load, inst -> HomeUi(Reconcile.resolve(load.config, inst), load) }
         .flowOn(Dispatchers.Default)

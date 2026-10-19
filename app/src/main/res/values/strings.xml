@@ -72,12 +72,12 @@
     <!-- Home, menu, drawer -->
     <string name="source_app_storage">App storage</string>
     <string name="source_folder">Folder: %1$s</string>
-    <string name="menu_pick_folder">Pick config folder…</string>
+    <string name="menu_pick_folder">Choose folder</string>
     <string name="menu_use_phone_storage">Use phone storage</string>
     <string name="menu_label_backdrop">Label backdrop</string>
     <string name="menu_ask_before_merging">Ask before merging</string>
     <string name="menu_open_keyboard">Open keyboard with drawer</string>
-    <string name="menu_reload">Reload launcher.json</string>
+    <string name="menu_reload">Reload layout</string>
     <string name="search_hint">Search apps</string>
     <string name="search_no_match">No apps match \"%1$s\".</string>
     <string name="dock_empty">Dock: long-press an app and drop it here</string>
@@ -123,7 +123,15 @@
     <string name="action_settings">Settings</string>
     <string name="action_add_to_home">Add to home</string>
     <string name="action_hide">Hide</string>
-    <string name="home_full">No room on home. Remove a page first.</string>
+    <string name="home_full">No room on home: all 20 pages are full.</string>
     <string name="editing_layout">Editing layout</string>
     <string name="done">Done</string>
+
+    <!-- Rulings, ux.md §14 (R3, R8) -->
+    <string name="removed_folder">Removed folder \"%1$s\" from home.</string>
+    <string name="app_hidden">%1$s hidden from the app list.</string>
+    <string name="hidden_apps">Hidden apps</string>
+    <string name="no_hidden_apps">No hidden apps.</string>
+    <string name="action_unhide">Unhide</string>
+    <string name="drawer_menu">More options</string>
 </resources>
