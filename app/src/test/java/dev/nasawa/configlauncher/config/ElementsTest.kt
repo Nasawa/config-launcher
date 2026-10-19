@@ -24,9 +24,9 @@ class ElementsTest {
     private fun errors(s: String) = (ConfigCodec.decode(s) as ParseResult.Invalid).errors
     private val app = AppItem("b", "p.b")
 
-    @Test fun featureLevelOneKnowsNoTypes() {
-        assertEquals(1, Elements.FEATURE_LEVEL)
-        assertTrue(Elements.types.isEmpty())
+    @Test fun featureLevelTwoKnowsTheTitleBar() {
+        assertEquals(2, Elements.FEATURE_LEVEL)
+        assertEquals(setOf("titleBar"), Elements.types.keys)
     }
 
     @Test fun unknownElementIsSkippedWithWarningAndKeptVerbatim() {
@@ -41,8 +41,8 @@ class ElementsTest {
     }
 
     @Test fun requiresAboveFeatureLevelIsSkippedBeforeStrictChecks() {
-        val c = ok(doc("""[{"id":"t-x","type":"titleBar","requires":2,"anchor":"top","whatever":true}]"""))
-        assertEquals(listOf("elements[0] needs feature level 2, but this Config Launcher supports up to 1, so it was skipped. It stays in the file. Update the app to show it."), Elements.warnings(c))
+        val c = ok(doc("""[{"id":"t-x","type":"titleBar","requires":3,"anchor":"top","whatever":true}]"""))
+        assertEquals(listOf("elements[0] needs feature level 3, but this Config Launcher supports up to 2, so it was skipped. It stays in the file. Update the app to show it."), Elements.warnings(c))
     }
 
     @Test fun overrideForMissingElementIsAWarning() {

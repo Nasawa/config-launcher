@@ -136,6 +136,11 @@ Shape in brief:
   git diffs small (encouraged, not required). A reload never triggers a write.
 - **Unknown keys.** Keys starting with `x-` are allowed at the root, on pages and on items, and are kept verbatim (use
   `x-note` for notes). Any other unknown key makes the file invalid, so typos fail loudly instead of being silently dropped.
+- **Elements and the title bar.** Root `elements[]` holds non-app elements. This launcher (feature level 2) knows
+  `titleBar`: one per file, `anchor: "top"`, slots `start` / `center` / `end` with templates such as `{page}`,
+  `{time:HH:mm}` or `{date:EEE d MMM}`, and an optional `style`. `pages[].overrides["<id>"]` can change `enabled`,
+  `content` or `style` on one page. Unknown element types and elements whose `requires` is above 2 are skipped with a
+  warning and kept in the file. See [docs/design/title-bar.md](docs/design/title-bar.md).
 - **`revision`.** The launcher sets it to max seen + 1 on every write. Agents should bump it too, but nothing depends on
   it, and a missing `revision` is valid.
 - **Conflicts.** The **content hash** decides what's new, not `revision`. Any file with different content from what the

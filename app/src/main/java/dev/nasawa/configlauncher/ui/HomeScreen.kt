@@ -3,6 +3,7 @@ package dev.nasawa.configlauncher.ui
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import dev.nasawa.configlauncher.R
+import dev.nasawa.configlauncher.model.TitleBarModel
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
@@ -264,7 +265,10 @@ fun HomeScreen(vm: HomeViewModel) {
                 drag.grid = ui.layout.grid
                 drag.dockCount = ui.layout.dock.size
                 CompositionLocalProvider(LocalLabelBackdrop provides backdrop) {
-                PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true }
+                // #79: a title bar in the file replaces the §1.3 page label on pages where it's enabled.
+                val titleBar = TitleBarModel.forPage(ui.load.config, pages.getOrNull(pager.settledPage)?.id)
+                if (titleBar != null) TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop) { pageList = true }
+                else PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true }
                 val listPages = stringResource(R.string.pages_action)
                 val openAppList = stringResource(R.string.a11y_open_drawer)
                 HorizontalPager(

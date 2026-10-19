@@ -16,7 +16,7 @@ import java.io.File
 class KotlinOnlyConformanceTest {
     private val kotlinOnlyRules = setOf(
         "duplicate-ids", "overlapping-cells", "cell-outside-grid", "item-total",
-        "duplicate-keys", "parser-depth", "byte-cap", "nul-or-encoding",
+        "duplicate-keys", "parser-depth", "byte-cap", "nul-or-encoding", "template-grammar", "single-title-bar",
     )
     private val dir = File(javaClass.classLoader!!.getResource("configs/manifest.json")!!.toURI()).parentFile
     private val manifest = Json.parseToJsonElement(File(dir, "manifest.json").readText()).jsonArray.map { it.jsonObject }

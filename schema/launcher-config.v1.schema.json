@@ -448,7 +448,7 @@
       }
     },
     "element": {
-      "description": "Common element fields, checked for every element (docs/design/title-bar.md §3, docs/research/widgets.md §5.1). An element is anchored (anchor) or grid-placed (page, x, y, w, h), never both; a grid-placed element reserves its cells even when this launcher skips it. No additionalProperties here: an unknown type accepts any other keys (skipped, kept verbatim); each known type's own definition is strict.",
+      "description": "Common element fields, checked for every element (docs/design/title-bar.md §3, docs/research/widgets.md §5.1). An element is anchored (anchor) or grid-placed (page, x, y, w, h), never both; a grid-placed element reserves its cells even when this launcher skips it. No additionalProperties here: an unknown type accepts any other keys (skipped, kept verbatim); each known type's own definition is strict. Known types (feature level 2): titleBar.",
       "type": "object",
       "required": [
         "id",
@@ -560,6 +560,22 @@
             ]
           }
         ]
+      },
+      "if": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "titleBar"
+          },
+          "requires": {
+            "maximum": 2
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/titleBar"
       }
     },
     "pageOverrides": {
@@ -585,6 +601,210 @@
           }
         }
       }
+    },
+    "titleBar": {
+      "description": "Title bar (#79, feature level 2; docs/design/title-bar.md, ux.md §15). One per file, anchored top. Templates use {page}, {pageNumber}, {pageCount}, {time[:pattern]}, {date[:pattern]}; the token grammar is checked by the launcher and scripts/validate.py.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "id": true,
+        "type": true,
+        "requires": true,
+        "enabled": {
+          "type": "boolean"
+        },
+        "anchor": {
+          "const": "top"
+        },
+        "content": {
+          "$ref": "#/$defs/titleBarContent"
+        },
+        "style": {
+          "$ref": "#/$defs/elementStyle"
+        }
+      }
+    },
+    "titleBarContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "slots": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "$ref": "#/$defs/template"
+            },
+            "center": {
+              "$ref": "#/$defs/template"
+            },
+            "end": {
+              "$ref": "#/$defs/template"
+            }
+          }
+        }
+      }
+    },
+    "template": {
+      "description": "One line, at most 120 characters, at most 8 tokens.",
+      "type": "string",
+      "maxLength": 120
+    },
+    "elementStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "size": {
+          "oneOf": [
+            {
+              "enum": [
+                "small",
+                "medium",
+                "large"
+              ]
+            },
+            {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 40
+            }
+          ]
+        },
+        "weight": {
+          "oneOf": [
+            {
+              "enum": [
+                "regular",
+                "medium",
+                "bold"
+              ]
+            },
+            {
+              "enum": [
+                300,
+                400,
+                500,
+                600,
+                700,
+                800
+              ]
+            }
+          ]
+        },
+        "color": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "light": {
+                  "$ref": "#/$defs/color"
+                },
+                "dark": {
+                  "$ref": "#/$defs/color"
+                }
+              }
+            }
+          ]
+        },
+        "align": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "$ref": "#/$defs/align"
+            },
+            "center": {
+              "$ref": "#/$defs/align"
+            },
+            "end": {
+              "$ref": "#/$defs/align"
+            }
+          }
+        },
+        "padding": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "horizontal": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            },
+            "vertical": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 24
+            }
+          }
+        },
+        "backdrop": {
+          "oneOf": [
+            {
+              "enum": [
+                "auto",
+                "none",
+                "scrim"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "color"
+              ],
+              "properties": {
+                "color": {
+                  "$ref": "#/$defs/color"
+                },
+                "opacity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "radius": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 24
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "color": {
+      "oneOf": [
+        {
+          "enum": [
+            "light",
+            "dark",
+            "onWallpaper",
+            "primary",
+            "secondary",
+            "onSurface",
+            "surface"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        }
+      ]
+    },
+    "align": {
+      "enum": [
+        "start",
+        "center",
+        "end"
+      ]
     }
   }
 }

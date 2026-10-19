@@ -13,11 +13,11 @@ import kotlinx.serialization.json.JsonPrimitive
  *   not validated further, not shown, kept verbatim on every write.
  * - A known type validates strictly (unknown keys are errors) through its [ElementType].
  *
- * Feature level 1 is this container release: no element type is known yet. The title bar registers itself at level 2,
- * and widgets later reuse the same registry.
+ * Feature level 1 was the container release (no element type). Level 2 adds the title bar ([TitleBar]); widgets
+ * later reuse the same registry.
  */
 object Elements {
-    const val FEATURE_LEVEL = 1
+    const val FEATURE_LEVEL = 2
     val TYPE = Regex("^[a-zA-Z][a-zA-Z0-9]{0,31}$")
     /** Grid-placement base block (docs/research/widgets.md §5.1). An element has these or `anchor`, never both. */
     val PLACEMENT = listOf("page", "x", "y", "w", "h")
@@ -48,12 +48,18 @@ object Elements {
         /** Feature level that introduced the type. */
         val level: Int
         fun validate(o: JsonObject, path: String, c: Validator.Checks)
+        /** At most one shown element of this type per file. */
+        val single: Boolean get() = false
+        /** `pages[].overrides[<id>]` for an element of this type (enabled is already checked). */
+        fun validateOverride(o: JsonObject, path: String, c: Validator.Checks) {}
+        /** Load warnings for a shown, valid element (e.g. low contrast). */
+        fun warnings(o: JsonObject, path: String): List<String> = emptyList()
         /** Canonical key order for writing; default verbatim. */
         fun canonical(o: JsonObject): JsonObject = o
     }
 
-    /** Known types by name. Empty at feature level 1. */
-    val types: Map<String, ElementType> = emptyMap()
+    /** Known types by name. */
+    val types: Map<String, ElementType> = listOf<ElementType>(TitleBar).associateBy { it.name }
 
     sealed interface Skip {
         data class UnknownType(val type: String) : Skip
@@ -88,7 +94,7 @@ object Elements {
             when (val s = skip(e)) {
                 is Skip.TooNew -> out += "elements[$i] needs feature level ${s.requires}, but this Config Launcher supports up to $FEATURE_LEVEL, so it was skipped. It stays in the file. Update the app to show it."
                 is Skip.UnknownType -> out += "elements[$i]: type \"${s.type}\" isn't supported by this Config Launcher, so it was skipped. It stays in the file."
-                null -> Unit
+                null -> typeOf(e)?.let { out += it.warnings(e, "elements[$i]") }
             }
         }
         val ids = c.elements.orEmpty().mapNotNull { it.str("id") }.toSet()

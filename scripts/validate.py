@@ -19,7 +19,7 @@ keys (sorted), LF, trailing newline, UTF-8 without BOM; the deprecated `unsorted
 Item order and unspecified keys like `grid` are kept as written; only a phone edit changes those.
 Stdlib only, plus optional `jsonschema`.
 """
-import argparse, json, pathlib, re, sys
+import argparse, json, math, pathlib, re, sys
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_DEPTH = 8
@@ -33,8 +33,8 @@ CLS = re.compile(r"^[A-Za-z0-9_.$]+$")
 CATEGORIES = {"game", "audio", "video", "image", "social", "news", "maps", "productivity", "accessibility", "undefined"}
 MAX_ELEMENTS = 32
 MAX_OVERRIDES = 32
-FEATURE_LEVEL = 1          # Elements.kt: #79 container release, no element type known yet
-ELEMENT_TYPES = {}         # known element types (name -> level); the title bar adds itself at level 2
+FEATURE_LEVEL = 2          # Elements.kt: 1 = #79 container release, 2 = title bar
+ELEMENT_TYPES = {"titleBar": 2}   # known element types (name -> level that introduced them)
 PLACEMENT = ("page", "x", "y", "w", "h")
 TYPE = re.compile(r"^[a-zA-Z][a-zA-Z0-9]{0,31}$")
 SCHEMA = pathlib.Path(__file__).resolve().parent.parent / "schema" / "launcher-config.v1.schema.json"
@@ -191,6 +191,9 @@ class Run:
     def __init__(self):
         self.errors, self.ids, self.items, self.columns, self.rows = [], {}, 0, 4, 5
         self.page_cells = {}   # page id -> {(x, y): path}, for grid-placed elements (#79 Stage 1)
+        self.singles = {}      # type -> path of the first shown element (one titleBar per file)
+        self.shown_ids = {}    # element id -> type, for shown elements
+        self.override_entries = []   # (element id, path, value), checked once elements are known
 
     def err(self, path, msg):
         self.errors.append(f"{path}: {msg}" if path else msg)
@@ -276,6 +279,9 @@ class Run:
             self.drawer(o["drawer"])
         for i, e in enumerate(self.arr(o, "elements", "", mx=MAX_ELEMENTS) or []):
             self.element(e, f"elements[{i}]")
+        for k, vp, vo in self.override_entries:
+            if self.shown_ids.get(k) == "titleBar":
+                TitleBar.override(self, vo, vp)
         if self.items > MAX_ITEMS:
             self.err("", f"{self.items} items in total, at most {MAX_ITEMS} allowed")
         if "unsorted" in o:
@@ -308,9 +314,15 @@ class Run:
         t = self.str(o, "type", path, rx=TYPE)
         self.int(o, "requires", path, 1)
         self.placement(o, path)
-        if t is None or skip(o) is not None:
+        if t is None or skip(o) is not None or t not in ELEMENT_TYPES:
             return
-        # Known element types validate here (none at feature level 1).
+        if t in self.singles:
+            self.err(path, f"only one {t} is allowed ({self.singles[t]} is already one).")
+        else:
+            self.singles[t] = path
+        TitleBar.validate(self, o, path)
+        if _is_str(o.get("id")):
+            self.shown_ids.setdefault(o["id"], t)
 
     def placement(self, o, path):
         """#79 Stage 1: grid placement for every element, before the type check; skipped ones still reserve cells."""
@@ -362,10 +374,10 @@ class Run:
             if not vo:
                 self.err(vp, "needs at least one of enabled, content or style")
             self.bool(vo, "enabled", vp)
-            if "content" in vo:
-                self.obj(vo["content"], f"{vp}.content")
-            if "style" in vo:
-                self.obj(vo["style"], f"{vp}.style")
+            c = self.obj(vo["content"], f"{vp}.content") if "content" in vo else None
+            st = self.obj(vo["style"], f"{vp}.style") if "style" in vo else None
+            if ("content" not in vo or c is not None) and ("style" not in vo or st is not None):
+                self.override_entries.append((k, vp, vo))
 
     def id(self, o, path):
         s = self.str(o, "id", path, rx=ID)
@@ -534,6 +546,284 @@ def schema_errors(tree):
     return out
 
 
+# ---------------------------------------------------------------- title bar (TitleBar.kt, Template.kt; #79 level 2)
+
+class Template:
+    NAMES = ("page", "pageNumber", "pageCount", "time", "date")
+    SHORTHANDS = {"pageTitle": "page", "clock": "time", "date": "date"}
+    LETTERS = {"y": 19, "M": 5, "d": 2, "E": 5, "a": 1, "H": 2, "h": 2, "k": 2, "K": 2, "m": 2}
+    PUNCTUATION = " .,:/-"
+    MAX_TEMPLATE, MAX_TOKENS, MAX_PATTERN = 120, 8, 32
+
+    @staticmethod
+    def check(s, path):
+        """The ux.md §15.1 message for the first problem in template s, or None."""
+        if s in Template.SHORTHANDS:
+            return None
+        if len(s) > Template.MAX_TEMPLATE:
+            return f"{path} is {len(s)} characters; the maximum is {Template.MAX_TEMPLATE}."
+        if "\n" in s or "\r" in s:
+            return f"{path}: a template is one line; remove the line break."
+        i, tokens, n = 0, 0, len(s)
+        while i < n:
+            c = s[i]
+            if c == "{" and s[i + 1:i + 2] == "{":
+                i += 2
+            elif c == "}" and s[i + 1:i + 2] == "}":
+                i += 2
+            elif c == "}":
+                return f'{path}: the "}}" at character {i + 1} has no opening "{{". For a literal brace, write }}}}.'
+            elif c == "{":
+                j = s.find("}", i + 1)
+                if j < 0:
+                    return f'{path}: the "{{" at character {i + 1} isn\'t closed. For a literal brace, write {{{{.'
+                inner = s[i + 1:j]
+                name, colon, pattern = inner.partition(":")
+                if name not in Template.NAMES:
+                    return f"{path}: unknown token {{{name}}}. Use page, pageNumber, pageCount, time or date."
+                if colon:
+                    if name not in ("time", "date"):
+                        return f"{path}: {{{name}}} doesn't take a pattern. Only time and date do."
+                    if not pattern:
+                        return f"{path}: {{{name}:}} has an empty pattern. Write {{{name}}} for the default format."
+                    if len(pattern) > Template.MAX_PATTERN:
+                        return f"{path}: the pattern in {{{name}:…}} is {len(pattern)} characters; the maximum is {Template.MAX_PATTERN}."
+                    bad = Template.bad_in_pattern(pattern)
+                    if bad is not None:
+                        return (f'{path}: "{bad}" isn\'t allowed in {{{inner}}}. '
+                                "Use y M d E a H h k K m; seconds and time zones aren't supported.")
+                tokens += 1
+                i = j + 1
+            else:
+                i += 1
+        if tokens > Template.MAX_TOKENS:
+            return f"{path} has {tokens} tokens; the maximum is {Template.MAX_TOKENS}."
+        return None
+
+    @staticmethod
+    def bad_in_pattern(p):
+        i = 0
+        while i < len(p):
+            c = p[i]
+            if c == "'":
+                if p[i + 1:i + 2] == "'":
+                    i += 2
+                    continue
+                j = i + 1
+                while True:
+                    if j >= len(p):
+                        return "'"
+                    if p[j] == "'":
+                        if p[j + 1:j + 2] == "'":
+                            j += 2
+                            continue
+                        break
+                    j += 1
+                i = j + 1
+            elif c in Template.LETTERS:
+                j = i
+                while j < len(p) and p[j] == c:
+                    j += 1
+                if j - i > Template.LETTERS[c]:
+                    return p[i:j]
+                i = j
+            elif c in Template.PUNCTUATION:
+                i += 1
+            else:
+                return c
+        return None
+
+
+class TitleBar:
+    KEYS = ("id", "type", "requires", "enabled", "anchor", "content", "style")
+    SLOTS = ("start", "center", "end")
+    STYLE_KEYS = ("size", "weight", "color", "align", "padding", "backdrop")
+    COLOR_TOKENS = ("light", "dark", "onWallpaper", "primary", "secondary", "onSurface", "surface")
+    HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
+    SIZES = {"small": 14, "medium": 18, "large": 24}
+    WEIGHTS = {"regular": 400, "medium": 500, "bold": 700}
+    STATIC = {"light": "#FFFFFF", "onWallpaper": "#FFFFFF", "dark": "#1B1B1F"}
+
+    @staticmethod
+    def validate(r, o, path):
+        r.keys(o, path, set(TitleBar.KEYS), [])
+        r.bool(o, "enabled", path)
+        a = r.str(o, "anchor", path)
+        if a is not None and a != "top":
+            r.err(f"{path}.anchor", 'must be "top"')
+        if "content" in o:
+            TitleBar.content(r, o["content"], f"{path}.content")
+        if "style" in o:
+            TitleBar.style(r, o["style"], f"{path}.style")
+
+    @staticmethod
+    def override(r, o, path):
+        if "content" in o:
+            TitleBar.content(r, o["content"], f"{path}.content")
+        if "style" in o:
+            TitleBar.style(r, o["style"], f"{path}.style")
+
+    @staticmethod
+    def content(r, e, path):
+        o = r.obj(e, path)
+        if o is None:
+            return
+        r.keys(o, path, {"slots"}, [], x_keys=False)
+        if "slots" not in o:
+            return
+        slots = r.obj(o["slots"], f"{path}.slots")
+        if slots is None:
+            return
+        r.keys(slots, f"{path}.slots", set(TitleBar.SLOTS), [], x_keys=False)
+        for k in TitleBar.SLOTS:
+            if k not in slots:
+                continue
+            if not _is_str(slots[k]):
+                r.err(f"{path}.slots.{k}", "must be a string")
+                continue
+            m = Template.check(slots[k], f"{path}.slots.{k}")
+            if m:
+                r.err("", m)
+
+    @staticmethod
+    def _color(r, v, path):
+        if not _is_str(v) or (v not in TitleBar.COLOR_TOKENS and not TitleBar.HEX.match(v)):
+            r.err(path, "must be #RRGGBB or one of " + ", ".join(TitleBar.COLOR_TOKENS))
+
+    @staticmethod
+    def style(r, e, path):
+        o = r.obj(e, path)
+        if o is None:
+            return
+        r.keys(o, path, set(TitleBar.STYLE_KEYS), [], x_keys=False)
+        if "size" in o:
+            v = o["size"]
+            ok = v in TitleBar.SIZES if _is_str(v) else isinstance(v, Num) and 10.0 <= float(v) <= 40.0
+            if not ok:
+                r.err(f"{path}.size", "must be small, medium or large, or a number from 10 to 40")
+        if "weight" in o:
+            v = o["weight"]
+            ok = v in TitleBar.WEIGHTS if _is_str(v) else (
+                isinstance(v, Num) and v.is_int() and 300 <= int(v) <= 800 and int(v) % 100 == 0)
+            if not ok:
+                r.err(f"{path}.weight", "must be regular, medium or bold, or 300 to 800 in steps of 100")
+        if "color" in o:
+            v = o["color"]
+            if isinstance(v, dict):
+                r.keys(v, f"{path}.color", {"light", "dark"}, [], x_keys=False)
+                if not v:
+                    r.err(f"{path}.color", "needs light or dark")
+                for k in ("light", "dark"):
+                    if k in v:
+                        TitleBar._color(r, v[k], f"{path}.color.{k}")
+            else:
+                TitleBar._color(r, v, f"{path}.color")
+        if "align" in o:
+            a = r.obj(o["align"], f"{path}.align")
+            if a is not None:
+                r.keys(a, f"{path}.align", set(TitleBar.SLOTS), [], x_keys=False)
+                for k in TitleBar.SLOTS:
+                    s = r.str(a, k, f"{path}.align")
+                    if s is not None and s not in TitleBar.SLOTS:
+                        r.err(f"{path}.align.{k}", "must be start, center or end")
+        if "padding" in o:
+            pd = r.obj(o["padding"], f"{path}.padding")
+            if pd is not None:
+                r.keys(pd, f"{path}.padding", {"horizontal", "vertical"}, [], x_keys=False)
+                r.int(pd, "horizontal", f"{path}.padding", 0, 32)
+                r.int(pd, "vertical", f"{path}.padding", 0, 24)
+        if "backdrop" in o:
+            v = o["backdrop"]
+            if isinstance(v, dict):
+                r.keys(v, f"{path}.backdrop", {"color", "opacity", "radius"}, ["color"], x_keys=False)
+                if "color" in v:
+                    TitleBar._color(r, v["color"], f"{path}.backdrop.color")
+                r.int(v, "opacity", f"{path}.backdrop", 0, 100)
+                r.int(v, "radius", f"{path}.backdrop", 0, 24)
+            elif not (_is_str(v) and v in ("auto", "none", "scrim")):
+                r.err(f"{path}.backdrop", "must be auto, none or scrim, or an object with color")
+
+    @staticmethod
+    def canonical(o):
+        def order(d, keys, inner=lambda k, v: v):
+            return {k: inner(k, d[k]) for k in keys if k in d}
+
+        def style(k, v):
+            if not isinstance(v, dict):
+                return v
+            return order(v, {"color": ("light", "dark"), "align": TitleBar.SLOTS, "padding": ("horizontal", "vertical"),
+                             "backdrop": ("color", "opacity", "radius")}.get(k, tuple(v)))
+        out = {}
+        for k in TitleBar.KEYS:
+            if k in o:
+                v = o[k]
+                if k == "content":
+                    v = order(v, ("slots",), lambda _, s: order(s, TitleBar.SLOTS))
+                elif k == "style":
+                    v = order(v, TitleBar.STYLE_KEYS, style)
+                out[k] = v
+        out.update(_x(o))
+        return out
+
+    @staticmethod
+    def _hex(s):
+        if not _is_str(s):
+            return None
+        return s if TitleBar.HEX.match(s) else TitleBar.STATIC.get(s)
+
+    @staticmethod
+    def contrast(style):
+        b = style.get("backdrop")
+        if _is_str(b):
+            if b != "scrim":
+                return None
+            bg, opacity = "#000000", 60
+        elif isinstance(b, dict):
+            bg = TitleBar._hex(b.get("color"))
+            if bg is None:
+                return None
+            op = b.get("opacity")
+            opacity = int(op) if isinstance(op, Num) and op.is_int() else 100
+        else:
+            return None
+        col = style.get("color")
+        if col is None:
+            texts = ["light"]
+        elif isinstance(col, dict):
+            texts = [col.get("light", "light"), col.get("dark", "light")]
+        else:
+            texts = [col]
+        texts = [h for h in map(TitleBar._hex, texts) if h is not None]
+        if not texts:
+            return None
+        a = opacity / 100.0
+        walls = ["#FFFFFF"] if opacity >= 100 else ["#FFFFFF", "#000000"]
+        rgb = lambda h: [float(int(h[i:i + 2], 16)) for i in (1, 3, 5)]
+
+        def lum(c):
+            l = [(v / 12.92) if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in (x / 255.0 for x in c)]
+            return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]
+        m = None
+        for w in walls:
+            back = [bb * a + wl * (1 - a) for bb, wl in zip(rgb(bg), rgb(w))]
+            for t in texts:
+                la, lb = lum(rgb(t)), lum(back)
+                r = (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+                m = r if m is None else min(m, r)
+        return m
+
+    @staticmethod
+    def warnings(o, path):
+        st = o.get("style")
+        if not isinstance(st, dict):
+            return []
+        r = TitleBar.contrast(st)
+        if r is None or r >= 4.5:
+            return []
+        t = math.floor(r * 10)
+        return [f"{path}.style.color: contrast {t // 10}.{t % 10}:1 on the backdrop (4.5:1 recommended). Shown anyway."]
+
+
 def _requires(o):
     v = o.get("requires")
     return int(v) if isinstance(v, Num) and v.is_int() else None
@@ -560,6 +850,8 @@ def warnings(tree):
                        "so it was skipped. It stays in the file. Update the app to show it.")
         elif s:
             out.append(f'elements[{i}]: type "{s[1]}" isn\'t supported by this Config Launcher, so it was skipped. It stays in the file.')
+        elif e.get("type") in ELEMENT_TYPES:
+            out.extend(TitleBar.warnings(e, f"elements[{i}]"))
     ids = {e["id"] for e in els if _is_str(e.get("id"))}
     for j, p in enumerate(tree["pages"]):
         for k in p.get("overrides") or {}:
@@ -713,7 +1005,9 @@ def canonical(tree):
             do["rules"] = [_rule(r) for r in d["rules"]]
         out["drawer"] = do
     if "elements" in tree:
-        out["elements"] = list(tree["elements"])   # verbatim, file order (#79)
+        # File order; a shown title bar in canonical key order, anything skipped verbatim (#79).
+        out["elements"] = [TitleBar.canonical(e) if skip(e) is None and e.get("type") in ELEMENT_TYPES else e
+                           for e in tree["elements"]]
     out.update(_x(tree))
     return dump(out) + "\n"
 

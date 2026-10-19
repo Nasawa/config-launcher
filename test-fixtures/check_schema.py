@@ -14,7 +14,8 @@ import json, sys, pathlib
 import jsonschema
 
 KOTLIN_ONLY = {"duplicate-ids", "overlapping-cells", "cell-outside-grid", "item-total",
-               "duplicate-keys", "parser-depth", "byte-cap", "nul-or-encoding"}
+               "duplicate-keys", "parser-depth", "byte-cap", "nul-or-encoding",
+               "template-grammar", "single-title-bar"}
 root = pathlib.Path(__file__).parent
 schema = json.load(open(root.parent / "schema/launcher-config.v1.schema.json"))
 V = jsonschema.Draft202012Validator(schema)

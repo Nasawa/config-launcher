@@ -35,6 +35,12 @@ object Validator {
         var rows = 5
         /** Page ID → occupied cells → path, so grid-placed elements are checked against items (#79 Stage 1). */
         val pageCells = mutableMapOf<String, MutableMap<Pair<Long, Long>, String>>()
+        /** Type name → path of the first shown element, for single-instance types (one titleBar). */
+        val singles = mutableMapOf<String, String>()
+        /** Element ID → type, for shown elements; overrides naming them get the type's checks. */
+        val shownIds = mutableMapOf<String, Elements.ElementType>()
+        /** Override entries (path, value) collected per page, checked once the elements are known. */
+        val overrideEntries = mutableListOf<Triple<String, String, JsonObject>>()
 
         override fun err(path: String, msg: String) { errors += if (path.isEmpty()) msg else "$path: $msg" }
 
@@ -98,6 +104,7 @@ object Validator {
             arr(o, "dock", "", max = 7)?.forEachIndexed { i, it -> item(it, "dock[$i]", Ctx.DOCK) }
             o["drawer"]?.let { drawer(it) }
             arr(o, "elements", "", max = Limits.MAX_ELEMENTS)?.forEachIndexed { i, e -> element(e, "elements[$i]") }
+            for ((id, vp, vo) in overrideEntries) shownIds[id]?.validateOverride(vo, vp, this)
             if (itemCount > Limits.MAX_ITEMS) err("", "$itemCount items in total, at most ${Limits.MAX_ITEMS} allowed")
             o["unsorted"]?.let { u ->
                 obj(u, "unsorted")?.let { uo ->
@@ -126,7 +133,10 @@ object Validator {
             int(o, "requires", path, 1)
             placement(o, path)
             if (type == null) return
-            Elements.typeOf(o)?.validate(o, path, this)
+            val t = Elements.typeOf(o) ?: return
+            if (t.single) singles[t.name]?.let { err(path, "only one ${t.name} is allowed ($it is already one).") } ?: singles.put(t.name, path)
+            t.validate(o, path, this)
+            (o["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.let { shownIds.putIfAbsent(it, t) }
         }
 
         /**
@@ -162,8 +172,9 @@ object Validator {
                 keys(vo, vp, setOf("enabled", "content", "style"), emptySet(), xKeys = false)
                 if (vo.isEmpty()) err(vp, "needs at least one of enabled, content or style")
                 bool(vo, "enabled", vp)
-                vo["content"]?.let { obj(it, "$vp.content") }
-                vo["style"]?.let { obj(it, "$vp.style") }
+                val c = vo["content"]?.let { obj(it, "$vp.content") }
+                val st = vo["style"]?.let { obj(it, "$vp.style") }
+                if (("content" !in vo || c != null) && ("style" !in vo || st != null)) overrideEntries += Triple(k, vp, vo)
             }
         }
 
