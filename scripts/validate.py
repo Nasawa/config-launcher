@@ -841,8 +841,26 @@ class TitleBar:
     @staticmethod
     def warnings(o, path):
         st = o.get("style")
-        if not isinstance(st, dict):
-            return []
+        return TitleBar.style_warnings(st, path) if isinstance(st, dict) else []
+
+    @staticmethod
+    def override_style(base, ov):
+        """#118: TitleBar.overrideStyle: the merged style when the override touches colours and doesn't hide the bar."""
+        if ov.get("enabled") is False:
+            return None
+        over = ov.get("style")
+        if not isinstance(over, dict) or ("color" not in over and "backdrop" not in over):
+            return None
+        st = base.get("style") if isinstance(base.get("style"), dict) else {}
+        return {**st, **over}
+
+    @staticmethod
+    def override_warnings(base, ov, path):
+        st = TitleBar.override_style(base, ov)
+        return TitleBar.style_warnings(st, path) if st is not None else []
+
+    @staticmethod
+    def style_warnings(st, path):
         r = TitleBar.contrast(st)
         if r is None or r >= 4.5:
             return []
@@ -882,10 +900,14 @@ def warnings(tree):
         elif e.get("type") in ELEMENT_TYPES:
             out.extend(ELEMENT_TYPES[e["type"]].warnings(e, f"elements[{i}]"))
     ids = {e["id"] for e in els if _is_str(e.get("id"))}
+    by_id = {e["id"]: e for e in els if isinstance(e, dict) and not skip(e) and _is_str(e.get("id"))}
     for j, p in enumerate(tree["pages"]):
-        for k in p.get("overrides") or {}:
+        for k, v in (p.get("overrides") or {}).items():
             if k not in ids:
                 out.append(f'pages[{j}].overrides: "{k}" doesn\'t match any element, so it was ignored.')
+            elif k in by_id and isinstance(v, dict) and by_id[k].get("type") in ELEMENT_TYPES:
+                # #118: an override that changes colours gets the same contrast check as the element itself.
+                out.extend(ELEMENT_TYPES[by_id[k]["type"]].override_warnings(by_id[k], v, f"pages[{j}].overrides.{k}"))
     return out
 
 
@@ -896,7 +918,14 @@ THEME_INFO = ('theme colours (primary, secondary, onSurface, surface) are only c
 def infos(tree):
     """#125 (Pragma): one info line when a shown title bar's contrast depends on theme colours."""
     shown = [e for e in tree.get("elements") or [] if isinstance(e, dict) and not skip(e) and e.get("type") == "titleBar"]
-    return [THEME_INFO] if any(TitleBar.uses_theme(e) for e in shown) else []
+    styles = list(shown)
+    by_id = {e.get("id"): e for e in shown}
+    for p in tree.get("pages") or []:   # #118: overrides that change colours are measured too
+        for k, v in ((p.get("overrides") or {}) if isinstance(p, dict) else {}).items():
+            st = TitleBar.override_style(by_id[k], v) if k in by_id and isinstance(v, dict) else None
+            if st is not None:
+                styles.append({"style": st})
+    return [THEME_INFO] if any(TitleBar.uses_theme(e) for e in styles) else []
 
 
 def validate(raw, use_schema=True):

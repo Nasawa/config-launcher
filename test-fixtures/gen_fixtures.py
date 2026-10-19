@@ -174,6 +174,8 @@ add(V,'titlebar-custom.json',m(lambda c:(els({'x-note':'mine','style':{'backdrop
     'valid: full style block, patterns, literal braces and an override; keys are written back in canonical order','both','title-bar.md §4','#79')
 add(V,'titlebar-shorthands.json',m(els(_tb(content={'slots':{'start':'pageTitle','center':'clock','end':'date'}}))),'valid: pageTitle/clock/date shorthands','both','title-bar.md §3','#79')
 add(V,'titlebar-low-contrast.json',m(els(_tb(style={'color':'dark','backdrop':'scrim'}))),'valid with a contrast warning (dark text on the scrim)','both','ux.md §15.1','#79')
+add(V,'override-low-contrast.json',m(lambda c:(els(_tb(style={'color':'light','backdrop':'scrim'}))(c),
+    c['pages'][0].__setitem__('overrides',{'t-main':{'style':{'color':'dark'}}}))),'valid with a contrast warning: a page override darkens the text on the scrim','both','#118','#79')
 add(V,'titlebar-requires-3.json',m(els(_tb(requires=3, future={'a':1}))),'valid with a warning: requires above the feature level skips the bar (kept verbatim, unknown keys allowed)','both','title-bar.md §6','#79')
 add(I,'token-unknown.json',m(els(_slot('{wether}'))),'invalid, B2: unknown token','kotlin','ux.md §15.1','#79')
 add(I,'token-letter.json',m(els(_slot('{time:HH:mm:ss}'))),'invalid, B2: seconds are not allowed','kotlin','ux.md §15.1','#79')

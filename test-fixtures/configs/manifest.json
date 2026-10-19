@@ -737,6 +737,13 @@
     "note": "#79"
   },
   {
+    "file": "valid/override-low-contrast.json",
+    "expect": "valid with a contrast warning: a page override darkens the text on the scrim",
+    "layer": "both",
+    "ref": "#118",
+    "note": "#79"
+  },
+  {
     "file": "valid/titlebar-requires-3.json",
     "expect": "valid with a warning: requires above the feature level skips the bar (kept verbatim, unknown keys allowed)",
     "layer": "both",
