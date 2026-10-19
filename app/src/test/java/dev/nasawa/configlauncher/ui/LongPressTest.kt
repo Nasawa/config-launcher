@@ -40,6 +40,15 @@ class ItemSheetModelTest {
         assertEquals("Maps", m.realName)
         assertEquals("com.google.android.apps.maps", m.packageName)
         assertEquals(listOf(ItemAction.EDIT_LAYOUT, ItemAction.APP_INFO, ItemAction.REMOVE), m.actions)
+        assertTrue("label differs from the real name: always shown", m.showRealName)
+    }
+
+    @Test fun realNameShownOnceWhenLabelIsTheSame() {   // #103
+        assertFalse(ItemSheetModel.of(ResolvedItem(AppItem("a", maps.packageName), maps)).showRealName)
+        assertFalse(ItemSheetModel.of(ResolvedItem(AppItem("a", maps.packageName, label = "Maps"), maps)).showRealName)
+        // Any difference, even case or a hidden character stripped at render, is compared after cleaning.
+        assertTrue(ItemSheetModel.of(ResolvedItem(AppItem("a", maps.packageName, label = "maps"), maps)).showRealName)
+        assertFalse(ItemSheetModel.of(ResolvedItem(AppItem("a", maps.packageName, label = "Ma\u200Bps"), maps)).showRealName)
     }
 
     @Test fun notInstalledHasNoAppInfo() {
