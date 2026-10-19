@@ -200,6 +200,17 @@ There is **no `.history/` folder**. The launcher keeps the last 10 versions priv
 previous layout*), and that history isn't synced. For history on the computer side, use git or your sync tool's
 versioning.
 
+### Canonical details agents ask about (#76)
+- **Order of `pages[].items[]`:** order doesn't change what's shown (`x`/`y` decide). The canonical order is row-major, by `y` then `x`, which is what the phone writes after any edit on that page. Write it that way to avoid diffs.
+- **Key order in drawer rules:** canonical is `id`, `group`, `match` (the order of `properties` in the schema, not of `required`). Inside `match`: `packages`, `packagePrefix`, `tag`, `category`.
+- **Untouched blocks and defaults:** omit blocks you don't use (`drawer`, `grid`, `revision` are all optional) and don't write default values you didn't set. The phone keeps whatever you wrote and adds a block only when an edit needs it (for example *Hide* creates `drawer.hidden`).
+- **ID prefixes:** convention `a-` apps, `s-` shortcuts, `f-` folders, `r-` drawer rules, and readable page IDs like `home`. Any ID matching the pattern is valid; the convention just keeps files readable.
+
+### Agent kit
+- [`templates/config-folder/AGENTS.md`](templates/config-folder/AGENTS.md): copy this into your config folder. Agent tools (Claude Code, Codex, Cursor and others) read `AGENTS.md` automatically.
+- [`skills/config-launcher/SKILL.md`](skills/config-launcher/SKILL.md): a reusable skill with the same procedure, for harnesses that support skills.
+- [`AGENTS.md`](AGENTS.md) at this repo's root is for contributors to the app, not for layout editing.
+
 ### Dos and don'ts
 **Do**
 - Validate with `scripts/validate.py` before saving.
