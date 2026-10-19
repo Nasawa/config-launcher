@@ -709,6 +709,149 @@
     "kotlinOnly": "duplicate-ids"
   },
   {
+    "file": "valid/titlebar-preset.json",
+    "expect": "valid: the default preset the phone writes",
+    "layer": "both",
+    "ref": "ux.md §15",
+    "note": "#79"
+  },
+  {
+    "file": "valid/titlebar-custom.json",
+    "expect": "valid: full style block, patterns, literal braces and an override; keys are written back in canonical order",
+    "layer": "both",
+    "ref": "title-bar.md §4",
+    "note": "#79"
+  },
+  {
+    "file": "valid/titlebar-shorthands.json",
+    "expect": "valid: pageTitle/clock/date shorthands",
+    "layer": "both",
+    "ref": "title-bar.md §3",
+    "note": "#79"
+  },
+  {
+    "file": "valid/titlebar-low-contrast.json",
+    "expect": "valid with a contrast warning (dark text on the scrim)",
+    "layer": "both",
+    "ref": "ux.md §15.1",
+    "note": "#79"
+  },
+  {
+    "file": "valid/titlebar-requires-3.json",
+    "expect": "valid with a warning: requires above the feature level skips the bar (kept verbatim, unknown keys allowed)",
+    "layer": "both",
+    "ref": "title-bar.md §6",
+    "note": "#79"
+  },
+  {
+    "file": "invalid/token-unknown.json",
+    "expect": "invalid, B2: unknown token",
+    "layer": "kotlin-only",
+    "ref": "ux.md §15.1",
+    "note": "#79",
+    "kotlinOnly": "template-grammar"
+  },
+  {
+    "file": "invalid/token-letter.json",
+    "expect": "invalid, B2: seconds are not allowed",
+    "layer": "kotlin-only",
+    "ref": "ux.md §15.1",
+    "note": "#79",
+    "kotlinOnly": "template-grammar"
+  },
+  {
+    "file": "invalid/token-run.json",
+    "expect": "invalid, B2: too many pattern letters in a row",
+    "layer": "kotlin-only",
+    "ref": "title-bar.md §5",
+    "note": "#79",
+    "kotlinOnly": "template-grammar"
+  },
+  {
+    "file": "invalid/token-unclosed.json",
+    "expect": "invalid, B2: unclosed brace",
+    "layer": "kotlin-only",
+    "ref": "ux.md §15.1",
+    "note": "#79",
+    "kotlinOnly": "template-grammar"
+  },
+  {
+    "file": "invalid/token-stray.json",
+    "expect": "invalid, B2: stray closing brace",
+    "layer": "kotlin-only",
+    "ref": "ux.md §15.1",
+    "note": "#79",
+    "kotlinOnly": "template-grammar"
+  },
+  {
+    "file": "invalid/token-pattern-long.json",
+    "expect": "invalid, B2: pattern over 32 characters",
+    "layer": "kotlin-only",
+    "ref": "ux.md §15.1",
+    "note": "#79",
+    "kotlinOnly": "template-grammar"
+  },
+  {
+    "file": "invalid/token-pattern-on-page.json",
+    "expect": "invalid, B2: only time and date take a pattern",
+    "layer": "kotlin-only",
+    "ref": "title-bar.md §5",
+    "note": "#79",
+    "kotlinOnly": "template-grammar"
+  },
+  {
+    "file": "invalid/tokens-many.json",
+    "expect": "invalid, B2: more than 8 tokens",
+    "layer": "kotlin-only",
+    "ref": "ux.md §15.1",
+    "note": "#79",
+    "kotlinOnly": "template-grammar"
+  },
+  {
+    "file": "invalid/template-long.json",
+    "expect": "invalid, B2: template over 120 characters",
+    "layer": "both",
+    "ref": "ux.md §15.1",
+    "note": "#79"
+  },
+  {
+    "file": "invalid/titlebar-twice.json",
+    "expect": "invalid, B2: one titleBar per file",
+    "layer": "kotlin-only",
+    "ref": "ux.md §15.1",
+    "note": "#79",
+    "kotlinOnly": "single-title-bar"
+  },
+  {
+    "file": "invalid/titlebar-unknown-key.json",
+    "expect": "invalid, B2: unknown keys inside a known type are errors",
+    "layer": "both",
+    "ref": "title-bar.md §6",
+    "note": "#79"
+  },
+  {
+    "file": "invalid/titlebar-bad-style.json",
+    "expect": "invalid, B2: style out of bounds",
+    "layer": "both",
+    "ref": "title-bar.md §7",
+    "note": "#79"
+  },
+  {
+    "file": "invalid/titlebar-anchor-bottom.json",
+    "expect": "invalid, B2: the only anchor is top",
+    "layer": "both",
+    "ref": "title-bar.md §4",
+    "note": "#79"
+  },
+  {
+    "file": "invalid/override-bad-template.json",
+    "expect": "invalid, B2: overrides of a title bar follow its rules",
+    "layer": "kotlin-only",
+    "ref": "title-bar.md §4",
+    "note": "#79",
+    "kotlinOnly": "template-grammar"
+  },
+  {
     "file": "invalid/number-too-large.json",
     "expect": "B2: x-n[0] is outside the double range; the phone could not write it back",
     "layer": "kotlin-only",

@@ -85,7 +85,7 @@
   "elements": [
     {
       "id": "t-main",
-      "type": "titleBar",
+      "type": "banner",
       "anchor": "top",
       "content": {
         "slots": {

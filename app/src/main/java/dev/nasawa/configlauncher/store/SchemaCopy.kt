@@ -20,6 +20,7 @@ object SchemaCopy {
     val SHIPPED_SHA256 = setOf(
         "8ed3e407309d41e58c9529c2e0b6bce70f9e35deaedd11f7835c990651eb0ab8",   // first shipped with #88
         "40a72b35f54f47c11e7ff6ae57466257ab2093b28f229e72578249581f3969eb",   // #79 elements container
+        "f5f2eb264a2d77fed49f2102482272674df7733ce31874d6d83c5656a274fc79",   // #79 title bar (level 2)
     )
 
     enum class Outcome { WROTE, UPDATED, UP_TO_DATE, USER_CHANGED, FAILED }

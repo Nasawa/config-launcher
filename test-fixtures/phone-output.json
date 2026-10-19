@@ -247,6 +247,11 @@
       "pages[0].items[1]: overlaps pages[0].items[0] at cell (0, 0)"
     ]
   },
+  "invalid/override-bad-template.json": {
+    "errors": [
+      "pages[0].overrides.t-main.content.slots.end: unknown token {wether}. Use page, pageNumber, pageCount, time or date."
+    ]
+  },
   "invalid/override-unknown-key.json": {
     "errors": [
       "pages[0].overrides.t-main: unknown key \"hidden\""
@@ -347,9 +352,77 @@
       "pages[0].items[0].tags: has 17 entries, at most 16 allowed"
     ]
   },
+  "invalid/template-long.json": {
+    "errors": [
+      "elements[0].content.slots.center is 130 characters; the maximum is 120."
+    ]
+  },
   "invalid/text-type.json": {
     "errors": [
       "pages[0].items[3].type: unknown type \"text\" (app, shortcut or folder)"
+    ]
+  },
+  "invalid/titlebar-anchor-bottom.json": {
+    "errors": [
+      "elements[0].anchor must be \"top\"."
+    ]
+  },
+  "invalid/titlebar-bad-style.json": {
+    "errors": [
+      "elements[0].style.size must be small, medium or large, or a number from 10 to 40.",
+      "elements[0].style.weight must be regular, medium or bold, or 300 to 800 in steps of 100.",
+      "elements[0].style.color must be #RRGGBB or one of light, dark, onWallpaper, primary, secondary, onSurface, surface.",
+      "elements[0].style.backdrop: missing required \"color\""
+    ]
+  },
+  "invalid/titlebar-twice.json": {
+    "errors": [
+      "elements[1]: only one titleBar is allowed (elements[0] is already one)."
+    ]
+  },
+  "invalid/titlebar-unknown-key.json": {
+    "errors": [
+      "elements[0]: unknown key \"colour\""
+    ]
+  },
+  "invalid/token-letter.json": {
+    "errors": [
+      "elements[0].content.slots.end: \"s\" isn't allowed in {time:HH:mm:ss}. Use y M d E a H h k K m; seconds and time zones aren't supported."
+    ]
+  },
+  "invalid/token-pattern-long.json": {
+    "errors": [
+      "elements[0].content.slots.start: the pattern in {date:…} is 40 characters; the maximum is 32."
+    ]
+  },
+  "invalid/token-pattern-on-page.json": {
+    "errors": [
+      "elements[0].content.slots.end: {page:x} doesn't take a pattern. Only {time} and {date} do."
+    ]
+  },
+  "invalid/token-run.json": {
+    "errors": [
+      "elements[0].content.slots.end: MMMMMM is too long. Use at most 4 letters, like MMMM."
+    ]
+  },
+  "invalid/token-stray.json": {
+    "errors": [
+      "elements[0].content.slots.start: the \"}\" at character 3 has no opening \"{\". For a literal brace, write }}."
+    ]
+  },
+  "invalid/token-unclosed.json": {
+    "errors": [
+      "elements[0].content.slots.start: the \"{\" at character 5 isn't closed. For a literal brace, write {{."
+    ]
+  },
+  "invalid/token-unknown.json": {
+    "errors": [
+      "elements[0].content.slots.end: unknown token {wether}. Use page, pageNumber, pageCount, time or date."
+    ]
+  },
+  "invalid/tokens-many.json": {
+    "errors": [
+      "elements[0].content.slots.center has 9 tokens; the maximum is 8."
     ]
   },
   "invalid/trailing-garbage.json": {
@@ -411,11 +484,11 @@
     "canonicalSha256": "44d8f9807adf1cea56c04b3ff8f311e9e6fd6f385007f40558ad1603f753f07e"
   },
   "valid/elements-skipped.json": {
-    "canonicalSha256": "f1835581eeb673d26d4f58f06b64bded3d58a0c5e82f42c6db0ffd6db52ee492",
+    "canonicalSha256": "8d212e8bcced811a474fc37b3336a6c419b9848b9c0fa4c807e2fd5894f2fac3",
     "warnings": [
-      "elements[0]: type \"titleBar\" isn't supported by this Config Launcher, so it was skipped. It stays in the file.",
+      "elements[0]: type \"banner\" isn't supported by this Config Launcher, so it was skipped. It stays in the file.",
       "elements[1]: type \"appWidget\" isn't supported by this Config Launcher, so it was skipped. It stays in the file.",
-      "elements[2] needs feature level 9, but this Config Launcher supports up to 1, so it was skipped. It stays in the file. Update the app to show it.",
+      "elements[2] needs feature level 9, but this Config Launcher supports up to 2, so it was skipped. It stays in the file. Update the app to show it.",
       "pages[0].overrides: \"t-gone\" doesn't match any element, so it was ignored."
     ]
   },
@@ -448,6 +521,30 @@
   },
   "valid/size-just-under-2mib.json": {
     "canonicalSha256": "c5b8839e421350cf879d3940a427cfff09f8e1f7bbccd1513bcfa51b97eaed5c"
+  },
+  "valid/titlebar-custom.json": {
+    "canonicalSha256": "4240790f82ea2b1a5cd28a48587a32c5eefd794bc88eaa0c802bfa328c39dacc",
+    "warnings": [
+      "elements[0].style.color: contrast 1.2:1 on the backdrop (4.5:1 recommended). Shown anyway."
+    ]
+  },
+  "valid/titlebar-low-contrast.json": {
+    "canonicalSha256": "a717ee25289c5ba9850af6aa4fd4a4c63148d78f804945c78ac1d8dfeeb4ee93",
+    "warnings": [
+      "elements[0].style.color: contrast 1.2:1 on the backdrop (4.5:1 recommended). Shown anyway."
+    ]
+  },
+  "valid/titlebar-preset.json": {
+    "canonicalSha256": "07eca8cf0c0448a111655e7df997974a1ff0b4b2875f4d586f9fd264ae579af8"
+  },
+  "valid/titlebar-requires-3.json": {
+    "canonicalSha256": "523ef129f3c923173d7988c22495bf2ae1b8d2790285093e69d616310319601a",
+    "warnings": [
+      "elements[0] needs feature level 3, but this Config Launcher supports up to 2, so it was skipped. It stays in the file. Update the app to show it."
+    ]
+  },
+  "valid/titlebar-shorthands.json": {
+    "canonicalSha256": "1d735277cfa73e93c9bbf43ad2228ed0c05c49d381ddf4ac5679d557a9db8bc5"
   },
   "valid/unknown-package.json": {
     "canonicalSha256": "e55f86b5f43262fb41818b66cd17375554172aa589d33d039730dc7183830c59"

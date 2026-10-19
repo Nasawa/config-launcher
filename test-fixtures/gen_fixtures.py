@@ -149,7 +149,7 @@ SIZES = {'size-257k': _size('size-257k.json'), 'just-under': _size('size-just-un
 # #79 elements container (feature level 1) + Stage 1 cell reservation (docs/research/widgets.md §5.1)
 def els(*e): return lambda c: c.__setitem__('elements', list(e))
 _w = {'id':'w-weather','type':'appWidget','page':'home','x':0,'y':1,'w':2,'h':1,'provider':'com.example.weather/.Widget'}
-add(V,'elements-skipped.json',m(lambda c:(els({'id':'t-main','type':'titleBar','anchor':'top','content':{'slots':{'center':'{page}'}}}, _w,
+add(V,'elements-skipped.json',m(lambda c:(els({'id':'t-main','type':'banner','anchor':'top','content':{'slots':{'center':'{page}'}}}, _w,
     {'id':'w-new','type':'clock','requires':9,'page':'home','x':3,'y':0,'w':1,'h':1,'future':True})(c),
     c['pages'][0].__setitem__('overrides',{'t-main':{'enabled':False},'t-gone':{'content':{}}}))),
     'valid with 4 warnings: unknown types and requires above the feature level are skipped and kept verbatim; an override for a missing element is ignored','both','title-bar.md §6, widgets.md §5.1','#79')
@@ -162,8 +162,36 @@ add(I,'element-missing-type.json',m(els({'id':'w-x','anchor':'top'})),'invalid, 
 add(I,'override-unknown-key.json',m(lambda c:c['pages'][0].__setitem__('overrides',{'t-main':{'hidden':True}})),'invalid, B2: overrides take enabled, content or style','both','title-bar.md §4','#79')
 add(I,'element-duplicate-id.json',m(els(dict(_w, id='a-settings'))),'invalid, B2: element IDs are unique with item IDs','kotlin','title-bar.md §8','#79')
 
+# #79 part 2: title bar (feature level 2; title-bar.md §4-§8, ux.md §15.1)
+_tb = lambda **kw: dict({'id':'t-main','type':'titleBar','anchor':'top','content':{'slots':{'center':'{page}'}}}, **kw)
+_slot = lambda t, slot='end': _tb(content={'slots':{'center':'{page}', slot:t}})
+add(V,'titlebar-preset.json',m(els(_tb())),'valid: the default preset the phone writes','both','ux.md §15','#79')
+add(V,'titlebar-custom.json',m(lambda c:(els({'x-note':'mine','style':{'backdrop':{'radius':12,'opacity':35,'color':'#000000'},'padding':{'vertical':6,'horizontal':16},
+    'align':{'end':'end','start':'start'},'color':{'dark':'#F1F0F4','light':'#1B1B1F'},'weight':600,'size':20},
+    'content':{'slots':{'end':'{time:HH:mm}','center':'{page} ({pageNumber}/{pageCount})','start':"{date:EEE d MMM} {{x}} {time:h 'h' mm}"}},
+    'anchor':'top','enabled':True,'type':'titleBar','id':'t-main'})(c),
+    c['pages'][0].__setitem__('overrides',{'t-main':{'content':{'slots':{'end':''}},'style':{'size':'large'}}}))),
+    'valid: full style block, patterns, literal braces and an override; keys are written back in canonical order','both','title-bar.md §4','#79')
+add(V,'titlebar-shorthands.json',m(els(_tb(content={'slots':{'start':'pageTitle','center':'clock','end':'date'}}))),'valid: pageTitle/clock/date shorthands','both','title-bar.md §3','#79')
+add(V,'titlebar-low-contrast.json',m(els(_tb(style={'color':'dark','backdrop':'scrim'}))),'valid with a contrast warning (dark text on the scrim)','both','ux.md §15.1','#79')
+add(V,'titlebar-requires-3.json',m(els(_tb(requires=3, future={'a':1}))),'valid with a warning: requires above the feature level skips the bar (kept verbatim, unknown keys allowed)','both','title-bar.md §6','#79')
+add(I,'token-unknown.json',m(els(_slot('{wether}'))),'invalid, B2: unknown token','kotlin','ux.md §15.1','#79')
+add(I,'token-letter.json',m(els(_slot('{time:HH:mm:ss}'))),'invalid, B2: seconds are not allowed','kotlin','ux.md §15.1','#79')
+add(I,'token-run.json',m(els(_slot('{date:MMMMMM}'))),'invalid, B2: too many pattern letters in a row','kotlin','title-bar.md §5','#79')
+add(I,'token-unclosed.json',m(els(_slot('Day {date','start'))),'invalid, B2: unclosed brace','kotlin','ux.md §15.1','#79')
+add(I,'token-stray.json',m(els(_slot('a } b','start'))),'invalid, B2: stray closing brace','kotlin','ux.md §15.1','#79')
+add(I,'token-pattern-long.json',m(els(_slot('{date:'+'d '*20+'}','start'))),'invalid, B2: pattern over 32 characters','kotlin','ux.md §15.1','#79')
+add(I,'token-pattern-on-page.json',m(els(_slot('{page:x}'))),'invalid, B2: only time and date take a pattern','kotlin','title-bar.md §5','#79')
+add(I,'tokens-many.json',m(els(_slot('{page}'*9,'center'))),'invalid, B2: more than 8 tokens','kotlin','ux.md §15.1','#79')
+add(I,'template-long.json',m(els(_slot('x'*130,'center'))),'invalid, B2: template over 120 characters','both','ux.md §15.1','#79')
+add(I,'titlebar-twice.json',m(els(_tb(), _tb(id='t-two'))),'invalid, B2: one titleBar per file','kotlin','ux.md §15.1','#79')
+add(I,'titlebar-unknown-key.json',m(els(_tb(colour='red'))),'invalid, B2: unknown keys inside a known type are errors','both','title-bar.md §6','#79')
+add(I,'titlebar-bad-style.json',m(els(_tb(style={'size':50,'weight':450,'color':'red','backdrop':{'opacity':50}}))),'invalid, B2: style out of bounds','both','title-bar.md §7','#79')
+add(I,'titlebar-anchor-bottom.json',m(els(_tb(anchor='bottom'))),'invalid, B2: the only anchor is top','both','title-bar.md §4','#79')
+add(I,'override-bad-template.json',m(lambda c:(els(_tb())(c), c['pages'][0].__setitem__('overrides',{'t-main':{'content':{'slots':{'end':'{wether}'}}}}))),'invalid, B2: overrides of a title bar follow its rules','kotlin','title-bar.md §4','#79')
+
 add(I,'number-too-large.json',raw_nums(copy.deepcopy(B),'x-n',['1e309']),'B2: x-n[0] is outside the double range; the phone could not write it back','kotlin','#113','')
-RULES={'number-too-large.json':'number-range','duplicate-id.json':'duplicate-ids','overlapping-cells.json':'overlapping-cells','cell-outside-grid.json':'cell-outside-grid','2016-items.json':'item-total','duplicate-key.json':'duplicate-keys','depth-9.json':'parser-depth','deep-nesting.json':'parser-depth','size-just-over-2mib.json':'byte-cap','nul-in-label.json':'nul-or-encoding','invalid-utf8.json':'nul-or-encoding','lone-surrogate.json':'nul-or-encoding','utf16.json':'nul-or-encoding','element-overlaps-item.json':'overlapping-cells','element-overlaps-element.json':'overlapping-cells','element-outside-grid.json':'cell-outside-grid','element-duplicate-id.json':'duplicate-ids'}
+RULES={'number-too-large.json':'number-range','token-unknown.json':'template-grammar','token-letter.json':'template-grammar','token-run.json':'template-grammar','token-unclosed.json':'template-grammar','token-stray.json':'template-grammar','token-pattern-long.json':'template-grammar','token-pattern-on-page.json':'template-grammar','tokens-many.json':'template-grammar','override-bad-template.json':'template-grammar','titlebar-twice.json':'single-title-bar','duplicate-id.json':'duplicate-ids','overlapping-cells.json':'overlapping-cells','cell-outside-grid.json':'cell-outside-grid','2016-items.json':'item-total','duplicate-key.json':'duplicate-keys','depth-9.json':'parser-depth','deep-nesting.json':'parser-depth','size-just-over-2mib.json':'byte-cap','nul-in-label.json':'nul-or-encoding','invalid-utf8.json':'nul-or-encoding','lone-surrogate.json':'nul-or-encoding','utf16.json':'nul-or-encoding','element-overlaps-item.json':'overlapping-cells','element-overlaps-element.json':'overlapping-cells','element-outside-grid.json':'cell-outside-grid','element-duplicate-id.json':'duplicate-ids'}
 for e in man:
     r=RULES.get(e['file'].split('/')[1])
     if r: e['kotlinOnly']=r; e['layer']='kotlin-only'
