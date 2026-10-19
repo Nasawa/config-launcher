@@ -108,13 +108,18 @@ class TitleBarTest {
         val dim = mapOf("primary" to "#202020", "surface" to "#FFFFFF", "onSurface" to "#1B1B1F", "secondary" to "#FFFFFF")
         val c = ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":{"light":"primary","dark":"#FFFFFF"},"backdrop":"scrim"}}"""))
         assertTrue(Elements.warnings(c).isEmpty())   // nothing the script could measure is low
-        assertEquals(listOf("elements[0].style.color: contrast 1.2:1 on the backdrop with this phone's theme colours (4.5:1 recommended). Shown anyway. Checked on this phone."),
+        assertEquals(listOf("elements[0].style.color.light: contrast 1.2:1 on the backdrop (4.5:1 recommended), checked on this phone in light theme. Shown anyway."),
             Elements.phoneWarnings(c, dark = false) { dim[it] })
         assertTrue(Elements.phoneWarnings(c, dark = true) { dim[it] }.isEmpty())   // the dark variant is a hex: the static check covers it
         assertTrue(Elements.phoneWarnings(c, dark = false) { "#FFFFFF" }.isEmpty())  // a light primary passes
         // A theme-coloured custom backdrop, opaque: one wallpaper.
         val b = buildJsonObject { put("color", "onSurface"); putJsonObject("backdrop") { put("color", "surface") } }
-        assertEquals(17.17, TitleBar.phoneContrast(b, false) { dim[it] }!!, 0.01)
+        assertEquals(17.17, TitleBar.phoneContrast(b, false) { dim[it] }!!.ratio, 0.01)
+        assertEquals("color", TitleBar.phoneContrast(b, false) { dim[it] }!!.key)
+        // The path names the key holding the token: a theme backdrop under hex text → style.backdrop.color; dark theme says so.
+        val bd = ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"#000000","backdrop":{"color":"secondary","opacity":100}}}"""))
+        assertEquals(listOf("elements[0].style.backdrop.color: contrast 1.0:1 on the backdrop (4.5:1 recommended), checked on this phone in dark theme. Shown anyway."),
+            Elements.phoneWarnings(bd, dark = true) { mapOf("secondary" to "#000000")[it] })
         // No theme token, `auto`/`none`, or an unknown colour: nothing for the phone to add.
         assertNull(TitleBar.phoneContrast(buildJsonObject { put("backdrop", "scrim") }, false) { dim[it] })
         assertNull(TitleBar.phoneContrast(buildJsonObject { put("color", "primary"); put("backdrop", "auto") }, false) { dim[it] })

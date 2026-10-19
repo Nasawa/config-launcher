@@ -889,8 +889,8 @@ def warnings(tree):
     return out
 
 
-THEME_INFO = ("theme colours (primary, secondary, onSurface, surface) are only checked on the phone; "
-              "its status.json warnings show any marked \"Checked on this phone\".")
+THEME_INFO = ('theme colours (primary, secondary, onSurface, surface) are only checked on the phone; '
+              'see "checked on this phone" in .configlauncher/status.json.')
 
 
 def infos(tree):

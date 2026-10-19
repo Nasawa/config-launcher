@@ -148,34 +148,39 @@ object TitleBar : Elements.ElementType {
     /** The system-theme colour tokens: known only on the phone (#125). */
     val THEME = setOf("primary", "secondary", "onSurface", "surface")
 
+    /** #125: a phone-only measurement: the ratio and the key holding the theme token (`color`, `color.dark`, `backdrop.color`). */
+    data class PhoneContrast(val ratio: Double, val key: String)
+
     /**
-     * #125 (Pragma): contrast with the theme colours this phone uses right now, for a bar whose text colour (in the
-     * current light or dark variant) or custom backdrop colour is a theme token. [theme] maps a token to `#RRGGBB`.
-     * Same worst-case-wallpaper rule as [contrast]. Null when no theme token is involved or nothing is measurable.
+     * #125 (Pragma, ux.md §15): contrast with the theme colours this phone shows right now, for a bar whose text colour
+     * (in the current light or dark variant) or custom backdrop colour is a theme token. [theme] maps a token to
+     * `#RRGGBB`. Same worst-case-wallpaper rule as [contrast]. Null when no theme token is involved or nothing is
+     * measurable. The key names the text colour's key when that's a token, else `backdrop.color`.
      */
-    fun phoneContrast(style: JsonObject, dark: Boolean, theme: (String) -> String?): Double? {
-        val text = when (val col = style["color"]) {
-            null -> "light"
-            is JsonObject -> (col[if (dark) "dark" else "light"] as? JsonPrimitive)?.content ?: "light"
-            else -> (col as JsonPrimitive).content
+    fun phoneContrast(style: JsonObject, dark: Boolean, theme: (String) -> String?): PhoneContrast? {
+        val variant = if (dark) "dark" else "light"
+        val (text, textKey) = when (val col = style["color"]) {
+            null -> "light" to "color"
+            is JsonObject -> ((col[variant] as? JsonPrimitive)?.content ?: "light") to "color.$variant"
+            else -> (col as JsonPrimitive).content to "color"
         }
         val (bg, opacity) = when (val b = style["backdrop"]) {
             is JsonPrimitive -> if (b.isString && b.content == "scrim") "#000000" to 60L else return null
             is JsonObject -> ((b["color"] as? JsonPrimitive)?.content ?: "#000000") to ((b["opacity"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 100L)
             else -> return null
         }
-        if (text !in THEME && bg !in THEME) return null
+        val key = when { text in THEME -> textKey; bg in THEME -> "backdrop.color"; else -> return null }
         val resolve = { t: String -> hex(t) ?: if (t in THEME) theme(t)?.takeIf { HEX.matches(it) } else null }
-        return worst(resolve(bg) ?: return null, opacity, listOf(resolve(text) ?: return null))
+        return PhoneContrast(worst(resolve(bg) ?: return null, opacity, listOf(resolve(text) ?: return null)), key)
     }
 
-    /** #125: the phone-only warning for [phoneContrast], marked as checked on this phone. */
+    /** #125: the phone-only warning for [phoneContrast]; `checked on this phone` is the marker (no separate key). */
     fun phoneWarnings(o: JsonObject, path: String, dark: Boolean, theme: (String) -> String?): List<String> {
         val style = o["style"] as? JsonObject ?: return emptyList()
-        val ratio = phoneContrast(style, dark, theme) ?: return emptyList()
-        if (ratio >= MIN_CONTRAST) return emptyList()
-        val tenths = floor(ratio * 10).toLong()
-        return listOf("$path.style.color: contrast ${tenths / 10}.${tenths % 10}:1 on the backdrop with this phone's theme colours (4.5:1 recommended). Shown anyway. Checked on this phone.")
+        val m = phoneContrast(style, dark, theme) ?: return emptyList()
+        if (m.ratio >= MIN_CONTRAST) return emptyList()
+        val tenths = floor(m.ratio * 10).toLong()
+        return listOf("$path.style.${m.key}: contrast ${tenths / 10}.${tenths % 10}:1 on the backdrop (4.5:1 recommended), checked on this phone in ${if (dark) "dark" else "light"} theme. Shown anyway.")
     }
 
     private fun hex(s: String?): String? = when {

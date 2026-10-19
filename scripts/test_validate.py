@@ -112,7 +112,8 @@ class ThemeInfo(unittest.TestCase):
                 {"id": "t-main", "type": "titleBar", "style": {"color": "primary", "backdrop": "scrim"}}]}))
             out = subprocess.run([sys.executable, str(HERE / "validate.py"), "--no-schema", str(f)], capture_output=True, text=True).stdout
         self.assertEqual(1, out.count("info: "), out)
-        self.assertIn("only checked on the phone", out)
+        self.assertIn('info: theme colours (primary, secondary, onSurface, surface) are only checked on the phone; '
+                      'see "checked on this phone" in .configlauncher/status.json.', out)
 
 
 class Format(unittest.TestCase):

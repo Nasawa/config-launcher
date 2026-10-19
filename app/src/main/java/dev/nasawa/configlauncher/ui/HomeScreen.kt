@@ -57,8 +57,17 @@ import dev.nasawa.configlauncher.store.AgentDocs
 @Composable
 fun HomeScreen(vm: HomeViewModel) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    // #79: load warnings for the file that's showing (none while a problem banner is up: that's the last-good layout).
-    val warnings = remember(ui.load.config, ui.load.issue) { if (ui.load.issue == null) dev.nasawa.configlauncher.config.Elements.warnings(ui.load.config) else emptyList() }
+    // #125: theme-colour contrast is measured with this phone's theme, at load and whenever the theme or the
+    // wallpaper (dynamic) colours change; the engine adds the warnings to status.json.
+    val themeDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val themeHex = TitleBarLayout.themeHex(MaterialTheme.colorScheme)
+    LaunchedEffect(themeDark, themeHex) { vm.store.engine.setPhoneTheme(themeDark, themeHex) }
+    // #79: load warnings for the file that's showing (none while a problem banner is up: that's the last-good layout),
+    // then the phone-only theme-colour ones (#125), the same lines as status.json.
+    val warnings = remember(ui.load.config, ui.load.issue, themeDark, themeHex) {
+        if (ui.load.issue != null) emptyList()
+        else dev.nasawa.configlauncher.config.Elements.let { it.warnings(ui.load.config) + it.phoneWarnings(ui.load.config, themeDark) { t -> themeHex[t] } }
+    }
     val ctx = LocalContext.current
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }
@@ -147,11 +156,6 @@ fun HomeScreen(vm: HomeViewModel) {
     // §1.4: the part of the system-gesture inset not already covered by systemBarsPadding.
     val density = androidx.compose.ui.platform.LocalDensity.current
     val gestureBottomPx = (WindowInsets.systemGestures.getBottom(density) - WindowInsets.navigationBars.getBottom(density)).coerceAtLeast(0).toFloat()
-    // #125: theme-colour contrast is measured with this phone's theme, at load and whenever the theme or the
-    // wallpaper (dynamic) colours change; the engine adds the warnings to status.json.
-    val themeDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val themeHex = TitleBarLayout.themeHex(MaterialTheme.colorScheme)
-    LaunchedEffect(themeDark, themeHex) { vm.store.engine.setPhoneTheme(themeDark, themeHex) }
     LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it.resolve(res), Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
     val toast = { msg: String -> Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
     LaunchedEffect(menuOpen) { if (menuOpen) agentAction = withContext(Dispatchers.IO) { vm.store.agentDocsMenuAction() } }
