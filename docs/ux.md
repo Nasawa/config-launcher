@@ -98,9 +98,65 @@ Gestures and taps (home):
 | Tap dimmed item | Nothing launches. A hint sheet says why: `Not installed`, `Shortcut no longer available`, `Work apps are paused`, `Turn on "Include work apps in config" to use this.` (tap → system unpause prompt) or `Set as Home to use shortcuts`, with **`Remove from layout`** (one write). `Open store page` comes later |
 | Long-press app, shortcut or folder | Item sheet showing the **real app name and package** (so a label override can't disguise an app), plus `Edit layout`, `App info`, `Remove from home`. Folder: header `Folder, 5 apps` (plural `Folder, 1 app`), no `App info`. Dimmed (not installed): header `Not installed · <package>`, no `App info` (§14) |
 | Long-press empty space (empty cells only; items open their sheet) | Home menu: `Edit layout`, `Wallpaper` (system wallpaper picker), `Reload layout`, `Settings`. In app-only mode also `Choose folder` |
-| Swipe up anywhere / tap ⌃ handle | Open the drawer (§2) |
+| Swipe up anywhere / tap `Apps` | Open the drawer (§1.4) |
 | Swipe left/right | Change page |
+| Tap the page label (≥ 2 pages) | Page list, jump to a page (§1.3) |
 | Home button while on home | Go to page 1, close drawer/folder |
+
+### 1.3 Page label and page list (#78, MVP)
+**Page label.** A single line at the top of the page area, under the banner slot, centred, 14 sp, white with the label
+shadow (and the 60 % scrim when `Label backdrop` is on). Text: the page `title`, or `Page 2` when the page has no title.
+- Shown when there are **≥ 2 pages**, or when the only page has a `title`. Hidden for a single untitled page.
+- It's a tap target only with ≥ 2 pages (min 48 dp tall, padded to at least 96 dp wide). A trailing `▾` (12 dp) shows
+  it's tappable. With one page it's plain text, no `▾`, no action.
+- Long titles: 1 line, ellipsized at the end, max width = screen width − 32 dp.
+
+**Tap → page list.** A bottom sheet (Material `ModalBottomSheet`), title `Pages`, one row per page in file order:
+- Row: `<title>` or `Page N` (N = 1-based position), 56 dp tall. The current page shows a leading `✓` and bold text;
+  others have a blank 24 dp slot so the titles line up.
+- Tap a row → the sheet closes and the pager scrolls to that page (an instant jump with reduced motion). Tapping the
+  current page just closes the sheet. Back, swipe-down or a tap on the scrim closes it without moving.
+- 20 pages (the max): the list scrolls, opening scrolled so the current page is visible. No search, no sections.
+- Nothing is written. Jumping never changes the file.
+
+**Edit mode:** the label and the list still work (jump to a page to drop things there). Jump-only in the MVP.
+Rename and reorder pages from the list are **later** (edit the file meanwhile). While an item is being dragged the
+label is inert (page turns use the screen edge, §4.2).
+
+**Page indicator:** unchanged (dots, ≥ 2 pages, not tappable). The label and the dots always agree, and both update
+when the pager settles.
+
+**TalkBack:**
+- Label: role button, announced `Home, page 2 of 3, button`, hint (`onClick` label) `list pages`, so TalkBack says
+  `Double-tap to list pages`. With one page: plain text, `Home`.
+- Sheet: a list with collection info (`20 items`). Rows: `Home, page 1 of 3` with **selected** state on the current
+  page (`Selected, Home, page 1 of 3`). Focus starts on the current row.
+- After a jump, the pager announces `Page 3 of 3` (polite).
+- The label also exposes a custom action `List pages` on the home grid, for users who navigate by actions.
+
+Copy: sheet title `Pages`; untitled row and label `Page %1$d`; TalkBack `%1$s, page %2$d of %3$d`, action `List pages`.
+
+### 1.4 Opening the drawer: swipe up and its alternatives (#77, MVP)
+- **Gesture:** a vertical swipe up that starts anywhere on home (empty cells, items, page label, dock, the gap
+  between). It opens when the finger moves **≥ 48 dp up** with a vertical-dominant angle (|dy| > 1.5 × |dx|), or on a
+  fling upwards faster than 1000 dp/s after ≥ 16 dp. The drawer follows the finger (interactive), and releasing
+  under the threshold springs it back.
+- **Conflicts:**
+  - Horizontal pager: whichever axis passes touch slop first wins for the rest of the gesture. Horizontal → pager,
+    vertical-up → drawer. Vertical-down on home does nothing (notification shade is out of scope, #77).
+  - Long-press and drag: once a long-press fires (item sheet, home menu or drag), the swipe is cancelled. Swipe-up
+    never starts edit mode.
+  - Edit mode: swipe-up is **off** (vertical moves belong to drag). Use `Done` first. The `Apps` button is hidden in edit mode.
+  - Open folder or open sheet: the gesture goes to them, not the drawer.
+  - System gesture navigation: the bottom system gesture inset is excluded (the system's own home gesture wins there).
+- **Dock:** swiping up from the dock opens the drawer like anywhere else. Tapping a dock item still launches.
+- **Keyboard:** the keyboard request (§2) fires when the open animation starts, so the first keystroke isn't lost.
+  With `Open keyboard with drawer` off, no keyboard.
+- **Tap / accessibility alternative:** the `Apps` button in the top bar (current build) is the tap path, label
+  `Apps`, TalkBack `Apps, button`, hint `open app list`. It stays even with swipe-up working. (It replaces the
+  `⌃ handle` in the wireframe; one tap target is enough.) A TalkBack custom action `Open app list` is also on the home grid.
+- **Reduced motion:** the drawer appears with a fade (150 ms) instead of sliding with the finger; the threshold is the same.
+- **Close:** swipe down at the top of the list, Back (keyboard first, §2), Home, or launching an app.
 
 ### 1.2 Reconciliation with installed apps (spike §4)
 - Entries for **uninstalled or unknown** apps, unpublished shortcuts and paused or removed work apps show as dimmed
@@ -138,7 +194,7 @@ Gestures and taps (home):
 
 | Item | Spec |
 |---|---|
-| Open / close | Swipe up from home, or tap the handle. Close: swipe down at the top of the list, Back, or Home |
+| Open / close | Swipe up from home, or tap `Apps` (§1.4). Close: swipe down at the top of the list, Back, or Home |
 | Search | Field at top, hint `Search apps`. **Opening the drawer focuses the field and shows the keyboard** (Q-C2, search-first). Scrolling the list hides the keyboard, and tapping the field brings it back. Swipe-down or Back with the keyboard up hides the keyboard first; a second Back closes the drawer (§18.2). Setting `Open keyboard with drawer` (default on) turns auto-open off, e.g. for wall displays. A swipe up from home that's still in motion must not drop the first keystroke: focus is requested when the open animation starts. |
 | Search: accessibility | With TalkBack on, the field gets accessibility focus and is announced `Search apps, edit box`, but the **keyboard is not shown automatically**, because it would cover half the list during exploration. Double-tap the field to type. Results update a polite live region: `5 apps` / `No apps match "xyz".` With reduced motion, the keyboard appears without waiting for the drawer animation |
 | Search: hardware keyboard | With a physical keyboard attached, the field is focused, the on-screen keyboard stays hidden (system default), and typing filters immediately. `Enter` launches the first result. `↓`/`Tab` moves focus into the results, `↑` at the first result returns to the field. `Esc` clears a non-empty query, then closes the drawer. Arrow focus shows a 2 dp focus ring |
@@ -543,6 +599,102 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | R9 | New pages from `Add to home` | Confirmed: id `page-N` (lowest unused N), no `title`, max 20 pages. **Change the full copy** from `No room on home. Remove a page first.` to `No room on home: all 20 pages are full.` | Change `home_full` | MVP |
 | R10 | No Settings screen; ⋮ menu holds folder and home-app items | **Acceptable interim**, but use the doc's names: `Choose folder` (not `Pick config folder…`), `Reload layout` (not `Reload launcher.json`), `Set as home app`, `Hidden apps`. Until the screen exists, the home menu's `Settings` opens the same ⋮ menu | Rename `menu_pick_folder` → `Choose folder`, `menu_reload` → `Reload layout`; route home-menu `Settings` to the ⋮ menu | MVP interim |
 | R11 | Which Settings are MVP | **MVP:** Config folder (Choose folder / Use phone storage / Reload layout), Home app, Hidden apps, Ask before merging, Open keyboard with drawer, Label backdrop, Include work apps in config (only shown if a work profile exists), Restore previous layout. **Later:** Grid (edit the file), About (version only in the ⋮ menu is fine) | — | — |
+
+## 15. Config-driven title bar (#79, later, not v1-gating)
+UX side of Archimedes' design in [`docs/design/title-bar.md`](design/title-bar.md) (#81), which decides the architecture and schema.
+The bar is the first element in the general `elements[]` model. The three-slot bar below is the **default preset** the
+phone offers. The file can go further (templates, styling, per-page overrides), and the phone keeps whatever it can't
+edit verbatim.
+
+**Default preset (what the phone writes).** Off by default. When off, or with no `titleBar` element, the §1.3 page label
+shows. Turning it on writes `{ "id": "t-main", "type": "titleBar", "anchor": "top", "content": { "slots": { "center": "{page}" } } }`.
+The slot picker (start, center, end) offers `Page title` (`{page}`), `Clock` (`{time}`), `Date` (`{date}`) and `None`.
+- **Custom slots (Q-T1):** if a slot holds anything else (e.g. `{date:EEE d MMM}` or literal text), the picker shows a
+  read-only, selected row `Custom (set in the file)` with the raw template underneath in monospace. Picking another choice
+  replaces it (one write; history keeps the old version), with the inline note `Picking another option replaces it.`
+- The phone edits only on/off and the preset. Style, overrides (`pages[].overrides[<elementId>]`) and templates are
+  file-only and never edited on the phone in this release.
+
+**Rulings from #81 that the UX follows.** Top-level element by default; per-page overrides only in the file. No
+schemaVersion 2: an unknown element type, or one whose `requires` is above the launcher's feature level, is **skipped with
+a warning** and kept in the file. Unknown keys inside a known type are still errors (B2). `backdrop: "auto"` (default)
+follows the device's `Label backdrop` setting; an explicit `none`, `scrim` or custom backdrop in the file wins.
+
+**Layout and size.** One line. `center` keeps at least 50 % of the width; side slots ellipsize first, then `center`. Clock
+and date never truncate, and the page title ellipsizes at the end. **Default size is `small`, 14 sp (Q-T3)**: it matches
+the §1.3 page label and status-bar text, and at 200 % font (28 sp) it still fits one line and costs one grid row at most
+on small phones, where 18 sp (36 sp at 200 %) would push rows below the 64 × 80 dp minimum. The bar takes its height
+from size + padding, and grid rows share the rest. Never overlaps icons.
+
+**Contrast.** Light text always gets the label shadow; dark text doesn't. With `auto` + `Label backdrop` on, or
+`scrim`, the 60 % scrim gives ≥ 5.7:1 for white (§12). With a custom backdrop, the launcher measures text vs backdrop.
+**Below 4.5:1 it renders anyway** and adds a warning (Q-T2): in `status.json` and in the error detail view's
+**Warnings** section only. **No snackbar or banner**: the person editing the file chose the colours, and the agent sees it
+in `status.json`. With `none` nothing is measured (the wallpaper is unknown).
+
+**Skipped elements (Q-T4).** Nothing on home: no placeholder, banner or snackbar (an element is decoration and must
+never make the home screen look broken). If the skipped element was the title bar, the §1.3 page label shows instead.
+The warning appears in `status.json` and the Warnings section.
+
+**Where warnings are found.** The error detail view (§6.2) gets a **Warnings** section under any problems, header
+`1 warning` / `3 warnings`, each with the path and message (same layout as problems, ▲ instead of ■). With a valid file
+that has warnings, it's reachable from Settings (interim: the ⋮ menu) → `Config folder`, whose status line reads
+`Layout loaded · 1 warning` (tap → the detail view). `Copy errors` includes warnings.
+
+**TalkBack.** One focusable node per non-empty slot, in reading order. `{page}` keeps the §1.3 button semantics, the
+48 dp target and the `List pages` action. Clock and date are read in spoken form (`10:42 PM`, `Sunday, October 18`) and
+aren't a live region. Literal text in a template is read as written.
+
+**#78 tap target.** The page list opens only from a `{page}` token's node. Other slots aren't tappable in this release.
+If no visible slot holds `{page}` (including an override that hides it), the page list is still reachable through the
+`List pages` action and a `Pages` item in the home long-press menu.
+
+### 15.1 Copy: token errors and warnings (Q-T5)
+Same style as §6.3: path first, then what's wrong, then the fix. Errors are B2 problems (`launcher.json has 2 problems.
+Showing the last working layout.`). Warnings never raise a banner.
+
+| Case | Kind | Message |
+|---|---|---|
+| Unknown token | Error | `elements[0].content.slots.end: unknown token {wether}. Use page, pageNumber, pageCount, time or date.` |
+| Disallowed pattern letter | Error | `elements[0].content.slots.end: "s" isn't allowed in {time:HH:mm:ss}. Use y M d E a H h k K m; seconds and time zones aren't supported.` |
+| Unclosed brace | Error | `elements[0].content.slots.start: the "{" at character 5 isn't closed. For a literal brace, write {{.` |
+| Stray closing brace | Error | `elements[0].content.slots.start: the "}" at character 9 has no opening "{". For a literal brace, write }}.` |
+| Pattern too long | Error | `elements[0].content.slots.start: the pattern in {date:…} is 40 characters; the maximum is 32.` |
+| Too many tokens | Error | `elements[0].content.slots.center has 9 tokens; the maximum is 8.` |
+| Template too long | Error | `elements[0].content.slots.center is 130 characters; the maximum is 120.` |
+| Second title bar | Error | `elements[1]: only one titleBar is allowed (elements[0] is already one).` |
+| Unknown element type | Warning | `elements[2]: type "appWidget" isn't supported by this Config Launcher, so it was skipped. It stays in the file.` |
+| `requires` too high | Warning | `elements[2] needs feature level 3, but this Config Launcher supports up to 2, so it was skipped. It stays in the file. Update the app to show it.` |
+| Override for a missing element | Warning | `pages[1].overrides: "t-clock" doesn't match any element, so it was ignored.` |
+| Low contrast | Warning | `elements[0].style.color: contrast 2.1:1 on the backdrop (4.5:1 recommended). Shown anyway.` |
+
+Resources (character positions are 1-based, like line and column):
+```xml
+<string name="err_token_unknown">%1$s: unknown token {%2$s}. Use page, pageNumber, pageCount, time or date.</string>
+<string name="err_token_letter">%1$s: \"%2$s\" isn\'t allowed in %3$s. Use y M d E a H h k K m; seconds and time zones aren\'t supported.</string>
+<string name="err_token_unclosed">%1$s: the \"{\" at character %2$d isn\'t closed. For a literal brace, write {{.</string>
+<string name="err_token_stray">%1$s: the \"}\" at character %2$d has no opening \"{\". For a literal brace, write }}.</string>
+<string name="err_pattern_long">%1$s: the pattern in %2$s is %3$d characters; the maximum is %4$d.</string>
+<string name="err_tokens_many">%1$s has %2$d tokens; the maximum is %3$d.</string>
+<string name="err_template_long">%1$s is %2$d characters; the maximum is %3$d.</string>
+<string name="err_titlebar_twice">%1$s: only one titleBar is allowed (%2$s is already one).</string>
+<string name="warn_element_type">%1$s: type \"%2$s\" isn\'t supported by this Config Launcher, so it was skipped. It stays in the file.</string>
+<string name="warn_element_level">%1$s needs feature level %2$d, but this Config Launcher supports up to %3$d, so it was skipped. It stays in the file. Update the app to show it.</string>
+<string name="warn_override_missing">%1$s: \"%2$s\" doesn\'t match any element, so it was ignored.</string>
+<string name="warn_contrast">%1$s: contrast %2$s:1 on the backdrop (4.5:1 recommended). Shown anyway.</string>
+<plurals name="warnings_header">
+    <item quantity="one">%d warning</item>
+    <item quantity="other">%d warnings</item>
+</plurals>
+<plurals name="status_loaded_warnings">
+    <item quantity="one">Layout loaded · %d warning</item>
+    <item quantity="other">Layout loaded · %d warnings</item>
+</plurals>
+<string name="titlebar_custom">Custom (set in the file)</string>
+<string name="titlebar_custom_note">Picking another option replaces it.</string>
+```
+Counts in the messages above (the maxima) are always ≥ 2, so they don't need plurals. `status.json` uses the same English
+text so agents and the phone say the same thing. The contrast ratio is formatted with one decimal, locale-independent (`2.1`).
 
 ## Open questions for Christopher
 
