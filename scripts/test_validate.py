@@ -104,6 +104,9 @@ class ThemeInfo(unittest.TestCase):
         self.assertEqual([], V.infos(self.tree({"color": "primary"})))
         self.assertEqual([], V.infos(self.tree({"color": "#FFFFFF", "backdrop": "scrim"})))
         self.assertEqual([], V.infos(self.tree({"color": "primary", "backdrop": "scrim"}, requires=99)))
+        t = self.tree({"backdrop": "scrim"})
+        t["pages"][0]["overrides"] = {"t-main": {"style": {"color": "primary"}}}   # #118
+        self.assertEqual([V.THEME_INFO], V.infos(t))
 
     def test_cli_prints_one_info_line(self):
         with tempfile.TemporaryDirectory() as d:

@@ -54,6 +54,8 @@ object Elements {
         fun validateOverride(o: JsonObject, path: String, c: Validator.Checks) {}
         /** Load warnings for a shown, valid element (e.g. low contrast). */
         fun warnings(o: JsonObject, path: String): List<String> = emptyList()
+        /** #118: load warnings for `pages[].overrides[<id>]` ([ov]) of the shown element [base], at [path]. */
+        fun overrideWarnings(base: JsonObject, ov: JsonObject, path: String): List<String> = emptyList()
         /** #137: a capability kind this launcher doesn't know: the element is skipped (cells kept) with a warning. */
         fun unknownCapability(o: JsonObject): String? = null
         /** Canonical key order for writing; default verbatim. */
@@ -96,7 +98,20 @@ object Elements {
     fun phoneWarnings(c: LauncherConfig, dark: Boolean, theme: (String) -> String?): List<String> =
         c.elements.orEmpty().flatMapIndexed { i, e ->
             if (skip(e) == null && typeOf(e) == TitleBar) TitleBar.phoneWarnings(e, "elements[$i]", dark, theme) else emptyList()
+        } + overridesOf(c).flatMap { (path, e, ov) ->
+            if (typeOf(e) == TitleBar) TitleBar.overrideStyle(e, ov)?.let { TitleBar.phoneStyleWarnings(it, path, dark, theme) }.orEmpty() else emptyList()
         }
+
+    /** #118: (path, shown element, override object) for every override that names a shown element, in file order. */
+    private fun overridesOf(c: LauncherConfig): List<Triple<String, JsonObject, JsonObject>> {
+        val byId = shown(c).associateBy { it.str("id") }
+        return c.pages.flatMapIndexed { j, p ->
+            p.overrides.orEmpty().mapNotNull { (k, v) ->
+                val e = byId[k] ?: return@mapNotNull null
+                (v as? JsonObject)?.let { Triple("pages[$j].overrides.$k", e, it) }
+            }
+        }
+    }
 
     /**
      * Load warnings (ux.md §15.1): skipped elements and overrides naming no element. They never reject the file;
@@ -113,8 +128,16 @@ object Elements {
             }
         }
         val ids = c.elements.orEmpty().mapNotNull { it.str("id") }.toSet()
+        val byId = shown(c).associateBy { it.str("id") }
         c.pages.forEachIndexed { j, p ->
-            p.overrides?.keys?.forEach { k -> if (k !in ids) out += "pages[$j].overrides: \"$k\" doesn't match any element, so it was ignored." }
+            p.overrides?.forEach { (k, v) ->
+                if (k !in ids) out += "pages[$j].overrides: \"$k\" doesn't match any element, so it was ignored."
+                else {
+                    // #118: an override that changes colours gets the same contrast check as the element itself.
+                    val e = byId[k] ?: return@forEach
+                    (v as? JsonObject)?.let { ov -> typeOf(e)?.let { out += it.overrideWarnings(e, ov, "pages[$j].overrides.$k") } }
+                }
+            }
         }
         return out
     }

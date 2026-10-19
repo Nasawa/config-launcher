@@ -137,8 +137,25 @@ object TitleBar : Elements.ElementType {
     val STATIC = mapOf("light" to "#FFFFFF", "onWallpaper" to "#FFFFFF", "dark" to "#1B1B1F")
     const val MIN_CONTRAST = 4.5
 
-    override fun warnings(o: JsonObject, path: String): List<String> {
-        val style = o["style"] as? JsonObject ?: return emptyList()
+    override fun warnings(o: JsonObject, path: String): List<String> =
+        (o["style"] as? JsonObject)?.let { styleWarnings(it, path) }.orEmpty()
+
+    /**
+     * #118 (Archimedes): the style a page override shows (the element's style with the override's keys on top, as
+     * [dev.nasawa.configlauncher.model.TitleBarModel.forPage] merges it), or null when the override doesn't touch
+     * colours (`color`, `backdrop`) or hides the bar on that page (`enabled: false`). Then the element's own check already covers that page.
+     */
+    fun overrideStyle(base: JsonObject, ov: JsonObject): JsonObject? {
+        if ((ov["enabled"] as? JsonPrimitive)?.content == "false") return null
+        val over = ov["style"] as? JsonObject ?: return null
+        if ("color" !in over && "backdrop" !in over) return null
+        return JsonObject(((base["style"] as? JsonObject) ?: JsonObject(emptyMap())) + over)
+    }
+
+    override fun overrideWarnings(base: JsonObject, ov: JsonObject, path: String): List<String> =
+        overrideStyle(base, ov)?.let { styleWarnings(it, path) }.orEmpty()
+
+    private fun styleWarnings(style: JsonObject, path: String): List<String> {
         val ratio = contrast(style) ?: return emptyList()
         if (ratio >= MIN_CONTRAST) return emptyList()
         val tenths = floor(ratio * 10).toLong()
@@ -175,8 +192,10 @@ object TitleBar : Elements.ElementType {
     }
 
     /** #125: the phone-only warning for [phoneContrast]; `checked on this phone` is the marker (no separate key). */
-    fun phoneWarnings(o: JsonObject, path: String, dark: Boolean, theme: (String) -> String?): List<String> {
-        val style = o["style"] as? JsonObject ?: return emptyList()
+    fun phoneWarnings(o: JsonObject, path: String, dark: Boolean, theme: (String) -> String?): List<String> =
+        (o["style"] as? JsonObject)?.let { phoneStyleWarnings(it, path, dark, theme) }.orEmpty()
+
+    fun phoneStyleWarnings(style: JsonObject, path: String, dark: Boolean, theme: (String) -> String?): List<String> {
         val m = phoneContrast(style, dark, theme) ?: return emptyList()
         if (m.ratio >= MIN_CONTRAST) return emptyList()
         val tenths = floor(m.ratio * 10).toLong()

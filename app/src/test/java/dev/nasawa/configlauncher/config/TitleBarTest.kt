@@ -185,6 +185,22 @@ class TitleBarTest {
         assertEquals(26f, TitleBarLayout.cappedSp(40f, 2f))
     }
 
+    @Test fun overrideColoursAreContrastChecked() {
+        // #118: a page override that darkens the text gets the same §15 warning, at the override's path.
+        val ov = ""","overrides":{"t-main":{"style":{"color":"dark"}}}"""
+        val c = ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"light","backdrop":"scrim"}}""", ov))
+        assertEquals(listOf("pages[0].overrides.t-main.style.color: contrast 1.2:1 on the backdrop (4.5:1 recommended). Shown anyway."), Elements.warnings(c))
+        // Hidden on that page, or not touching colours: nothing extra.
+        val hidden = ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"light","backdrop":"scrim"}}""", ""","overrides":{"t-main":{"enabled":false,"style":{"color":"dark"}}}"""))
+        assertTrue(Elements.warnings(hidden).isEmpty())
+        val size = ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"dark","backdrop":"scrim"}}""", ""","overrides":{"t-main":{"style":{"size":"large"}}}"""))
+        assertEquals(1, Elements.warnings(size).size)   // only the element's own warning
+        // The phone-only theme check covers overrides too.
+        val theme = ok(doc("""{"id":"t-main","type":"titleBar","style":{"backdrop":"scrim"}}""", ""","overrides":{"t-main":{"style":{"color":"primary"}}}"""))
+        assertEquals(listOf("pages[0].overrides.t-main.style.color: contrast 1.2:1 on the backdrop (4.5:1 recommended), checked on this phone in light theme. Shown anyway."),
+            Elements.phoneWarnings(theme, false) { mapOf("primary" to "#202020")[it] })
+    }
+
     @Test fun spokenLabelExpandsEachTokenOnce() {
         // #133: a page titled "1" next to {pageNumber}/{pageCount} was read "1, page 1 of 2 1, page 1 of 2/2".
         val parts = (Template.parse("{page} {pageNumber}/{pageCount}") as Template.Ok).parts
