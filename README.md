@@ -181,8 +181,10 @@ Shape in brief:
 - `status.json`: the last load result (ok or the list of errors, the hash and the time) and any sync-conflict copies it
   noticed. **Read this to find out why your edit was rejected** without picking up the phone.
 - `apps.json`: every launchable app the drawer shows (`package`, `activity`, `label`, `profile`, `installTime`), rewritten
-  when apps are installed, removed or changed. Use it to place apps by their real package and activity. Work apps are
-  listed only when *Include work apps in config* is on.
+  when apps are installed, removed or changed, and when *Include work apps in config*, *Include hidden apps in
+  apps.json* or the hidden list changes. Use it to place apps by their real package and activity. Work apps are listed
+  only when *Include work apps in config* is on. Apps hidden from the drawer are left out unless *Include hidden apps in
+  apps.json* is on (off by default).
 - `launcher.json.tmp`: the write-verify copy (above).
 - `broken/`: copies of invalid files saved before a phone edit replaced them.
 - `backup/`: originals saved before an *Upgrade now* (as `launcher.v{N}.{timestamp}.json`), *Restore last working version* or *Start fresh*.

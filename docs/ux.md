@@ -204,7 +204,7 @@ Copy: sheet title `Pages`; untitled row and label `Page %1$d`; TalkBack `%1$s, p
 | What's listed | **Every launchable app** in the personal profile (and the work profile, badged), **including apps already placed** on pages, the dock or in folders, minus `drawer.hidden` (§17 b). Private space has its own section (§1.2) |
 | Hidden apps | Package names in `drawer.hidden[]`. Not shown in the list or search. Long-press a drawer app → `Hide` (one write). Hidden apps are listed in **Settings → Hidden apps**, where `Unhide` is one write (interim: drawer ⋮ → `Hidden apps`, §14). The `Hide` snackbar has `Undo`. A hidden app placed explicitly on a page still shows and launches there |
 | Long-press app | `Add to home` (first free cell, page 1 onward, else a new page), `Hide`, `App info`. Dragging out of the drawer to home is **later** (§14); `Add to home` covers the MVP. Work apps offer `Add to home` only when **Include work apps in config** is on |
-| Menu `⋮` | `Settings` |
+| Menu `⋮` | Folder mode: `Choose folder` / `Use phone storage`, `Reload layout`, `Set as home app`, `Hidden apps`, `Agent instructions (AGENTS.md)`, `Add`/`Update agent instructions`, `Include hidden apps in apps.json` (checkbox, default off, §7.2), `Ask before merging`, `Open keyboard with drawer`, `Label backdrop`, `Include work apps in config` (only when a work profile exists). App-only: hides folder-only items (AGENTS.md, apps.json). Home menu `Settings` opens the same menu (§14 R10) |
 
 ---
 
@@ -436,6 +436,17 @@ Shown on first launch, before the home screen. Each step is one full screen with
 - **App-only mode:** the setting, the action and the first-run line are hidden.
 - `AGENTS.md` is written with the same temp, verify and restore path as `launcher.json`.
 
+### 7.2 apps.json (#72)
+`.configlauncher/apps.json` lists every launchable app the drawer shows (`package`, `activity`, `label`, `profile`,
+`installTime`), rewritten when apps are installed, removed or changed, and when the settings below or the hidden list
+change. Agents use it to place apps by their real package and activity. Work apps are listed only when **Include work
+apps in config** is on. Apps in `drawer.hidden` are left out unless **Include hidden apps in apps.json** is on.
+- **Setting:** `Include hidden apps in apps.json`, a switch, default **off** (interim: a checkbox in the ⋮ menu).
+  Description (TalkBack now; helper line in Settings later): `apps.json lists your installed apps for agents. Apps hidden from the drawer are left out unless this is on.`
+  String ids: `menu_include_hidden_apps`, `menu_include_hidden_apps_desc`.
+- Toggling the setting, or changing `drawer.hidden`, rewrites `apps.json` silently (no snackbar).
+- **App-only mode:** not written (no folder sidecars), and the setting is hidden.
+
 ## 8. Settings (MVP, minimal)
 
 MVP vs later and the interim ⋮ menu: see §14.
@@ -448,6 +459,7 @@ MVP vs later and the interim ⋮ menu: see §14.
 | `Restore previous layout` | Lists the app-private history (last 10, confirmed by Christopher, Q-C6; newest first, with time). Picking one writes it to `launcher.json` (or the app-private layout in app-only mode) like any edit (hash check, safe write) |
 | `Include work apps in config` | Switch, default **off**. Off: work apps show in the drawer with the badge but can't be placed, and nothing new about them is written. Work items already in the file stay, greyed, with the hint in §1.2. Turning it on makes them live without a write (§17 Q12) |
 | `Hidden apps` | The packages in `drawer.hidden`, each with `Unhide` (one write) |
+| `Include hidden apps in apps.json` | Switch, default **off**. Off: apps in `drawer.hidden` are left out of `.configlauncher/apps.json`. On: they are listed. Rewrites `apps.json` silently when toggled or when the hidden list changes (§7.2). Hidden in app-only mode |
 | `Label backdrop` | Switch, default **off**. A rounded 60 % black scrim behind home labels for busy wallpapers (§1.1). Stored in DataStore |
 | `Home app` | Status + `Set as home app` |
 | `Grid` | Columns/rows pickers (3–6 × 4–7). They write `grid` like any edit. Shrinking that would push items off-grid is refused with `Move apps out of the last column first.` |
@@ -612,7 +624,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | R8 | Unhide | **Change (interim):** drawer ⋮ → `Hidden apps` opens a sheet titled `Hidden apps`, listing each hidden app (icon, label, package) with `Unhide` (one write). Empty: `No hidden apps.` The `Hide` snackbar `<Label> hidden from the app list.` gets [`Undo`]. Moves to Settings → Hidden apps when Settings exists | Add the interim sheet, the empty state and the Hide snackbar with Undo | MVP |
 | R9 | New pages from `Add to home` | Confirmed: id `page-N` (lowest unused N), no `title`, max 20 pages. **Change the full copy** from `No room on home. Remove a page first.` to `No room on home: all 20 pages are full.` | Change `home_full` | MVP |
 | R10 | No Settings screen; ⋮ menu holds folder and home-app items | **Acceptable interim**, but use the doc's names: `Choose folder` (not `Pick config folder…`), `Reload layout` (not `Reload launcher.json`), `Set as home app`, `Hidden apps`. Until the screen exists, the home menu's `Settings` opens the same ⋮ menu | Rename `menu_pick_folder` → `Choose folder`, `menu_reload` → `Reload layout`; route home-menu `Settings` to the ⋮ menu | MVP interim |
-| R11 | Which Settings are MVP | **MVP:** Config folder (Choose folder / Use phone storage / Reload layout), Home app, Hidden apps, Ask before merging, Open keyboard with drawer, Label backdrop, Include work apps in config (only shown if a work profile exists), Restore previous layout. **Later:** Grid (edit the file), About (version only in the ⋮ menu is fine) | — | — |
+| R11 | Which Settings are MVP | **MVP:** Config folder (Choose folder / Use phone storage / Reload layout), Home app, Hidden apps, Include hidden apps in apps.json (§7.2), Ask before merging, Open keyboard with drawer, Label backdrop, Include work apps in config (only shown if a work profile exists), Agent instructions (AGENTS.md), Restore previous layout. **Later:** Grid (edit the file), About (version only in the ⋮ menu is fine) | — | — |
 
 ## 15. Config-driven title bar (#79, later, not v1-gating)
 UX side of Archimedes' design in [`docs/design/title-bar.md`](design/title-bar.md) (#81), which decides the architecture and schema.
