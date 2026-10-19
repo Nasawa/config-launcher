@@ -647,8 +647,12 @@ schemaVersion 2: an unknown element type, or one whose `requires` is above the l
 a warning** and kept in the file. Unknown keys inside a known type are still errors (B2). `backdrop: "auto"` (default)
 follows the device's `Label backdrop` setting; an explicit `none`, `scrim` or custom backdrop in the file wins.
 
-**Layout and size.** One line. `center` keeps at least 50 % of the width; side slots ellipsize first, then `center`. Clock
-and date never truncate, and the page title ellipsizes at the end. **Default size is `small`, 14 sp (Q-T3)**: it matches
+**Layout and size.** One line. **Clock and date never truncate and take priority**: a slot holding only `{time}` /
+`{date}` keeps its full width. The centre gets the remaining width: **at least 50 % when the sides leave that much**,
+centred. When fixed sides leave less, centring is given up and the centre takes what's left between them, ellipsizing
+at the end (the `{page}` slot never goes below 32 dp, so its ▾ and tap target stay; #152). Other side slots ellipsize
+before the centre does. Adjacent **non-empty** slots always have an **8 dp minimum gap** between them, reserved before
+the text is laid out (like the ▾ width), so text never runs together (`11:20 AM` `Very…`); an empty slot takes no gap. **Default size is `small`, 14 sp (Q-T3)**: it matches
 the §1.3 page label and status-bar text, and at 200 % font (28 sp) it still fits one line and costs one grid row at most
 on small phones, where 18 sp (36 sp at 200 %) would push rows below the 64 × 80 dp minimum. The bar takes its height
 from size + padding, and grid rows share the rest. Never overlaps icons.
@@ -673,18 +677,20 @@ The `{light, dark}` variant `#F1F0F4` would need 57 % (4.52:1), so the example u
 in `status.json`. With `none` nothing is measured (the wallpaper is unknown).
 
 **System-theme colours (#125).** `primary`, `secondary`, `onSurface` and `surface` (as text or backdrop colour) are only
-known on the device, because of dynamic colour and light/dark theme. The **phone** measures them with the same rules
+known on the device. **Home is currently always dark** (one fixed dark scheme, no dynamic colour; #153): the phone's
+dark mode setting only picks the bar's `color.light` / `color.dark` variant. Q-T6 asks whether home should follow the
+system theme and wallpaper colours. The **phone** measures them with the same rules
 (worst-case wallpaper for see-through backdrops): at load, and again whenever the system theme (light/dark) or the
 wallpaper colours change (`onConfigurationChanged` / `WallpaperColors` updates). It **doesn't** re-measure on every
-frame. The phone only has the theme that's showing, so it checks **only the light or dark variant currently shown**
-and says which one. The other variant is checked after the next theme switch. Results are **phone-only warnings**: in
+frame. The phone checks **only the variant currently shown**, measured against the scheme home actually draws with (#153),
+and says whether **dark mode was on or off**. The other variant is checked after the next dark-mode switch. Results are **phone-only warnings**: in
 `status.json` `warnings` (a string array) they're marked by the words `checked on this phone`, with no separate key.
 They appear in the Warnings list like any other. The path names the key that holds the theme token
 (`style.color`, `style.color.dark`, `style.backdrop.color`). A theme change that fixes or causes one updates
 `status.json` silently, with no snackbar, the same as Q-T2. `validate.py` can't measure them, so it prints **one**
 info line per run (not per colour), only when a shown bar's contrast depends on a theme colour, and doesn't count it as
 a warning. Final strings (#132):
-- `status.json`: `elements[0].style.color: contrast 3.2:1 on the backdrop (4.5:1 recommended), checked on this phone in dark theme. Shown anyway.` (`in light theme` when light is showing)
+- `status.json`: `elements[0].style.color: contrast 3.2:1 on the backdrop (4.5:1 recommended), checked on this phone with dark mode on. Shown anyway.` (`with dark mode off.` when it's off)
 - `validate.py`: `info: theme colours (primary, secondary, onSurface, surface) are only checked on the phone; see "checked on this phone" in .configlauncher/status.json.`
 
 **Skipped elements (Q-T4).** Nothing on home: no placeholder, banner or snackbar (an element is decoration and must
@@ -800,13 +806,13 @@ Resources (character positions are 1-based, like line and column):
     <item quantity="one">Layout loaded · %d warning</item>
     <item quantity="other">Layout loaded · %d warnings</item>
 </plurals>
-<!-- %3$s = theme_light or theme_dark. -->
+<!-- %3$s = theme_dark_on or theme_dark_off (the phone's dark mode setting; home itself is always dark for now, #153). -->
 <!-- code, not strings.xml (status.json) -->
-<string name="warn_contrast_theme">%1$s: contrast %2$s:1 on the backdrop (4.5:1 recommended), checked on this phone in %3$s. Shown anyway.</string>
+<string name="warn_contrast_theme">%1$s: contrast %2$s:1 on the backdrop (4.5:1 recommended), checked on this phone with %3$s. Shown anyway.</string>
 <!-- code, not strings.xml (status.json) -->
-<string name="theme_light">light theme</string>
+<string name="theme_dark_on">dark mode on</string>
 <!-- code, not strings.xml (status.json) -->
-<string name="theme_dark">dark theme</string>
+<string name="theme_dark_off">dark mode off</string>
 <string name="warnings_copied">Warnings copied.</string>
 <string name="warnings_copy_done">Copied</string>
 <string name="titlebar_custom">Custom (set in the file)</string>
@@ -833,7 +839,7 @@ The other counts in the messages above (the maxima) are always ≥ 2, so they do
 text so agents and the phone say the same thing.
 
 **status.json text is code, not strings.xml.** Every message written to `status.json` (the `warn_*` warnings above,
-including `warn_contrast_theme` and its `light theme` / `dark theme` words) is an English string built in code
+including `warn_contrast_theme` and its `dark mode on` / `dark mode off` words) is an English string built in code
 (`Validator`, `Template`, `TitleBar`), not a `strings.xml` resource. It never follows the phone's language, so the file
 stays stable for agents and matches `validate.py` word for word. The rows marked `code, not strings.xml` are listed here
 in resource form only so the copy has one reference. The phone shows the same English text in the Warnings list. Only
@@ -1682,6 +1688,14 @@ Dashboard widgets (§17). All answered by Christopher; the original recommendati
   approvals through the folder would let anything that can write the folder approve itself.]
 - ✅ **Q-D7** (accepted as recommended) Should any author (e.g. Claw) ever be trusted to add widgets without asking? [No, not in this release. The
   author is quoted, never verified.]
+
+Title bar and home theme (§15). Open; the recommendation is in brackets:
+- **Q-T6** Home is always dark today (#153); the system dark-mode setting only picks the title bar's `color.light` /
+  `color.dark` variant. Should home follow the system light/dark setting and wallpaper (dynamic) colours? That would
+  also restyle menus and dialogs. [Yes: follow system light/dark, with dynamic colours on Android 12+, falling back to
+  the current dark palette. Contrast checks then run against whatever is showing, and the `dark mode on/off` warning
+  words still fit.] Raised by Grace and Sprite in [#152](https://github.com/Nasawa/config-launcher/pull/152) and
+  [#153](https://github.com/Nasawa/config-launcher/pull/153).
 
 ## UI questions for Sprite
 
