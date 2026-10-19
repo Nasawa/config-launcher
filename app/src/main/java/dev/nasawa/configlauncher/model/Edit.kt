@@ -11,6 +11,8 @@ sealed interface Edit {
     data class MoveToDock(val id: String, val index: Int) : Edit
     /** Add a new item (e.g. from Unsorted). [pageId] null = dock at [index]; else first free cell from ([x],[y]). */
     data class Add(val item: Item, val pageId: String?, val x: Int = 0, val y: Int = 0, val index: Int = Int.MAX_VALUE) : Edit
+    /** Remove an item from home (page, dock or a folder). The app stays installed and in the drawer (ux.md §1.1, §4.2). */
+    data class Remove(val id: String) : Edit
 }
 
 data class ApplyResult(val config: LauncherConfig, val applied: Boolean, val folder: FolderSkip? = null)
@@ -34,6 +36,20 @@ object Edits {
         is Edit.MoveToCell -> moveToCell(c, e)
         is Edit.MoveToDock -> moveToDock(c, e)
         is Edit.Add -> add(c, e)
+        is Edit.Remove -> remove(c, e)
+    }
+
+    /** §3: a folder with one app left stays a folder; a folder with zero apps is deleted. */
+    private fun remove(c: LauncherConfig, e: Edit.Remove): ApplyResult {
+        fun strip(items: List<Item>): List<Item> = items.mapNotNull { i ->
+            when {
+                i.id == e.id -> null
+                i is FolderItem -> i.copy(items = strip(i.items)).takeIf { it.items.isNotEmpty() || i.items.isEmpty() }
+                else -> i
+            }
+        }
+        val out = c.copy(pages = c.pages.map { it.copy(items = strip(it.items)) }, dock = c.dock?.let(::strip))
+        return ApplyResult(out, out != c)
     }
 
     /** Replay ops in order; skipped ops (target gone, no room, duplicate, folder not recreated) are listed. */

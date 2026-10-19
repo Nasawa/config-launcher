@@ -410,6 +410,29 @@ Report anything that differs, with a screenshot.
 - Robolectric at `@Config(sdk = [29, 35])` for the API-gate cases. Lint `NewApi` as an error.
 - A test that fails on `android.*` imports in `model` and `config` (A§10, exists as `PureLayerTest`).
 
+## 19. Long-press, tap and drag (ux.md §1 l.99–100, §2 l.150, §4 l.172, §12; A§15 #11, A§17 Q13; issue #53)
+
+**Why v3 missed #53:** every UI test called `performClick()` or tested pure models, and the smoke script only cold-starts and checks for a crash or ANR. No test held a pointer or asserted a sheet or menu, so the `clickable` + `detectDragGesturesAfterLongPress` path on a stationary hold went unexercised.
+
+| ID | Case | Expected | Auto |
+|---|---|---|---|
+| LP-1 | Tap a home app, shortcut or dock tile (< long-press timeout). | Launches. No sheet. | R `LongPressGestureTest.tapLaunches` |
+| LP-2 | Stationary long-press (≥ `ViewConfiguration.longPressTimeout`, ~400–500 ms; jitter < 8 dp), release. | Item sheet opens with the **real app name and package** (even with a `label` override, A§15 #11), `Edit layout`, `App info`, `Remove from home`. **Nothing launches** on release. | R `longPressDoesNotLaunch`, E `scripts/longpress-smoke.sh` |
+| LP-3 | Long-press on a folder tile; on a shortcut tile. | Same item sheet (folder: label + member count; shortcut: owning app's real name/package). | R/M |
+| LP-4 | Hold then move > 8 dp (after 300 ms). | Drag starts (lifted tile), no sheet. Release on a new cell writes once. Moving back to the origin before release is still a drag, not a menu. | R (state machine) + M |
+| LP-5 | Move > 8 dp *before* the timeout. | Page swipe / scroll, neither drag nor sheet. | M |
+| LP-6 | Long-press empty grid space. | Home menu: `Edit layout`, `Reload layout`, `Settings` (app-only mode adds `Choose folder`). | E/M |
+| LP-7 | Long-press a drawer app. | `Add to home` (first free cell, page 1 onward, else a new page), `Hide` (one write), `App info`. Work apps: `Add to home` only with "Include work apps". Drawer tiles don't drag from a stationary hold. | R/E |
+| LP-8 | Long-press a folder child (open folder sheet). | Item sheet for the child; no launch. | R/M |
+| LP-9 | Long-press a private-space app (A§17 Q13). | Only the system actions (`App info`); no `Add to home`, not draggable. | M (API 35+) |
+| LP-10 | Item sheet actions: `Remove from home` (one write; folder → Undo snackbar per ux §14 R3), `App info` (opens system app details for the right user/profile), `Edit layout` (enters edit mode). | As described; one write per action. | R/M |
+| LP-11 | Haptics. | ux.md doesn't specify haptics. **Not tested**: if added, expect `HapticFeedbackType.LongPress` at the threshold only, not on tap. Noted as an open question. | — |
+| LP-12 | TalkBack: double-tap-and-hold on a tile; the tile node exposes `AccessibilityAction.ACTION_LONG_CLICK` **on the same merged node that carries the label**. | Opens the same sheet. The label isn't a separate focus stop without actions. | R `tileExposesLongClickAction` |
+| LP-13 | TalkBack custom actions (ux.md §12): `Move to…`, `Add to folder…`, `Move to dock`, `Remove from home`, `Hide`. | Present on every placed item; each is one write. | R (semantics `CustomActions`) |
+| LP-14 | Back / Home while a sheet or menu is open. | Back closes it; Home closes it and leaves edit mode (ux §14 R4). | M/E |
+
+Automation: R = Robolectric Compose UI test (`performTouchInput { longClick() }`), E = `scripts/longpress-smoke.sh` (seeds app-only mode with one tile via `run-as`, `input swipe x y x y 800`, then a `uiautomator dump` that must contain `App info` and the real package, and the launcher must still be on top).
+
 ## Open questions (v3)
 
 All v3 questions are resolved in A§18.6 (Q-v3-1, -2, -3, -4, -6, -9); the rulings are folded into SK-8, DR-6, LB-2, OU-2, CM-6/CM-22–26 and §13. Remaining unknown: the Secure Folder detection heuristic (SF-A51, pending manual run).

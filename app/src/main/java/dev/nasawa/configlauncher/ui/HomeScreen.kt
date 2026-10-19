@@ -4,6 +4,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import dev.nasawa.configlauncher.R
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -13,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.verticalScroll
@@ -52,7 +54,11 @@ fun HomeScreen(vm: HomeViewModel) {
     var askMerge by remember { mutableStateOf(vm.store.prefs.askBeforeMerging) }
     var keyboardOnOpen by remember { mutableStateOf(vm.store.prefs.drawerKeyboard) }
     var menuOpen by remember { mutableStateOf(false) }
-    val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }) { vm.store.edit(it) } }
+    // ux.md §4.1 edit mode: entered from `Edit layout` or a drag; left on Done, Back, Home or 30 s idle.
+    var editing by remember { mutableStateOf(false) }
+    var sheetFor by remember { mutableStateOf<ResolvedItem?>(null) }
+    var moveFor by remember { mutableStateOf<ResolvedItem?>(null) }
+    val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }, onStart = { editing = true }) { vm.store.edit(it) } }
     var cloudUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var onboarded by remember { mutableStateOf(vm.store.prefs.onboarded) }
     // true: the pick moves the layout (first run, menu); false: Reconnect just re-grants the folder.
@@ -104,9 +110,27 @@ fun HomeScreen(vm: HomeViewModel) {
         }
     }
 
+    val onLong: (ResolvedItem) -> Unit = { sheetFor = it }
+    // ux.md §12: drag-free editing through TalkBack custom actions, one write each.
+    val a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction> = { r, place ->
+        TileActions.of(place, dockFull = ui.layout.dock.size >= Edits.MAX_DOCK).map { a ->
+            when (a) {
+                TileAction.MOVE_TO -> CustomAccessibilityAction(res.getString(R.string.a11y_move_to)) { moveFor = r; true }
+                TileAction.MOVE_TO_DOCK -> CustomAccessibilityAction(res.getString(R.string.a11y_move_to_dock)) { vm.store.edit(Edit.MoveToDock(r.item.id, Int.MAX_VALUE)); true }
+                TileAction.REMOVE -> CustomAccessibilityAction(res.getString(R.string.action_remove_home)) { vm.store.edit(Edit.Remove(r.item.id)); true }
+            }
+        }
+    }
+    LaunchedEffect(editing, ui.load.config) { if (editing) { kotlinx.coroutines.delay(30_000); if (drag.dragged == null) editing = false } }
+    androidx.activity.compose.BackHandler(editing) { editing = false }
+
     MaterialTheme(colorScheme = darkColorScheme()) {
         Surface(Modifier.fillMaxSize(), color = Color(0xFF101418)) {
             Column(Modifier.fillMaxSize().systemBarsPadding()) {
+                if (editing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.editing_layout), color = Color.White, modifier = Modifier.weight(1f))
+                    TextButton({ editing = false }) { Text(stringResource(R.string.done)) }
+                }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (ui.load.reconnectable) stringResource(R.string.source_folder, ui.load.sourceName.removePrefix("Folder: ")) else stringResource(R.string.source_app_storage), style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
                     TextButton({ drawerOpen = true }) { Text(stringResource(R.string.apps)) }
@@ -142,11 +166,11 @@ fun HomeScreen(vm: HomeViewModel) {
                     pager, Modifier.weight(1f).fillMaxWidth(), key = { pages.getOrNull(it)?.id ?: it },
                     userScrollEnabled = drag.dragged == null,
                 ) { index ->
-                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, onOpen) }
+                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y) }
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.currentPage)
                 }
-                Dock(ui.layout.dock, vm.apps, drag, onOpen)
+                Dock(ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y)
                 ui.load.merge?.let { m ->
                     MergeSnackbar(m, onUndo = { vm.store.undoMerge() }.takeIf { m.undo && ui.load.mergeUndo },
                         onDismiss = { vm.store.engine.dismissMergeUndo() })
@@ -157,6 +181,24 @@ fun HomeScreen(vm: HomeViewModel) {
         cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }, { cloudUri = null; pickFolder.launch(null) }) }
         moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it) }, { moveAsk = null }) }
 
+        moveFor?.let { r ->
+            MoveToDialog(r, ui.layout.pages.map { it.id }, ui.layout.grid, onMove = { pageId, x, y -> moveFor = null; vm.store.edit(Edit.MoveToCell(r.item.id, pageId, x, y)) }, onDismiss = { moveFor = null })
+        }
+
+        sheetFor?.let { r ->
+            ItemSheet(r, onAction = { a ->
+                sheetFor = null
+                when (a) {
+                    ItemAction.EDIT_LAYOUT -> editing = true
+                    ItemAction.APP_INFO -> {
+                        val (pkg, act) = when (val i = r.item) { is AppItem -> i.packageName to (r.app?.activityName ?: i.activity); is ShortcutItem -> i.packageName to null; else -> null to null }
+                        if (pkg == null || !vm.apps.appInfo(pkg, act, r.app?.profile ?: Profile.PERSONAL)) toast(res.getString(R.string.open_failed, Labels.clean(r.title)))
+                    }
+                    ItemAction.REMOVE -> vm.store.edit(Edit.Remove(r.item.id))
+                }
+            }, onDismiss = { sheetFor = null })
+        }
+
         openFolder?.let { folder ->
             AlertDialog(
                 onDismissRequest = { openFolder = null },
@@ -164,7 +206,9 @@ fun HomeScreen(vm: HomeViewModel) {
                 title = { Text(folder.title) },
                 text = {
                     LazyVerticalGrid(GridCells.Fixed(4)) {
-                        items(folder.children, key = { it.item.id }) { c -> Tile(c, vm.apps) { openFolder = null; onOpen(c) } }
+                        items(folder.children, key = { it.item.id }) { c ->
+                            with(drag) { Tile(c, vm.apps, Modifier.tile(c, canDrag = false, onClick = { openFolder = null; onOpen(c) }, onLongClick = { openFolder = null; onLong(c) }, actions = a11y(c, TilePlace.FOLDER))) }
+                        }
                     }
                 },
             )
@@ -270,7 +314,7 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
 }
 
 @Composable
-private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, onOpen: (ResolvedItem) -> Unit) {
+private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = grid.rows
     Column(Modifier.fillMaxSize().padding(8.dp)) {
@@ -279,8 +323,10 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
             for (y in 0 until rows) {
                 Row(Modifier.fillMaxWidth().weight(1f)) {
                     for (x in 0 until grid.columns) {
-                        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                            byCell[x to y]?.let { r -> with(drag) { Tile(r, apps, Modifier.draggable(r)) { onOpen(r) } } }
+                        // §4.1: in edit mode every cell shows a faint outline (white 16 %).
+                        Box(Modifier.weight(1f).fillMaxHeight().padding(2.dp).then(
+                            if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier), contentAlignment = Alignment.Center) {
+                            byCell[x to y]?.let { r -> with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.PAGE))) } }
                         }
                     }
                 }
@@ -300,20 +346,22 @@ private fun PageDots(count: Int, current: Int) {
 }
 
 @Composable
-private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragController, onOpen: (ResolvedItem) -> Unit) {
+private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragController, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>) {
+    val res = androidx.compose.ui.platform.LocalResources.current
     Row(
         Modifier.fillMaxWidth().padding(8.dp).heightIn(min = 64.dp).onGloballyPositioned { drag.dockRect = it.boundsInRoot() }.background(Color(0x22FFFFFF), RoundedCornerShape(20.dp)).padding(6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        items.forEach { r -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { with(drag) { Tile(r, apps, Modifier.draggable(r), showLabel = false) { onOpen(r) } } } }
+        items.forEach { r -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.DOCK))
+                    .semantics { contentDescription = res.getString(R.string.a11y_dock_item, Labels.clean(r.title)) }, showLabel = false) } } }
         if (items.isEmpty()) Text(stringResource(R.string.dock_empty), color = Color.Gray, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterVertically))
     }
 }
 
 @Composable
-fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onClick: () -> Unit) {
+fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onClick: (() -> Unit)? = null) {
     Column(
-        modifier.clickable(onClick = onClick).padding(4.dp).alpha(if (r.missing || r.app?.paused == true) 0.4f else 1f),
+        modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(4.dp).alpha(if (r.missing || r.app?.paused == true) 0.4f else 1f),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (r.item is FolderItem) FolderIcon(r, apps) else AppIconImage(r.app, apps, 48)

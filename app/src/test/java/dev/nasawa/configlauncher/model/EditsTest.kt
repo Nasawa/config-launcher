@@ -107,4 +107,16 @@ class EditsTest {
         assertEquals(1, r.kept)
         assertEquals(listOf("n", "m"), (r.config.allItems().first { it.id == "f" } as FolderItem).items.map { it.id })
     }
+
+    // #53 item sheet: Remove from home.
+    @Test fun removeFromPageDockAndFolder() {
+        val c = base.copy(pages = listOf(base.pages[0].copy(items = listOf(app("a", 0, 0), FolderItem("f", "F", listOf(app("m"), app("n")), 1, 0)))) + base.pages[1])
+        assertFalse(Edit.Remove("a").on(c).config.allItems().any { it.id == "a" })
+        val r = Edit.Remove("m").on(c)
+        assertTrue(r.applied)
+        assertEquals(listOf("n"), (r.config.allItems().first { it.id == "f" } as FolderItem).items.map { it.id })
+        assertFalse("a folder with zero apps is deleted (§3)", Edit.Remove("n").on(r.config).config.allItems().any { it.id == "f" })
+        assertFalse(Edit.Remove("d1").on(c).config.dock!!.any { it.id == "d1" })
+        assertFalse("unknown id is skipped on replay", Edit.Remove("zzz").on(c).applied)
+    }
 }

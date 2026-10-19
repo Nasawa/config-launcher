@@ -69,6 +69,13 @@ class InstalledApps(context: Context) {
         return bmp
     }
 
+    /** System "App info" for [packageName] in [profile] (ux.md item sheet). Returns false if it can't open. */
+    fun appInfo(packageName: String, activity: String?, profile: Profile): Boolean = try {
+        val user = users[profile] ?: Process.myUserHandle()
+        val cls = activity ?: infos.values.firstOrNull { it.componentName.packageName == packageName }?.componentName?.className ?: ""
+        launcherApps.startAppDetailsActivity(ComponentName(packageName, cls), user, null, null); true
+    } catch (_: Exception) { false }
+
     /** Launch in the app's own profile. Returns false (never throws) if it can't start. */
     fun launch(app: InstalledApp): Boolean {
         val user = users[app.profile] ?: return false
