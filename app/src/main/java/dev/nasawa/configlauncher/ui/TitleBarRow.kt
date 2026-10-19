@@ -81,10 +81,16 @@ object TitleBarLayout {
         else -> theme(token) ?: Color.White
     }
 
-    /** #125: the theme tokens as `#RRGGBB` (opaque), for the phone-only contrast check. */
+    /** Theme tokens, resolved through [scheme]: one rule for drawing the bar and for measuring it (#150). */
+    val THEME_TOKENS = listOf("primary", "secondary", "onSurface", "surface")
+
+    fun themeColor(scheme: androidx.compose.material3.ColorScheme, token: String): Color? = when (token) {
+        "primary" -> scheme.primary; "secondary" -> scheme.secondary; "onSurface" -> scheme.onSurface; "surface" -> scheme.surface; else -> null
+    }
+
+    /** #125: the theme tokens as `#RRGGBB` (opaque), for the phone-only contrast check. Pass the scheme the bar draws with. */
     fun themeHex(scheme: androidx.compose.material3.ColorScheme): Map<String, String> =
-        mapOf("primary" to scheme.primary, "secondary" to scheme.secondary, "onSurface" to scheme.onSurface, "surface" to scheme.surface)
-            .mapValues { (_, c) -> String.format(Locale.ROOT, "#%06X", c.toArgb() and 0xFFFFFF) }
+        THEME_TOKENS.associateWith { String.format(Locale.ROOT, "#%06X", themeColor(scheme, it)!!.toArgb() and 0xFFFFFF) }
 
     /** ux.md §15: light text always gets the label shadow; dark text never does. */
     fun shadow(c: Color) = c.luminance() > 0.5f
@@ -132,7 +138,7 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
     val st = bar.style
     val dark = isSystemInDarkTheme()
     val scheme = MaterialTheme.colorScheme
-    val theme: (String) -> Color? = { when (it) { "primary" -> scheme.primary; "secondary" -> scheme.secondary; "onSurface" -> scheme.onSurface; "surface" -> scheme.surface; else -> null } }
+    val theme: (String) -> Color? = { TitleBarLayout.themeColor(scheme, it) }
     val textColor = TitleBarLayout.color(if (dark) st.color.dark else st.color.light, theme)
     val fontScale = LocalConfiguration.current.fontScale
     val size = TitleBarLayout.cappedSp(st.sizeSp, fontScale)

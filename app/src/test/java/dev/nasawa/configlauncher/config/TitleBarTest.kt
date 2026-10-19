@@ -6,6 +6,7 @@ import dev.nasawa.configlauncher.model.TitleBarModel
 import dev.nasawa.configlauncher.model.TitleBarModel.Slot
 import dev.nasawa.configlauncher.ui.TitleBarLayout
 import kotlinx.serialization.json.*
+import androidx.compose.ui.graphics.toArgb
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.ZonedDateTime
@@ -213,5 +214,21 @@ class TitleBarTest {
         assertEquals("Oct · Oct 18 Oct, Pages", TitleBarModel.spoken(oct, one.copy(pageName = "Oct", date = { "18 Oct" }), button = true, pages = pages))
         // One page: not a button, so no ", Pages".
         assertEquals("Home 1/1", TitleBarModel.spoken(parts, TitleBarModel.Values("Home", 1, 1, { "" }, { "" }), button = false, pages = pages))
+    }
+
+    @Test fun themeCheckMeasuresTheSchemeHomeDraws() {
+        // #150 (Grace): the check measured the default light scheme while the bar draws home's dark one.
+        val scheme = dev.nasawa.configlauncher.ui.HomeTheme.scheme()
+        val hex = TitleBarLayout.themeHex(scheme)
+        for (t in TitleBarLayout.THEME_TOKENS) {
+            val drawn = TitleBarLayout.color(t) { TitleBarLayout.themeColor(scheme, it) }
+            assertEquals(t, String.format(java.util.Locale.ROOT, "#%06X", drawn.toArgb() and 0xFFFFFF), hex[t])
+        }
+        assertEquals("#141218", hex["surface"])  // the colour Grace sampled on screen
+        val bar = { bg: String -> ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"surface","backdrop":{"color":"$bg","opacity":100}}}""")) }
+        // Repro 1: dark surface text on white is readable, so no warning.
+        assertTrue(Elements.phoneWarnings(bar("#FFFFFF"), false) { hex[it] }.isEmpty())
+        // Repro 2: the same text on black is nearly invisible, so it's warned.
+        assertEquals(1, Elements.phoneWarnings(bar("#000000"), false) { hex[it] }.size)
     }
 }
