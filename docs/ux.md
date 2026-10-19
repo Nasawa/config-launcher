@@ -451,6 +451,9 @@ Rules:
   </plurals>
   <string name="merge_folder_one_left">Folder "%1$s" wasn't recreated because its other apps were removed or moved in the file. "%2$s" was placed on its own.</string>
   <string name="merge_folder_none_left">Folder "%1$s" wasn't recreated because its apps were removed or moved in the file.</string>
+  <!-- TalkBack long form: %1$s = merge_updated, %2$s = merge_kept_part, %3$s = merge_skipped_a11y -->
+  <string name="merge_mixed_a11y">%1$s %2$s. %3$s</string>
+  <string name="merge_undo">Undo</string>
   ```
   `merge_mixed` is `merge_updated` + `merge_kept_part` + `merge_skipped_part`. Always pass the count as the plurals quantity *and* the format argument (`getQuantityString(id, n, n)`).
 
