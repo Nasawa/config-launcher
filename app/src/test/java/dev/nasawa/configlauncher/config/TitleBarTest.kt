@@ -184,4 +184,18 @@ class TitleBarTest {
         assertEquals(30f, TitleBarLayout.cappedSp(30f, 1f))
         assertEquals(26f, TitleBarLayout.cappedSp(40f, 2f))
     }
+
+    @Test fun spokenLabelExpandsEachTokenOnce() {
+        // #133: a page titled "1" next to {pageNumber}/{pageCount} was read "1, page 1 of 2 1, page 1 of 2/2".
+        val parts = (Template.parse("{page} {pageNumber}/{pageCount}") as Template.Ok).parts
+        val pages = { t: String -> "$t, Pages" }
+        val one = TitleBarModel.Values("1", 1, 2, { "" }, { "" })
+        assertEquals("1 1/2, Pages", TitleBarModel.spoken(parts, one, button = true, pages = pages))
+        assertEquals("Home 1/2, Pages", TitleBarModel.spoken(parts, one.copy(pageName = "Home"), button = true, pages = pages))
+        // A page name that's also in literal text or another token's output stays as written.
+        val oct = (Template.parse("{page} · Oct {date:d MMM}") as Template.Ok).parts
+        assertEquals("Oct · Oct 18 Oct, Pages", TitleBarModel.spoken(oct, one.copy(pageName = "Oct", date = { "18 Oct" }), button = true, pages = pages))
+        // One page: not a button, so no ", Pages".
+        assertEquals("Home 1/1", TitleBarModel.spoken(parts, TitleBarModel.Values("Home", 1, 1, { "" }, { "" }), button = false, pages = pages))
+    }
 }
