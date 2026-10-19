@@ -1,182 +1,206 @@
-# Design: config-driven title bar (#79)
+# Design: config-driven title bar as the first element (#79)
 
-Status: proposal, 2026-10-18. Author: Archimedes. Docs only: no change to `schema/` or app code until Sprite's #27–#31 rework has landed and this is accepted. Not a v1 gate (Christopher: wanted "eventually").
+Status: proposal, revised 2026-10-18 after Pragma's UX proposal (ux.md §15, PR #80) and Christopher's clarification. Author: Archimedes. **Design only, docs only:** nothing changes in `schema/` or app code until Sprite's #27–#31 rework has landed and this is accepted. Not a v1 gate.
 
-Issue #79: the home title bar becomes an optional element defined in `launcher.json`, with on/off, position, contents (page name, clock, date…) and styling (font size, colour, backdrop, alignment). It should fit the future widgets work.
+Christopher's framing (#79): the title bar is "an optional widget that can be styled and customized as desired". Pragma's #80 (three slots holding page title, clock, date or nothing; off by default; enum sizes and colours) is therefore **the default preset, not the ceiling**. This design gives real styling room and maps Pragma's slots onto it.
 
 ## 1. Decisions in brief
-- The title bar is the **first non-app element**, built on a general **element model** (`id`, `type`, `anchor` or grid `cell`, `style`) that widgets reuse later (§5).
-- **Schema version 2, not an additive v1 change** (§2). The migration from v1 is mechanical.
-- **Global by default, with per-page overrides** (§3).
-- **Content is a short template** with a fixed token set (`{page}`, `{time}`, `{date}`, `{weekday}`). An agent-writable status line comes later, from a separate file (§4).
-- **Styling is a closed, validated subset**: size and weight enums, alignment, colour tokens or `#RRGGBB` with light/dark variants, and a backdrop enum. No free-form fonts, pixel sizes or alpha (§6).
-- **Not draggable in v1.** The phone can only toggle it and edit the text; the launcher round-trips it untouched otherwise (§8).
+1. The title bar is **the first instance of a general element model** (`id`, `type`, placement, `content`, `style`) that widgets reuse later (§3).
+2. It lives in a new root **`elements[]`** array, with optional **per-page overrides** keyed by element ID (§4, Pragma Q1).
+3. **Stay on `schemaVersion: 1`.** Add the `elements` container and two forward-compatibility rules to v1 *before* the title bar ships: unknown element *types* are skipped with a warning, unknown keys inside known types are errors, and an element can declare `requires` (a launcher feature level) so newer features degrade to "skipped with a warning" on older launchers (§6, Pragma Q2). This replaces the earlier draft of this doc, which proposed v2.
+4. **Content** is per-slot template strings with a strict token grammar: `{page}`, `{time:HH:mm}`, `{date:EEE d MMM}` and a few more, no code, length-capped (§5). Pragma's `pageTitle` / `clock` / `date` are shorthands for `{page}` / `{time}` / `{date}`.
+5. **Style** is a validated, bounded set: hex or theme-token colours with light/dark variants, size in sp within bounds, weight, per-slot alignment, padding, and a backdrop that defaults to `auto` (follows the *Label backdrop* setting, Pragma Q3) but can be set in the file. Poor contrast is a **warning, never a rejection** (§7).
+6. Off by default; not draggable in v1; the phone edits only on/off and the preset (§9).
 
-## 2. Additive v1 change or a version bump? → bump to `schemaVersion: 2`
-The v1 schema has `additionalProperties: false` at the root and on pages, by design (§3 of ARCHITECTURE: unknown non-`x-` keys are errors so typos fail loudly). So a file with a `titleBar` key is **invalid to every existing v1 launcher**. ARCHITECTURE §3 rule 1 only allows additive fields without a bump "if older launchers would still render correctly", and here they wouldn't render at all: they'd keep last-good and show B2 "1 problem: unknown key titleBar", which looks like the user's mistake.
+## 2. Answers to Pragma's questions (#80)
+- **Q1: Top-level only, or per-page overrides?** Top-level is the default and the only thing the phone UI edits (Pragma's preference holds for UX). The file may additionally carry an optional per-page override block, `pages[].overrides["<elementId>"]`, with any subset of `enabled`, `content` and `style`. It costs little (same validator and merge code) and lets agents do things like hide the clock on a "Focus" page. No phone UI for overrides in the first release.
+- **Q2: Does `titleBar` need `schemaVersion` 2?** No, if we add the forward-compatible `elements` container to v1 first. Reasoning both ways:
+  - *New launcher reading an old file:* there's no `elements` key, so the title bar is absent and the page shows today's §1.3 page label. Nothing to migrate, so this direction never needs a bump.
+  - *Old launcher reading a new file:* a launcher built before the `elements` key exists rejects the file (unknown root key, B2, keeps last-good). A version bump wouldn't help that launcher render it either; it would only change the banner text to "needs a newer Config Launcher". The cost of a bump (migration code, a rewrite of every user's file, a git-visible diff) buys nothing in this direction.
+  - *So:* ship the `elements` container and the skip/`requires` rules in a v1 launcher release **before** any element type is used. Launchers from that release on tolerate every future element type and feature (skipped with a warning, not rejected). Only pre-release builds older than that reject, and only test devices run those. `schemaVersion` 2 stays reserved for genuinely breaking changes, such as removing `unsorted` (AF-2).
+- **Q3: Backdrop follows the app setting or set in the file?** Default `"auto"` follows the device's *Label backdrop* setting (Pragma's preference), because whether labels need a scrim depends on that phone's wallpaper, not on the shared layout. The file may override it with an explicit backdrop (`none`, `scrim`, or a custom colour/opacity/radius), and an explicit value wins over the setting. The phone never writes anything except `auto` unless the user picks a style in a later release.
 
-With a bump, an older launcher shows the intended "This file needs a newer Config Launcher" banner (§3 rule 4), which is the correct message. Other reasons:
-- v2 can also **remove the deprecated `unsorted`** block (AF-2, §18.5), which already needs v2.
-- The migration is trivial and lossless: `migrate1to2` = drop `unsorted`; no title bar is added (absent = off, same as v1 behaviour).
-- Per §3 rule 3, the launcher doesn't rewrite a v1 file as v2 until the user edits or taps *Upgrade now* (with a backup), so git users aren't surprised.
+## 3. Element model
+Every non-app element shares these blocks, so validation, the canonical codec, ID-based replay and the edit UI treat them uniformly.
 
-Alternative considered: put the title bar under an `x-titleBar` key in v1. Rejected: `x-` keys are user/agent notes the launcher promises never to interpret.
-
-Widgets come later as **v3** with the same element model, so the version bumps stay small and each has one purpose.
-
-## 3. Placement
-- **Global:** a root `titleBar` object applies to every page.
-- **Per page:** `pages[].titleBar` either overrides selected fields of the global one (`text`, `style`, `enabled`) or is `false` to hide it on that page. A page override with no global bar defines a bar for that page only.
-- **Anchor:** `top` only in v2 (below the status bar, above the grid). `bottom` (above the dock) is a later option, listed for Pragma (Q-T2).
-- **Space:** the bar takes a fixed height from its size (one line), and the grid's rows share the remaining height (ux.md §3 cell sizing). It never overlaps icons. A missing bar gives the space back.
-
-## 4. Content model
-`text` is a template string, at most 120 characters after token expansion, one line, ellipsized at the end.
-
-| Token | Renders | Notes |
+| Block | Title bar (first element) | Widget (later) |
 |---|---|---|
-| `{page}` | The page's `title`, or "Page n" if none | Updates on page swipe. |
-| `{time}` | Current time, system 12/24 h setting | Ticks once per minute (`ACTION_TIME_TICK`), only while home is visible. |
-| `{date}` | Medium date in the device locale (`Oct 18`) | `{date:short}` / `{date:long}` variants. |
-| `{weekday}` | Locale weekday name | |
-| `{{` `}}` | Literal braces | |
+| `id` | Item ID pattern, unique file-wide | Same |
+| `type` | `"titleBar"` | `"appWidget"` |
+| `enabled` | boolean, default `true` when present | Same |
+| `requires` | optional integer feature level (§6) | Same |
+| Placement | `anchor: "top"` (outside the grid) | On a page: `page` + `x`, `y`, `w`, `h` (inside the grid) |
+| `content` | `slots { start, center, end }` of templates | Provider component and size hints; the AppWidget ID stays on the phone, never in the file |
+| `style` | Shared `$defs/elementStyle` | Same block; text fields don't apply, `padding` and `backdrop` frame the widget |
 
-Unknown tokens are a validation error (not rendered literally), so typos are caught. Default when `text` is omitted: `"{page}"`.
+Decision: **root `elements[]` holds every element; an element is either anchored (`anchor`) or grid-placed (`page`, `x`, `y`, `w`, `h`).** Grid-placed elements take their cells into account in the "no two things in one cell" rule. Replay ops (`Move`, `Remove`, new `SetElement(id, fields)`) already work by ID. Keeping elements out of `pages[].items[]` means old item-handling code never sees a non-app type.
 
-**Agent-writable status text (later, not v2-MVP):** a `{status}` token reading one plain-text line from `title-status.txt` at the folder root (≤ 120 chars, first line only, never executed or parsed as markup). It's a separate file so an agent can update a status line every few minutes without rewriting `launcher.json`, which would churn git history and trigger merges with phone edits. Polled with the same mechanism as `launcher.json`. Not available in app-only mode.
+**Pragma's shape maps one-to-one:**
+| Pragma (#80) | This design |
+|---|---|
+| `titleBar.enabled` | the element's `enabled` |
+| `slots.start/center/end: pageTitle \| clock \| date \| none` | `content.slots.*: "{page}" \| "{time}" \| "{date}"` or omitted. The bare names are also accepted as shorthands. |
+| `size: small \| medium \| large` | `style.size`: the names map to 14 / 18 / 24 sp, or a number of sp within bounds |
+| `color: light \| dark` | `style.color`: `"light"` / `"dark"` tokens (white / near-black), or hex, or `{light, dark}` |
+| `backdrop: auto` | `style.backdrop: "auto"` (the default) |
+| centre keeps ≥ 50 %, page title truncates first | the default layout rules (§8), unchanged |
 
-Not in scope: weather, battery, notifications, next calendar event (they'd need permissions or network, which the project rules out), arbitrary URLs or intents (nothing in the file is executed).
-
-## 5. Element model (shared with widgets later)
-Every non-app home element has the same three blocks, so the validator, codec, conflict replay and edit UI treat them uniformly:
-
-| Block | Title bar (v2) | Widget (v3, later) |
-|---|---|---|
-| `id` | Same ID pattern and file-wide uniqueness as items | Same |
-| `type` | `"title"` | `"widget"` |
-| Placement | `anchor: "top"` (outside the grid) | `x`, `y`, `w`, `h` on a page grid (inside it) |
-| `style` | The shared style block (§6) | The same block (backdrop and corner radius apply to the widget frame; text fields are ignored) |
-| Type-specific | `text`, `enabled` | `provider` (component), `size` hints; the AppWidget ID stays on the phone, never in the file |
-
-Decision: **an element is an object with `id`, `type`, a placement and an optional `style`**. Anchored elements (title bar) live in named root/page slots; grid elements (widgets) live in `pages[].items[]` beside apps. Replay ops already work on IDs, so `Move`, `Remove` and a new `SetStyle(id, style)` op apply to any element. The `style` block is defined once in the schema (`$defs/style`) and referenced by each element type.
-
-## 6. Styling (closed subset)
+## 4. Shape (proposal, not in `schema/` yet)
+Pragma's default preset, as the phone would write it when the user turns the bar on:
 ```json
-"style": {
-  "size": "large",
-  "weight": "medium",
-  "align": "start",
-  "color": { "light": "#202124", "dark": "onWallpaper" },
-  "backdrop": "scrim",
-  "shadow": true
-}
+"elements": [
+  { "id": "t-main", "type": "titleBar", "anchor": "top",
+    "content": { "slots": { "center": "{page}" } } }
+]
 ```
-| Field | Values | Default |
-|---|---|---|
-| `size` | `small` 14 sp, `medium` 18 sp, `large` 24 sp, `xlarge` 32 sp | `medium` |
-| `weight` | `regular`, `medium`, `bold` | `medium` |
-| `align` | `start`, `center`, `end` (mirrored in RTL) | `start` |
-| `color` | A token (`onWallpaper`, `primary`, `secondary`, `onSurface`) or `#RRGGBB`, either as one value or `{ "light": …, "dark": … }` | `onWallpaper` |
-| `backdrop` | `none`, `scrim` (40 % black, same as the label backdrop, Q-C4), `surface` (Material surface colour, follows theme) | `none` |
-| `shadow` | boolean (1 dp 50 % black, same as home labels) | `true` |
-
-- **No alpha, fonts, pixel sizes, padding or arbitrary CSS.** Each value maps to one Compose parameter, which keeps rendering predictable and the attack surface nil.
-- **Theme and dark mode:** tokens follow the system light/dark theme. A single hex value is used in both; the `{light, dark}` form lets agents pick per theme. `onWallpaper` is white with the shadow, which is the safest choice on unknown wallpapers.
-- **Contrast:** the wallpaper is unknown, so contrast can't be validated against it. With `backdrop: surface` the launcher computes the contrast of the text colour against the surface and, below 4.5:1, renders with `onSurface` instead and adds a warning to `status.json` (`titleBar.style.color: contrast 2.1:1 on surface, using onSurface`). With `scrim`, the same check runs against the scrim. With `none`, a hex colour other than a light colour gets a warning (not an error) suggesting a backdrop.
-- **Font scale:** sizes are in sp, so the system font size applies, capped at 1.5× so the bar stays one line.
-
-## 7. Proposed schema (v2 draft, not in `schema/` yet)
-Root:
+A customized bar:
 ```json
-"titleBar": { "$ref": "#/$defs/titleBar" }
+"elements": [
+  { "id": "t-main", "type": "titleBar", "anchor": "top",
+    "content": { "slots": { "start": "{date:EEE d MMM}", "center": "{page}", "end": "{time:HH:mm}" } },
+    "style": {
+      "size": 20, "weight": 600,
+      "color": { "light": "#1B1B1F", "dark": "#F1F0F4" },
+      "align": { "start": "start", "center": "center", "end": "end" },
+      "padding": { "horizontal": 16, "vertical": 6 },
+      "backdrop": { "color": "#000000", "opacity": 35, "radius": 12 }
+    } }
+],
+"pages": [
+  { "id": "focus", "title": "Focus", "items": [],
+    "overrides": { "t-main": { "content": { "slots": { "end": "" } } } } },
+  { "id": "games", "items": [], "overrides": { "t-main": { "enabled": false } } }
+]
 ```
-Page:
+Draft JSON Schema fragments:
 ```json
-"titleBar": { "oneOf": [ { "const": false }, { "$ref": "#/$defs/titleBarOverride" } ] }
-```
-Definitions:
-```json
-"style": {
+"elements": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/element" } },
+
+"element": {
+  "type": "object", "required": ["id", "type"],
+  "properties": { "id": { "$ref": "#/$defs/id" }, "type": { "type": "string", "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,31}$" },
+                  "requires": { "type": "integer", "minimum": 1 } },
+  "if": { "properties": { "type": { "const": "titleBar" } } },
+  "then": { "$ref": "#/$defs/titleBar" }
+},
+
+"titleBar": {
+  "type": "object", "additionalProperties": false, "patternProperties": { "^x-": true },
+  "properties": {
+    "id": {}, "type": {}, "requires": {},
+    "enabled": { "type": "boolean" },
+    "anchor": { "const": "top" },
+    "content": { "$ref": "#/$defs/titleBarContent" },
+    "style": { "$ref": "#/$defs/elementStyle" }
+  }
+},
+"titleBarContent": {
+  "type": "object", "additionalProperties": false,
+  "properties": { "slots": { "type": "object", "additionalProperties": false,
+    "properties": { "start": { "$ref": "#/$defs/template" }, "center": { "$ref": "#/$defs/template" }, "end": { "$ref": "#/$defs/template" } } } }
+},
+"template": { "type": "string", "maxLength": 120 },
+
+"elementStyle": {
   "type": "object", "additionalProperties": false,
   "properties": {
-    "size":   { "enum": ["small", "medium", "large", "xlarge"] },
-    "weight": { "enum": ["regular", "medium", "bold"] },
-    "align":  { "enum": ["start", "center", "end"] },
-    "color":  { "oneOf": [ { "$ref": "#/$defs/colorValue" },
-                           { "type": "object", "additionalProperties": false, "minProperties": 1,
-                             "properties": { "light": { "$ref": "#/$defs/colorValue" }, "dark": { "$ref": "#/$defs/colorValue" } } } ] },
-    "backdrop": { "enum": ["none", "scrim", "surface"] },
-    "shadow": { "type": "boolean" }
+    "size":   { "oneOf": [ { "enum": ["small", "medium", "large"] }, { "type": "number", "minimum": 10, "maximum": 40 } ] },
+    "weight": { "oneOf": [ { "enum": ["regular", "medium", "bold"] }, { "type": "integer", "enum": [300, 400, 500, 600, 700, 800] } ] },
+    "color":  { "oneOf": [ { "$ref": "#/$defs/color" },
+                { "type": "object", "additionalProperties": false, "minProperties": 1,
+                  "properties": { "light": { "$ref": "#/$defs/color" }, "dark": { "$ref": "#/$defs/color" } } } ] },
+    "align":  { "type": "object", "additionalProperties": false,
+                "properties": { "start": { "$ref": "#/$defs/align" }, "center": { "$ref": "#/$defs/align" }, "end": { "$ref": "#/$defs/align" } } },
+    "padding": { "type": "object", "additionalProperties": false,
+                 "properties": { "horizontal": { "type": "integer", "minimum": 0, "maximum": 32 },
+                                 "vertical": { "type": "integer", "minimum": 0, "maximum": 24 } } },
+    "backdrop": { "oneOf": [ { "enum": ["auto", "none", "scrim"] },
+                  { "type": "object", "additionalProperties": false, "required": ["color"],
+                    "properties": { "color": { "$ref": "#/$defs/color" },
+                                    "opacity": { "type": "integer", "minimum": 0, "maximum": 100 },
+                                    "radius": { "type": "integer", "minimum": 0, "maximum": 24 } } } ] }
   }
 },
-"colorValue": { "oneOf": [ { "enum": ["onWallpaper", "primary", "secondary", "onSurface"] },
-                           { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" } ] },
-"titleBar": {
-  "type": "object", "required": ["id", "type"], "additionalProperties": false,
-  "patternProperties": { "^x-": true },
-  "properties": {
-    "id": { "$ref": "#/$defs/id" },
-    "type": { "const": "title" },
-    "enabled": { "type": "boolean", "default": true },
-    "anchor": { "const": "top", "default": "top" },
-    "text": { "type": "string", "maxLength": 120, "default": "{page}" },
-    "style": { "$ref": "#/$defs/style" }
-  }
-},
-"titleBarOverride": {
-  "type": "object", "additionalProperties": false, "minProperties": 1,
-  "patternProperties": { "^x-": true },
-  "properties": {
-    "id": { "$ref": "#/$defs/id" },
-    "enabled": { "type": "boolean" },
-    "text": { "type": "string", "maxLength": 120 },
-    "style": { "$ref": "#/$defs/style" }
-  }
-}
-```
-Example:
-```json
-{
-  "schemaVersion": 2,
-  "titleBar": { "id": "t-main", "type": "title", "text": "{weekday}, {date} · {time}",
-                "style": { "size": "large", "align": "center", "backdrop": "scrim" } },
-  "pages": [
-    { "id": "home", "title": "Home", "items": [] },
-    { "id": "work", "title": "Work", "titleBar": { "text": "{page}" }, "items": [] },
-    { "id": "games", "titleBar": false, "items": [] }
-  ]
-}
-```
-Canonical key order: `id, type, enabled, anchor, text, style`, then `x-` keys; inside `style`: `size, weight, align, color, backdrop, shadow`. Defaults are omitted when the phone writes.
+"color": { "oneOf": [ { "enum": ["light", "dark", "onWallpaper", "primary", "secondary", "onSurface", "surface"] },
+                      { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" } ] },
+"align": { "enum": ["start", "center", "end"] },
 
-## 8. Validation, limits and write-back
-- **Kotlin-only rules** (not expressible in the schema): tokens must be known; expanded text ≤ 120 chars is a render-time ellipsis, not an error; a per-page override needs a global bar or must set `enabled: true` with its own `text`; title IDs are unique file-wide alongside item IDs.
-- **Limits:** one global bar, one override per page (20 pages), template ≤ 120 chars, ≤ 8 tokens. These add well under 10 KB to the 2 MiB budget (§17 Q16).
-- **Write-back:** not draggable in v1. Phone-side edits are limited to long-press on the bar → `Edit title bar` (Pragma, Q-T4) with a text field and an on/off toggle, and to page rename (which changes what `{page}` shows). Each is a normal edit op (`SetTitleBar(id, fields)`) with the usual debounce, hash check and replay. A missing global bar is never created by the launcher on its own.
-- **Conflicts:** replayed by ID like items. If the agent removed the bar and the phone edited it, the edit is skipped (existing rule).
-- **Error UX:** title-bar errors are ordinary B2 problems with paths (`titleBar.text: unknown token {wether}`), and last-good stays.
+"pageOverrides": { "type": "object", "maxProperties": 32,
+  "propertyNames": { "$ref": "#/$defs/id" },
+  "additionalProperties": { "type": "object", "additionalProperties": false, "minProperties": 1,
+    "properties": { "enabled": { "type": "boolean" }, "content": { "type": "object" }, "style": { "$ref": "#/$defs/elementStyle" } } } }
+```
+Note the `element` definition doesn't set `additionalProperties: false` itself: for an unknown `type` it accepts any keys, so the file stays valid and the launcher skips that element (§6). For a known type, the type's own definition is strict. Canonical key order: `id, type, requires, enabled, anchor, content, style`, then `x-` keys. Defaults are omitted when the phone writes.
+
+## 5. Templates and the token grammar
+Each slot is a template, at most 120 characters, one line.
+
+Grammar (parsed by our own tokenizer, never `String.format` or an expression evaluator):
+```
+template := ( literal | "{{" | "}}" | token )*
+token    := "{" name ( ":" pattern )? "}"
+name     := "page" | "pageNumber" | "pageCount" | "time" | "date"
+pattern  := 1..32 chars from: y M d E a H h k K m  space . , : / - ' and letters inside '...'
+```
+- `{page}`: the page `title`, or `Page n`. `{pageNumber}`, `{pageCount}`: integers.
+- `{time}` with no pattern uses the system 12/24 h format; `{date}` alone is the locale medium date. With a pattern, the pattern is passed to `DateTimeFormatter.ofPattern(pattern, locale)` **only after** the allow-list check, so arbitrary formatter features can't be reached and it can't throw at render time.
+- Seconds (`s`, `S`) and zone names (`z`, `V`, `O`) are not allowed: the bar ticks once a minute, and zones are out of scope.
+- At most 8 tokens per template. `{{` and `}}` are literal braces.
+- An unknown token name, a forbidden pattern letter, an unclosed brace or a pattern over 32 characters is a **validation error** (B2 with the path, e.g. `elements[0].content.slots.end: unknown token {wether}`). The expanded text isn't limited (dates vary by locale); it's ellipsized when rendered.
+- The empty string `""` in an override means "nothing in this slot".
+- **Later:** `{status}` reads the first line (≤ 120 chars) of `title-status.txt` at the folder root, so an agent can update a status line without rewriting `launcher.json` (which would churn git and cause merges). `{nextAlarm}` via `AlarmManager.getNextAlarmClock` needs no permission. Each new token raises the feature level (§6).
+
+Not in scope, ever: weather, battery percentage, notifications or calendar (permissions or network), URLs, intents, scripts.
+
+## 6. Compatibility mechanism (keeps schemaVersion 1)
+1. **Container first.** One v1 launcher release adds `elements` and `pages[].overrides` to the v1 schema and implements the rules below, but no element type yet. That's the compatibility baseline.
+2. **Unknown element type → skipped with a warning.** The element is kept verbatim on write-back (like an `x-` key), listed in `status.json` warnings (`elements[2]: type "appWidget" isn't supported by this launcher; skipped`), and not rendered. The file stays valid. A small notice in the error sheet; no banner.
+3. **Unknown keys inside a known type → error** (B2), as today. Typos keep failing loudly.
+4. **`requires` (feature level).** The launcher has a constant `FEATURE_LEVEL` (1 for the container release, 2 for the title bar, and so on, listed in ARCHITECTURE). An element with `requires` greater than the launcher's level is treated like an unknown type: skipped with a warning and kept verbatim, **before** strict key checking. The phone writes `requires` only when the element uses something newer than the level that introduced its type (e.g. a new token), and `scripts/validate.py` computes and checks it so agents don't have to.
+5. **Root-level `minLauncherFeatureLevel`** was considered (fail the whole file if too old) and rejected: it turns an optional decoration into a reason to reject the whole layout.
+6. Every element stays optional; no app placement ever depends on an element, so skipping one can't break the home screen.
+
+## 7. Styling limits, theme and contrast
+| Field | Bounds | Default |
+|---|---|---|
+| `size` | `small`/`medium`/`large` (14/18/24 sp) or 10–40 sp | `small` (Pragma: 14 sp) |
+| `weight` | `regular`/`medium`/`bold` or 300–800 in steps of 100 | `regular` |
+| `color` | token or `#RRGGBB` (no alpha), or `{light, dark}` | `light` (white with the label shadow) |
+| `align` | per slot `start`/`center`/`end` (mirrored in RTL) | start/center/end per slot |
+| `padding` | horizontal 0–32 dp, vertical 0–24 dp | 16 / 4 |
+| `backdrop` | `auto` (follows *Label backdrop*), `none`, `scrim` (60 %, as #80), or `{color, opacity 0–100, radius 0–24}` | `auto` |
+
+- **Dark mode:** a token follows the system theme; a single hex is used in both themes; the `{light, dark}` form picks per theme.
+- **Shadow:** light text always gets the 1 dp label shadow (Pragma §15); dark text never does.
+- **Contrast is a warning, never a rejection.** The wallpaper is unknown, so with `none` nothing can be measured. With a known backdrop (scrim or custom), the launcher computes text-versus-backdrop contrast. Below 4.5:1 it renders anyway, adds a `status.json` warning (`elements[0].style.color: contrast 2.1:1 on backdrop`), and shows it in the error sheet's warnings section. No automatic recolouring (the user asked for control).
+- **Font scale:** sizes are sp, so the system font size applies, capped so the bar stays one line (max rendered size 40 sp × 1.3).
+
+## 8. Layout, validation and write-back
+- **Layout (Pragma §15, unchanged):** one line; `center` keeps at least 50 % of the width; side slots ellipsize first, then `center`; clock and date never truncate; the page title ellipsizes at the end. The bar's height comes from size + vertical padding, and grid rows share the rest (never overlaps icons). Off = today's §1.3 page label.
+- **Kotlin-only rules:** template grammar, `requires` handling, override keys must name an existing element ID (otherwise a warning; the override is ignored and kept), one `titleBar` element per file in this release (a second is an error), element IDs unique with item IDs.
+- **Limits:** 32 elements, 32 overrides per page, 120-char templates, 8 tokens per template, 32-char patterns. Negligible against the 2 MiB budget.
+- **Write-back:** not draggable in v1. The phone edits only on/off and the preset (Pragma's slot picker writes `{page}`/`{time}`/`{date}`), via a `SetElement(id, fields)` op with the usual debounce, hash check and ID-based replay. Any style or template the phone doesn't understand is kept verbatim. The launcher never creates or deletes an element on its own.
+- **Conflicts:** same as items: if the file removed the element, a phone edit to it is skipped.
 
 ## 9. Performance and accessibility
-- One `Text` composable per visible page; time tokens recompose once a minute, driven by a single shared ticker that stops when home isn't visible. No measurable battery cost beyond the existing poll.
-- The bar's height is resolved once per configuration change, so swiping pages doesn't relayout the grid.
-- Accessibility: semantics `heading()`; TalkBack reads the expanded text (dates and times in spoken form). It's not a live region, so the clock doesn't announce every minute. Contrast handled as in §6; font scale respected up to 1.5×. Touch target ≥ 48 dp when it's tappable (long-press edit).
+- One row composable; time and date tokens recompose from a single once-a-minute ticker (`ACTION_TIME_TICK`), active only while home is visible. Templates are parsed once per load, not per frame.
+- Accessibility (Pragma §15): one focusable node per non-empty slot in reading order; `{page}` keeps the page-list button semantics and 48 dp target; clock and date read in spoken form; not a live region. Contrast warnings as above.
 
 ## 10. MVP versus later
-**MVP of this feature (schema v2):** global bar plus per-page override or hide, `top` anchor, the template with `{page}`, `{time}`, `{date}`, `{weekday}`, the style subset, contrast fallback with a `status.json` warning, toggle and text edit from the phone.
+**First release of the feature:** the container release (feature level 1: `elements`, `overrides`, skip rules), then the title bar (level 2): `top` anchor, three slots, tokens `{page}`, `{pageNumber}`, `{pageCount}`, `{time[:p]}`, `{date[:p]}`, the full style block, `auto` backdrop, contrast warnings, phone toggle and preset picker (Pragma's #80 UI).
 
-**Later:** `bottom` anchor, `{status}` from `title-status.txt`, tap actions (open the drawer, a page jump; never intents), a second line, more tokens (next alarm via `AlarmManager.getNextAlarmClock`, which needs no permission), style editing on the phone, widgets (v3) on the same element model.
+**Later:** per-page override UI, style editing on the phone, `{status}` and `{nextAlarm}`, a `bottom` anchor, tap actions limited to in-launcher targets (drawer, page list), then `appWidget` elements on the same model (bind consent stays on the phone; the file only names the provider and cells).
 
 ## 11. Open UX questions for Pragma
-- **Q-T1** Default look when a user first turns it on: `"{page}"` start-aligned medium, or a clock/date centred large?
-- **Q-T2** Is a `bottom` anchor (above the dock) worth offering later, or is top-only enough?
-- **Q-T3** Where is the on/off toggle: Settings → Home, the bar's long-press menu, or both?
-- **Q-T4** Phone editing scope in the first release: text and on/off only (proposed), or also size and alignment pickers?
-- **Q-T5** Should tapping the bar do anything (open the drawer, page overview), or only long-press to edit?
-- **Q-T6** How does the bar interact with the label backdrop setting and the status bar: same scrim, one combined scrim, or independent?
-- **Q-T7** Behaviour on the wall-display devices and tablets in landscape: same single line, or a larger default size?
-- **Q-T8** Copy for the contrast fallback (in the details view and status.json) and for the "needs a newer Config Launcher" banner when a v2 file meets a v1 launcher.
+Pragma's Q1–Q3 are answered in §2. New ones raised by this design:
+- **Q-T1** The phone's slot picker offers Pragma's three choices. Should it also show "Custom (set in the file)" when a slot holds a template it can't represent, and keep it read-only?
+- **Q-T2** Where do contrast warnings surface: only the error sheet's warnings section, or also a one-time snackbar?
+- **Q-T3** Default `size` for the bar: 14 sp (matches the §1.3 page label) or 18 sp?
+- **Q-T4** Should a skipped element (unknown type or `requires`) show anything on the phone besides the error-sheet note?
+- **Q-T5** Copy for the token errors and the skip warning (`… isn't supported by this launcher; skipped`).
 
 ## 12. Follow-ups once accepted (not now)
-- **Archimedes:** `schema/launcher-config.v2.schema.json`, examples, and the ARCHITECTURE §3 migration entry.
-- **Sprite:** model (`TitleBar`, `Style`), codec key order, Kotlin validator rules, `migrate1to2`, the shared ticker, `SetTitleBar` op and replay, `scripts/validate.py` support for v2.
-- **Grace:** fixtures for valid and invalid title bars (unknown token, bad hex, override without global), v1-launcher-meets-v2-file, contrast fallback, TalkBack and font-scale checks.
+- **Archimedes:** add the container and rules to `schema/launcher-config.v1.schema.json` (feature level 1), then the title bar (level 2), with examples; ARCHITECTURE §3 note on feature levels.
+- **Sprite:** model (`Element`, `TitleBar`, `ElementStyle`, overrides), codec ordering and verbatim keep of unknown elements, validator (grammar, `requires`, override references), `FEATURE_LEVEL`, the ticker, `SetElement` op and replay, `scripts/validate.py` support including computing `requires`.
+- **Pragma:** reconcile ux.md §15 with this mapping (slots as presets, `auto` backdrop default, warnings).
+- **Grace:** fixtures for unknown element types (skipped, valid), unknown keys in a known type (invalid), `requires` above the level, token grammar edge cases, contrast warnings, override referencing a missing ID, TalkBack and font scale.
