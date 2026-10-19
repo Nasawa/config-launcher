@@ -131,7 +131,8 @@ fun HomeScreen(vm: HomeViewModel) {
     androidx.activity.compose.BackHandler(editing) { editing = false }
 
     MaterialTheme(colorScheme = darkColorScheme()) {
-        Surface(Modifier.fillMaxSize(), color = Color(0xFF101418)) {
+        // Transparent over the system wallpaper (theme windowShowWallpaper, #58).
+        Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
             Column(Modifier.fillMaxSize().systemBarsPadding()) {
                 if (editing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.editing_layout), color = Color.White, modifier = Modifier.weight(1f))
@@ -211,6 +212,10 @@ fun HomeScreen(vm: HomeViewModel) {
                 HomeAction.RELOAD -> vm.store.pollNow()
                 // No Settings screen yet: the settings live in the ⋮ menu, so open that (gap, noted).
                 HomeAction.SETTINGS -> menuOpen = true
+                // #58: system wallpaper chooser; ACTION_SET_WALLPAPER needs no permission.
+                HomeAction.WALLPAPER -> runCatching {
+                    ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SET_WALLPAPER), res.getString(R.string.action_wallpaper)))
+                }.onFailure { toast(res.getString(R.string.open_failed, res.getString(R.string.action_wallpaper))) }
             }
         }, onDismiss = { homeMenu = false })
 
