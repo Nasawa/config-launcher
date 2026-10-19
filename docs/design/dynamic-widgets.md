@@ -1,7 +1,7 @@
 # Dynamic widgets: AI-assisted dashboard cards
 
 **Status:** draft for review (Christopher / Claw / Pragma / Sprite).  
-**Claw review folded in** (PR #117 comment at 313ab26): structural `data.file`, exact-host `hosts`, tap example, Q-C7/Q-C3 recommendations, `ui.reload` + relative time, narrowing ceiling model.
+**Q-A9 (Pragma #116 / Claw):** http in `hosts`/`origins`; approval ceiling = cumulative union. **Claw review folded in** (PR #117 comment at 313ab26): structural `data.file`, exact-host `hosts`, tap example, Q-C7/Q-C3 recommendations, `ui.reload` + relative time, narrowing ceiling model.
 
 **Opened with:** product reframe from Christopher (via Grok Bot), screenshots in `/workspace/cl-input/` (not committed), Pragma UX [#116](https://github.com/Nasawa/config-launcher/pull/116) (`docs/ux.md` §17), schema answers Q-A1–Q-A8 on that PR.  
 **Related:** [docs/research/widgets.md](../research/widgets.md) (updated by this PR where superseded), [docs/design/title-bar.md](title-bar.md), elements container (#112, merged), Stage 1 cell reservation.
@@ -85,9 +85,9 @@ Responsive: up to 3 `layouts` keyed by `"WxH"` with a **lowercase** `x` (e.g. `"
 - **HTTP client:** one isolated client per element id (no shared cache, no cookies, fixed `User-Agent` naming Config Launcher).
 - **Redirects:** follow only if the next hop stays on the **same pinned origin**; otherwise fail the fetch.
 - **`net.fetch` request URLs are literals** in the element (fixed under a pinned origin). They must **not** be built from `{data:…}`.
-- **`ui.openUrl` tap `url` MAY use `{data:…}`** (Outer Shell needs this for "latest post"). At tap time resolve the template, normalise the host (IDNA/punycode/lowercase), and **open only if** it **exactly** matches an approved `hosts` entry (no subdomain inference), scheme is `https` or an approved `http` origin policy (Q-C7), and there is no `userinfo`. Else snackbar + warning. Data must not open a host outside the allowlist.
+- **`ui.openUrl` tap `url` MAY use `{data:…}`** (Outer Shell needs this for "latest post"). At tap time resolve the template, normalise the host (IDNA/punycode/lowercase), and **open only if** it **exactly** matches an approved `hosts` entry (no subdomain inference), scheme+host match an approved `hosts` entry (bare = https only; `http://…` entry required for cleartext), and there is no `userinfo`. Else snackbar + warning. Data must not open a host outside the allowlist.
 - **Connect-time IP check:** on every connection, resolve and refuse RFC1918 / link-local / metadata addresses unless that exact origin was approved under the private-origin allow flow. **DNS rebinding:** re-check the connected IP on each request, not only at approval time.
-- **Cleartext / LAN (recommendation, Christopher has final word):** users own what they knowingly approve. `http://` is allowed **per origin when that exact origin string (including `http://`) is approved** — show `http://` in the prompt; **no silent https→http downgrade**. Self-signed: prefer **TOFU certificate pinning per origin** (pin on first approve / explicit re-pin) over disabling TLS validation. Private IPs still need an explicit approved origin; agent-written local JSON remains the simplest LAN path.
+- **Cleartext / LAN (recommendation, Christopher has final word):** users own what they knowingly approve. `http://` is allowed when the user approves an `http://host` host entry or `http://…` origin by name — show `http://` in the prompt; **no silent https→http downgrade**. Self-signed: prefer **TOFU certificate pinning per origin** (pin on first approve / explicit re-pin) over disabling TLS validation. Private IPs still need an explicit approved origin; agent-written local JSON remains the simplest LAN path.
 - **Secrets:** never in synced files. Device Keystore / encrypted prefs, entered on phone, scoped to `(elementId, origin)`. Agents declare that a secret slot exists; user fills it. **When the pinned origin set changes, delete secrets for origins that were removed** before any new fetch runs.
 
 ### What stays out of the synced folder
@@ -119,18 +119,28 @@ Prefer **kind-specific keys**, not a generic `targets` array (easier for schema 
 | `data.file` | *(no fields)* — path derived from element `id` |
 | `ui.reload` | *(no fields)* |
 | `ui.openApp` | `packages` (string array) |
-| `ui.openUrl` | `hosts` (string array of hostnames) |
-| `net.fetch` | `origins` (string array of exact `https://host[:port]`) |
+| `ui.openUrl` | `hosts` (bare hostname = https; or `http://host` / `https://host`) |
+| `net.fetch` | `origins` (exact `https://host[:port]` or `http://host[:port]`) |
 
 Fingerprint serializes `kind` + those fields (sorted). Pragma's illustrative `targets` is **not** the schema shape.
 
 
-### `ui.openUrl.hosts` matching (exact)
+### `ui.openUrl.hosts` matching (exact) — Q-A9
 
-- Compare **exact host** only after normalisation: Unicode → lowercase ASCII / **punycode** (IDNA); no port in `hosts` (port only via full origin on `net.fetch`).
-- **No implied subdomains:** approving `anigeek.com` does **not** allow `blog.anigeek.com` (list both). Approving `blog.anigeek.com` does not allow `anigeek.com`.
-- The consent prompt shows the **punycode / normalised** form the phone will enforce (so lookalikes are visible).
-- At tap time, resolve `{data:…}` then compare the URL host the same way; mismatch → snackbar + `warn_tap_host` (Pragma #116).
+Entries are either:
+
+| Form in `hosts` | Allows |
+|---|---|
+| bare hostname (`blog.anigeek.com`) | **`https://` only** to that exact host |
+| scheme-qualified (`http://nas.lan`, `https://nas.lan`) | that **scheme + host** only |
+
+- Normalise before compare: Unicode → lowercase / **punycode** (IDNA). Bare entries have no port; scheme-qualified may include a non-default port as `http://host:8080` if we allow that later — v1: host only, default ports.
+- **No implied subdomains:** `anigeek.com` ≠ `blog.anigeek.com`.
+- Prompt shows the form that will be enforced, with **`http://` visible** when http was approved. **No silent https→http downgrade** (an https approval never opens http).
+- Default for agents: prefer bare hostnames (https). Use `http://…` only when the user/agent knowingly needs cleartext (homelab).
+- At tap time: resolve `{data:…}`, then require scheme+host to match an approved entry; else snackbar + `warn_tap_host` / `warn_tap_scheme`.
+
+`net.fetch` `origins` are always full origins (`https://host[:port]` or `http://host[:port]`) and follow the same approve-by-name / no-downgrade rules.
 
 **Tap actions** on a node: `{ "kind": "ui.openUrl", "url": "…" }` or `{ "kind": "ui.openApp", "package": "…" }`. The `url` / `package` must be allowed by a declared capability on the same element.
 
@@ -141,19 +151,22 @@ Fingerprint serializes `kind` + those fields (sorted). Pragma's illustrative `ta
 
 - Fingerprint = canonical sorted **capabilities + targets only** (not layout/style/`author`/span).
 - File load **never** opens a dialog (Pragma §17.2). Broadened → dashed consent tile `Needs your OK` / `Needs your OK again`, content not rendered, cells kept.
-- See **Narrowing model** below.
+- See **Approval ceiling** below (union set; never shrinks).
 - Same-tier cosmetic / data-shape change with capabilities unchanged → info dot + `Changed` if useful; stays live.
 
-### Narrowing model (unambiguous)
+### Approval ceiling (Claw #3 / Q-A9) — one set per widget, never shrinks
 
-The device stores the **approved fingerprint set** for an element id (capabilities + targets at approval time). That stored set **does not shrink** when the file narrows.
+The device stores one **approved capability set** per element id: a union of every `(kind, target)` line the user has ever approved for that widget on this phone.
 
-- **File fingerprint ⊆ stored approved set** → stay live, **no prompt** (narrowing or identical). The stored set is left as-is (it does not shrink to the narrower file).
-- **File fingerprint has anything outside the stored set** (new kind or new target) → `needsApprovalAgain`.
-- **Return to a fingerprint that is ⊆ stored set** (including reverting after a broaden that was never approved) → live without prompt.
-- **Turn off** clears or ignores the stored set for that id until the user approves again (Pragma §17.6).
+- Approvals at **different times combine** (union). Approving `ui.openUrl`+`blog.anigeek.com` today and `data.file` tomorrow yields both in the ceiling.
+- The stored set **never shrinks** on file edits (narrowing does not delete lines).
+- **File is live with no prompt** iff every declared `(kind, target)` in the file is ∈ the stored set (file ⊆ ceiling).
+- **Anything outside the ceiling** → prompt only for the **new** lines (`needsApproval` / `needsApprovalAgain`); on approve, union them into the ceiling.
+- **Turn off** (Pragma §17.6) stops rendering without necessarily wiping the ceiling until the user clears it in Widget permissions (product choice: prefer keep ceiling on Turn off, clear only on explicit revoke — match Pragma).
 
-So: approval is a **ceiling** the file may use up to; narrowing never re-prompts and never deletes the ceiling.
+**Exception — Phone data + Internet combo:** even if `phone.*` and `net.fetch` were each approved alone earlier, the first time a widget declares **both**, show the combination prompt once (Pragma §17.1). After that combo approval, the pair is in the ceiling.
+
+This replaces a single “fingerprint equality / subset of last fingerprint” model: the ceiling is cumulative across prompts.
 
 - Approvals **device-local**, keyed by `elementId + capabilityFingerprint`.
 - Optional `author` string (≤40): quoted in UI (`says "Claw"`), **never** trusted for auto-approve.
@@ -255,7 +268,7 @@ We still recommend **against** a built-in HA API client with broad rights. Claw 
 - **Q-C4:** Is `author` useful enough to keep, knowing it is only a quote?
 - **Q-C5:** (revised HA) Confirm companion widgets + agent JSON is enough for v1 of (b).
 - **Q-C6:** *(decided for parity)* Add Show-tier `ui.reload` (re-read data file) and a `{relative:…}` / `updatedAt` relative-time token. Confirm naming with Pragma.
-- **Q-C7:** *(recommendation in §3)* Allow `http://` per approved origin name; TOFU pin for self-signed; no silent downgrade. Confirm. Local JSON still recommended for LAN monitors.
+- **Q-C7:** *(adopted Q-A9)* `http://` via scheme-qualified `hosts` / `origins` when approved by name; TOFU for self-signed; no silent downgrade. Still confirm TOFU UX copy.
 
 ### For Pragma
 
