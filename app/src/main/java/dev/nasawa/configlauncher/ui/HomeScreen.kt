@@ -94,14 +94,19 @@ fun HomeScreen(vm: HomeViewModel) {
     }
     // true: the pick moves the layout (first run, menu); false: Reconnect just re-grants the folder.
     var moving by remember { mutableStateOf(false) }
+    var folderProblem by remember { mutableStateOf<dev.nasawa.configlauncher.store.ConfigEngine.Inspection.Unreadable?>(null) }
     var moveAsk by remember { mutableStateOf<Pair<android.net.Uri, dev.nasawa.configlauncher.store.ConfigEngine.Inspection>?>(null) }
     val scope = rememberCoroutineScope()
     val proceed = { uri: android.net.Uri ->
         if (!moving) vm.store.useFolder(uri)
         else scope.launch {
             val ins = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vm.store.inspectFolder(uri) }
-            if (ins == null || ins is dev.nasawa.configlauncher.store.ConfigEngine.Inspection.Empty) { vm.store.moveToFolder(uri, useMine = true); onboarded = true }
-            else moveAsk = uri to ins
+            when (FolderPick.next(ins)) {
+                // #74: never useMine here; if a file showed up since the inspect, moveTo adopts it.
+                FolderPick.Next.CREATE -> { vm.store.moveToFolder(uri, useMine = false); onboarded = true }
+                FolderPick.Next.ASK -> moveAsk = uri to ins
+                FolderPick.Next.PROBLEM -> folderProblem = ins as dev.nasawa.configlauncher.store.ConfigEngine.Inspection.Unreadable
+            }
         }
         Unit
     }
@@ -117,7 +122,8 @@ fun HomeScreen(vm: HomeViewModel) {
             cancelled = pickCancelled,
         )
         cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }, { cloudUri = null; pickFolder.launch(null) }) }
-        moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it); onboarded = true }, { moveAsk = null }) }
+        moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it); onboarded = true }, { moveAsk = null; vm.store.forgetFolder(uri) }) }
+        folderProblem?.let { p -> FolderProblemDialog(p, { folderProblem = null; pickFolder.launch(null) }, { folderProblem = null }) }
         return
     }
     // Merge results use the in-app snackbar (ux.md §9.1); other one-shot notices are toasts.
@@ -181,17 +187,16 @@ fun HomeScreen(vm: HomeViewModel) {
             Column(Modifier.fillMaxSize().systemBarsPadding().swipeUpToOpen(
                 // §1.4: off in edit mode and while dragging; the bottom system-gesture strip belongs to the system.
                 { !editing && drag.dragged == null && !drawerOpen }, { gestureBottomPx }) { drawerOpen = true }) {
+                // #75: the edit bar takes the top row's place at the same height, so the grid doesn't jump under the finger.
+                Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
                 if (editing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.editing_layout), color = Color.White, modifier = Modifier.weight(1f))
                     TextButton(leaveEdit) { Text(stringResource(R.string.done)) }
-                }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (ui.load.reconnectable) stringResource(R.string.source_folder, ui.load.sourceName.removePrefix("Folder: ")) else stringResource(R.string.source_app_storage), style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
                     // §1.4: the Apps button is the tap path (hint "open app list"); hidden in edit mode.
-                    if (!editing) {
-                        val hint = stringResource(R.string.a11y_open_drawer_hint)
-                        TextButton({ drawerOpen = true }, Modifier.semantics { onClick(label = hint) { drawerOpen = true; true } }) { Text(stringResource(R.string.apps)) }
-                    }
+                    val hint = stringResource(R.string.a11y_open_drawer_hint)
+                    TextButton({ drawerOpen = true }, Modifier.semantics { onClick(label = hint) { drawerOpen = true; true } }) { Text(stringResource(R.string.apps)) }
                     Box {
                         TextButton({ menuOpen = true }) { Text("⋮") }
                         DropdownMenu(menuOpen, { menuOpen = false }) {
@@ -211,6 +216,7 @@ fun HomeScreen(vm: HomeViewModel) {
                             if (!isHome) DropdownMenuItem({ Text(stringResource(R.string.home_role_button)) }, { menuOpen = false; becomeHome() })
                         }
                     }
+                }
                 }
                 if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
                 ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
@@ -262,7 +268,8 @@ fun HomeScreen(vm: HomeViewModel) {
         }
 
         cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }, { cloudUri = null; pickFolder.launch(null) }) }
-        moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it) }, { moveAsk = null }) }
+        moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it) }, { moveAsk = null; vm.store.forgetFolder(uri) }) }
+        folderProblem?.let { p -> FolderProblemDialog(p, { folderProblem = null; moving = true; pickFolder.launch(null) }, { folderProblem = null }) }
         if (homePrompt && !isHome) AlertDialog(
             onDismissRequest = { homePrompt = false },
             title = { Text(stringResource(R.string.home_role_title)) },
@@ -478,9 +485,7 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
                     for (x in 0 until grid.columns) {
                         // §4.1: in edit mode every cell shows a faint outline (white 16 %).
                         Box(Modifier.weight(1f).fillMaxHeight().padding(2.dp).then(
-                            if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier).then(
-                            // §1.1: long-press on empty space opens the home menu.
-                            if (byCell[x to y] == null) Modifier.pointerInput(Unit) { detectTapGestures(onLongPress = { onEmptyLong() }) } else Modifier),
+                            if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier),
                             contentAlignment = Alignment.Center) {
                             byCell[x to y]?.let { r -> with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.PAGE))) } }
                         }
@@ -488,7 +493,16 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
                 }
             }
         }
-        Column(Modifier.weight(1f).onGloballyPositioned { drag.gridRect = it.boundsInRoot() }, content = body)
+        // §1.1: long-press on empty space opens the home menu. Detected on the whole grid (#75: the gutters between
+        // cells count too); a press that lands on an occupied cell is the tile's own long-press.
+        val occupied by rememberUpdatedState(byCell.keys)
+        val onEmpty by rememberUpdatedState(onEmptyLong)
+        Column(Modifier.weight(1f).onGloballyPositioned { drag.gridRect = it.boundsInRoot() }.pointerInput(grid) {
+            detectTapGestures(onLongPress = { pos ->
+                val cell = GridHit.cell(pos.x, pos.y, size.width.toFloat(), size.height.toFloat(), grid.columns, grid.rows)
+                if (cell !in occupied) onEmpty()
+            })
+        }, content = body)
     }
 }
 

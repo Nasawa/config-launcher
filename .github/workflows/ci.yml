@@ -21,6 +21,11 @@ jobs:
         run: ./gradlew --no-daemon testDebugUnitTest
       - name: Assemble debug APK
         run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug
+      - name: Debug APK is signed with the committed debug key (#73)
+        run: |
+          SIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$SIGNER" verify --print-certs app/build/outputs/apk/debug/*.apk | tee signer.txt
+          grep -qi "SHA-256 digest: 3a0cb6b59a1140b4b76d6a6fd70fbf3744f3174fd2479d89a3a148810cfd3dca" signer.txt
       - uses: actions/upload-artifact@v7
         with:
           name: config-launcher-debug-apk

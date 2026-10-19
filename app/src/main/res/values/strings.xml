@@ -120,6 +120,8 @@
     </plurals>
     <string name="move_valid">It has %1$s and %2$s. If you replace it, the folder\'s file is first copied to .configlauncher/backup/.</string>
     <string name="move_invalid">It has problems:\n%1$s\nIf you replace it, it is first copied to .configlauncher/backup/.</string>
+    <string name="folder_unreadable_title">Can\'t read that folder</string>
+    <string name="folder_unreadable_body">Nothing was changed. Choose the folder again, or pick another one.\n(%1$s)</string>
     <string name="move_replace">Replace it with mine</string>
     <string name="move_use_folder">Use the folder\'s layout</string>
 
