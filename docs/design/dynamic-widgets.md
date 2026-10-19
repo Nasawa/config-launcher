@@ -2,7 +2,8 @@
 
 **Status:** on main via [#117](https://github.com/Nasawa/config-launcher/pull/117) (`971c2eb`); Archimedes follow-ups below.  
 **Christopher settled Q-C1–C5, Q-C7** (2026-10-19); **Q-C6 already decided**.  
-**Q-A9 (Pragma #116 / Claw):** http in `hosts`/`origins`; approval ceiling = cumulative union. **Claw review folded in** (PR #117): structural `data.file`, exact-host `hosts`, tap example, Q-C7/Q-C3, `ui.reload` + relative time, narrowing ceiling model.  
+**Q-A9 (Pragma #116 / Claw):** http allowed when approved by name; approval ceiling = cumulative union. **Claw review folded in** (PR #117): structural `data.file`, tap example, Q-C7/Q-C3, `ui.reload` + relative time, narrowing ceiling model. *(The exact-host `ui.openUrl.hosts` allowlist from #117 is superseded by Q-D5 below.)*  
+**Q-D5 settled (Christopher via Pragma, 2026-10-19):** optional card-level **`source`**; capability `ui.openUrl` is **bare** (no `hosts`); taps to `source` open **silently**; taps anywhere else **confirm every time** with **Always allow this site** (device-local, per element id). `source` is part of the capability fingerprint. Supersedes the hosts-based `ui.openUrl` design.  
 **Archimedes (this revision):** **Turn off** keeps the approval ceiling; **Forget approval** (widget detail) clears it; stage-5 TOFU **certificate changed** pauses `net.fetch` and shows last-good data stale.  
 **Pragma S3-C:** consent strings settled at [#116](https://github.com/Nasawa/config-launcher/pull/116) tip / §17.13 — Sprite may build from that branch. C3 http disclosure + C4 hide-author applied.
 
@@ -88,9 +89,9 @@ Responsive: up to 3 `layouts` keyed by `"WxH"` with a **lowercase** `x` (e.g. `"
 - **HTTP client:** one isolated client per element id (no shared cache, no cookies, fixed `User-Agent` naming Config Launcher).
 - **Redirects:** follow only if the next hop stays on the **same pinned origin**; otherwise fail the fetch.
 - **`net.fetch` request URLs are literals** in the element (fixed under a pinned origin). They must **not** be built from `{data:…}`.
-- **`ui.openUrl` tap `url` MAY use `{data:…}`** (Outer Shell needs this for "latest post"). At tap time resolve the template, normalise the host (IDNA/punycode/lowercase), and **open only if** it **exactly** matches an approved `hosts` entry (no subdomain inference), scheme+host match an approved `hosts` entry (bare = https only; `http://…` entry required for cleartext), and there is no `userinfo`. Else snackbar + warning. Data must not open a host outside the allowlist.
+- **`ui.openUrl` tap `url` MAY use `{data:…}`** (Outer Shell needs this for "latest post"). At tap time resolve the template, reject `userinfo` / non-http(s) schemes, normalise scheme + host (IDNA/punycode/lowercase), then (Q-D5): if scheme+host **exactly** matches the card's `source` (no subdomain inference), open **silently**; if it matches a device-local **Always allow** entry for this element, open silently; otherwise show a **per-tap confirm** naming the destination (with **Always allow this site**). There is **no `hosts` allowlist** on the capability. See §4 *card.source and ui.openUrl taps*. `ui.openUrl` only hands the URL to the browser/intent — it is **not** a fetch.
 - **Connect-time IP check:** on every connection, resolve and refuse RFC1918 / link-local / metadata addresses unless that exact origin was approved under the private-origin allow flow. **DNS rebinding:** re-check the connected IP on each request, not only at approval time.
-- **Cleartext / LAN (decided — Q-C3 / Q-C7, Christopher 2026-10-19):** users own what they knowingly approve. `http://` is allowed when the user approves an `http://host` host entry or `http://…` origin by name — show `http://` in the prompt; **no silent https→http downgrade**. Disclosure / consent copy must say that **http is less secure**, that some local setups make https difficult for little gain, and that **the user is responsible for what they approve**. Self-signed: **TOFU certificate pinning per origin** (pin on first approve / explicit re-pin if the cert changes; stern copy about remembering the pin) — not disabling TLS validation. **Certificate changed (stage 5):** while a re-pin / "certificate changed" prompt is unanswered, **pause `net.fetch`** for that origin (and that widget's fetches that need it); keep showing **last-good data marked stale**. **Never** silently accept the new cert. Private IPs still need an explicit approved origin; agent-written local JSON remains the simplest LAN path.
+- **Cleartext / LAN (decided — Q-C3 / Q-C7, Christopher 2026-10-19):** users own what they knowingly approve. `http://` is allowed when the user knowingly approves it by name — an `http://…` card `source`, an **Always allow** for an `http://` site, or an `http://…` `net.fetch` origin — show `http://` in the prompt; **no silent https→http downgrade**. Disclosure / consent copy must say that **http is less secure**, that some local setups make https difficult for little gain, and that **the user is responsible for what they approve**. Self-signed: **TOFU certificate pinning per origin** (pin on first approve / explicit re-pin if the cert changes; stern copy about remembering the pin) — not disabling TLS validation. **Certificate changed (stage 5):** while a re-pin / "certificate changed" prompt is unanswered, **pause `net.fetch`** for that origin (and that widget's fetches that need it); keep showing **last-good data marked stale**. **Never** silently accept the new cert. Private IPs still need an explicit approved origin; agent-written local JSON remains the simplest LAN path.
 - **Secrets:** never in synced files. Device Keystore / encrypted prefs, entered on phone, scoped to `(elementId, origin)`. Agents declare that a secret slot exists; user fills it. **When the pinned origin set changes, delete secrets for origins that were removed** before any new fetch runs.
 
 ### What stays out of the synced folder
@@ -106,7 +107,7 @@ Normative kinds (Archimedes; supersede §17.11 sample names):
 | `data.file` | *(none — file is always `widgets-data/<elementId>.json`)* | Show | yes |
 | `ui.reload` | *(none)* — tap re-reads this widget's data file | Show | yes |
 | `ui.openApp` | package name(s) | Open | yes |
-| `ui.openUrl` | hostname(s) | Open (**prompts** — phishing; see note) | yes |
+| `ui.openUrl` | *(none — destination via card `source` + device-local Always allow)* | Open (consent for the kind; off-source taps confirm — Q-D5) | yes |
 | `net.fetch` | exact HTTPS origin(s) | Internet | later stage |
 | `phone.*` | — | Phone data | **not in v1** |
 | Act kinds | — | Act | **not in v1** (buttons = Open only) |
@@ -122,37 +123,53 @@ Prefer **kind-specific keys**, not a generic `targets` array (easier for schema 
 | `data.file` | *(no fields)* — path derived from element `id` |
 | `ui.reload` | *(no fields)* |
 | `ui.openApp` | `packages` (string array) |
-| `ui.openUrl` | `hosts` (bare hostname = https; or `http://host` / `https://host`) |
+| `ui.openUrl` | *(no fields)* — `{ "kind": "ui.openUrl" }` only; **no `hosts`** (Q-D5) |
 | `net.fetch` | `origins` (exact `https://host[:port]` or `http://host[:port]`) |
 
-Fingerprint serializes `kind` + those fields (sorted). Pragma's illustrative `targets` is **not** the schema shape.
+**Card-level `source`** (optional string, on the card element — **not** inside `capabilities[]`): the widget's origin, either scheme-qualified (`https://blog.anigeek.com`, `http://nas.lan`) or a bare host (= `https://`). It decides which `ui.openUrl` taps open silently. It is **not** a fetch origin and does **not** imply `net.fetch`.
+
+Fingerprint serializes `kind` + those fields (sorted), plus the canonical `source` (see *Fingerprint and prompts*). Pragma's illustrative `targets` is **not** the schema shape.
 
 
-### `ui.openUrl.hosts` matching (exact) — Q-A9
+### `card.source` and `ui.openUrl` taps (Q-D5)
 
-Entries are either:
+Decided by Christopher (via Pragma, 2026-10-19). Replaces the #117 `ui.openUrl.hosts` allowlist.
 
-| Form in `hosts` | Allows |
+**Normalising `source`:**
+
+| Form of `source` | Canonical |
 |---|---|
-| bare hostname (`blog.anigeek.com`) | **`https://` only** to that exact host |
-| scheme-qualified (`http://nas.lan`, `https://nas.lan`) | that **scheme + host** only |
+| bare host (`blog.anigeek.com`) | `https://blog.anigeek.com` |
+| scheme-qualified (`https://nas.lan`, `http://nas.lan`) | that **scheme + host** |
 
-- Normalise before compare: Unicode → lowercase / **punycode** (IDNA). Bare entries have no port; scheme-qualified may include a non-default port as `http://host:8080` if we allow that later — v1: host only, default ports.
+- Unicode → lowercase / **punycode** (IDNA). v1: host only, default ports (no path, query, or `userinfo` in `source`; reject if present).
 - **No implied subdomains:** `anigeek.com` ≠ `blog.anigeek.com`.
-- Prompt shows the form that will be enforced, with **`http://` visible** when http was approved. **No silent https→http downgrade** (an https approval never opens http).
-- Default for agents: prefer bare hostnames (https). Use `http://…` only when the user/agent knowingly needs cleartext (homelab).
-- At tap time: resolve `{data:…}`, then require scheme+host to match an approved entry; else snackbar + `warn_tap_host` / `warn_tap_scheme`.
+- **No silent https→http downgrade:** an `https://` (or bare) `source` never silently opens `http://`. An `http://` `source` is shown with **`http://` visible** in consent and carries the Q-C3/C7 http disclosure.
+- Default for agents: prefer scheme-qualified `https://…` (or bare). Use `http://…` only when cleartext is knowingly needed (homelab).
 
-`net.fetch` `origins` are always full origins (`https://host[:port]` or `http://host[:port]`) and follow the same approve-by-name / no-downgrade rules.
+**At tap time** (after the card is allowed for `ui.openUrl`):
 
-**Tap actions** on a node: `{ "kind": "ui.openUrl", "url": "…" }` or `{ "kind": "ui.openApp", "package": "…" }`. The `url` / `package` must be allowed by a declared capability on the same element.
+1. Resolve `{data:…}` in `url`; reject `userinfo` and any scheme other than `http`/`https` → snackbar + `warn_tap_scheme`.
+2. Normalise scheme + host as above.
+3. **Matches `source` exactly** → open **silently** (no confirm).
+4. **Matches this element's Always-allow list** → open silently.
+5. **Anything else** → **confirm on every tap**, naming the full scheme + host (with `http://` visible and the http disclosure when cleartext). Buttons: **Open**, **Cancel**, and **Always allow this site**.
+6. Cancel / unresolvable / malformed URL → no open; snackbar + `warn_tap_host` as needed.
 
-**Open-tier split (Pragma #116):** `ui.openApp` stays **silent** (installing an app is already a user act). `ui.openUrl` **always prompts** on first enable / host broaden, even though the UX sentence sits in the Open tier — agent-written links are a phishing risk. Christopher confirms via Pragma Q-D5. Show-tier `data.file` and `ui.reload` stay silent.
+**Always allow this site:** stores the canonical scheme + host in a **device-local** list keyed by **element id**. Phone-only — **never synced**, never written to the folder or `status.json`. It is **separate** from the approval ceiling (not a `(kind, target)` ceiling line). Cleared by **Forget approval** for that widget and GC'd when the element leaves the file. Exact match only (no subdomains, no scheme upgrade/downgrade).
+
+`ui.openUrl` only hands the URL to the browser / an intent. Neither `source` nor Always-allow grants or implies `net.fetch`; stage 3 (local data) still performs **no network fetch**.
+
+`net.fetch` `origins` are always full origins (`https://host[:port]` or `http://host[:port]`) and follow the same approve-by-name / no-downgrade / http-disclosure rules (plus TOFU for self-signed — §3).
+
+**Tap actions** on a node: `{ "kind": "ui.openUrl", "url": "…" }` or `{ "kind": "ui.openApp", "package": "…" }`. The element must declare the matching capability (`ui.openUrl` / `ui.openApp` with that package). For `ui.openUrl` the destination rule is the Q-D5 source / confirm model above, not a capability host list.
+
+**Open-tier split (Pragma #116):** `ui.openApp` stays **silent** (installing an app is already a user act). `ui.openUrl` (bare kind) still participates in consent and the approval ceiling **as a kind**: a card that declares it goes through consent on first enable like any new ceiling line. Once allowed, taps to the card's `source` are silent; off-source taps get the **per-tap confirm** + **Always allow this site** (phishing defence lives at tap time, not in a host list). **Q-D5 settled** (Christopher via Pragma, 2026-10-19). Show-tier `data.file` and `ui.reload` stay silent.
 **Never offered** (absent from schema entirely): SMS, calls, contacts, messages, mic, camera, location, VPN/tunnels, run code.
 
 ### Fingerprint and prompts
 
-- Fingerprint = canonical sorted **capabilities + targets only** (not layout/style/`author`/span).
+- Fingerprint = canonical sorted **capabilities + their fields**, plus the canonical card **`source`** (Q-D5) — not layout/style/`author`/span. Changing `source` (add, remove, or different scheme/host) is a fingerprint change → `needsApprovalAgain` / re-prompt like any other broaden. Device-local Always-allow entries are **not** part of the fingerprint.
 - File load **never** opens a dialog (Pragma §17.2). Broadened → dashed consent tile `Needs your OK` / `Needs your OK again`, content not rendered, cells kept.
 - See **Approval ceiling** below (union set; never shrinks).
 - Cosmetic / layout / data-shape changes with capabilities unchanged → **stay live, no prompt, no info dot**. A quiet history entry only (Pragma §17 / Claw #3).
@@ -161,7 +178,7 @@ Entries are either:
 
 The device stores one **approved capability set** per element id: a union of every `(kind, target)` line the user has ever approved for that widget on this phone.
 
-- Approvals at **different times combine** (union). Approving `ui.openUrl`+`blog.anigeek.com` today and `data.file` tomorrow yields both in the ceiling.
+- Approvals at **different times combine** (union). Approving bare `ui.openUrl` (card `source` `https://blog.anigeek.com`) today and `data.file` tomorrow yields both in the ceiling. The approved `source` is recorded with the ceiling; a different `source` later is outside it and re-prompts. Per-site **Always allow** taps are a **separate** device-local store, not ceiling lines.
 - The stored set **never shrinks** on file edits (narrowing does not delete lines).
 - **File is live with no prompt** iff every declared `(kind, target)` in the file is ∈ the stored set (file ⊆ ceiling).
 - **Anything outside the ceiling** → prompt only for the **new** lines (`needsApproval` / `needsApprovalAgain`); on approve, union them into the ceiling.
@@ -226,7 +243,7 @@ APK-level `INTERNET` is coarse (see §7). Capability approval is the real contro
 | **Stale secret after origin edit** | Delete Keystore entries for origins removed from the capability before the next fetch |
 | Cross-widget data read | File path derived from element id only — no `path` field to misuse |
 | Secret leakage across widgets | Keystore entries keyed by element id + origin |
-| OpenURL phishing | Host allowlist in capability; tap targets must match |
+| OpenURL phishing | Card `source` in fingerprint (consent + re-prompt on change); silent open only for exact `source` match; every off-source tap confirms showing the destination, with device-local **Always allow this site**; no `userinfo`, http(s) only |
 | Refresh DoS against homelab | Min interval + jitter; cap concurrent fetches |
 | iappyx-style over-privilege | Closed enum; never-offered absent; no script host |
 
@@ -235,7 +252,7 @@ APK-level `INTERNET` is coarse (see §7). Capability approval is the real contro
 Honest holes in "local files + opt-in URL fetch + per-widget manifest":
 
 1. **APK `INTERNET` is all-or-nothing.** Once granted, a launcher bug or future capability mistake is higher stakes. Mitigation: keep fetch code tiny, origin-pin in one module, default deny private IPs, feature-flag fetch behind `requires`.
-2. **Path/query on taps:** `{data:…}` openUrl is host-pinned at tap time (see §3). Fetch URLs stay literal. Secret-bearing fetches should still avoid query strings; path prefix pins remain a later option.
+2. **Path/query on taps:** `{data:…}` openUrl is checked at tap time against `source` / Always-allow, else per-tap confirm (Q-D5, §3–§4). Path/query are not pinned — the confirm shows the destination host. Fetch URLs stay literal. Secret-bearing fetches should still avoid query strings; path prefix pins remain a later option.
 3. **LAN allow prompts will be tempting to click through** for homelab users. Prefer agent → local file for HA/Uptime Kuma data; treat private `net.fetch` as advanced.
 4. **Shared refresh schedules** can still DDoS a Pi. Enforce global and per-origin rate limits, not only per-widget.
 5. **Approvals don't sync** (correct for security) → every tablet re-consents (Pragma). Accept the friction.
@@ -278,7 +295,8 @@ Honest holes in "local files + opt-in URL fetch + per-widget manifest":
 - **Q-C4:** *(decided)* **Keep** `author` as optional/recommended (cheap quote signal). If omitted, **hide** it — do not crash or show empty chrome.
 - **Q-C5:** *(decided)* **Yes** — companion AppWidgets + agent-written local JSON are enough for v1 of (b). No tight HA coupling; own HA-reading widgets are advanced. Distant optional first-class in-app widgets OK as a far goal, not v1.
 - **Q-C6:** *(decided)* Show-tier `ui.reload`; token `{relative}` → `5 min ago` / `just now`, no pattern. Pragma OK.
-- **Q-C7:** *(decided)* Scheme-qualified `http://` in `hosts`/`origins` when approved by name; **TOFU** for self-signed (stern pin-on-approve / re-pin-on-change copy); no silent downgrade. **Archimedes:** while the re-pin prompt is unanswered, pause `net.fetch` for that origin and show last-good data stale.
+- **Q-C7:** *(decided)* Scheme-qualified `http://` when approved by name — a card `source`, an Always-allow site, or a `net.fetch` origin (the `ui.openUrl.hosts` form is superseded by Q-D5); **TOFU** for self-signed (stern pin-on-approve / re-pin-on-change copy); no silent downgrade. **Archimedes:** while the re-pin prompt is unanswered, pause `net.fetch` for that origin and show last-good data stale.
+- **Q-D5:** *(decided — Christopher via Pragma, 2026-10-19)* Optional card **`source`**; `ui.openUrl` is **bare** (`hosts` dropped); taps matching `source` open **silently**; any other site **confirms every tap** with **Always allow this site** (device-local per element id, not synced); `source` is in the capability fingerprint; `source` is not fetch and does not imply `net.fetch`.
 
 ### For Pragma
 
@@ -302,9 +320,10 @@ See answers on [#116](https://github.com/Nasawa/config-launcher/pull/116#issueco
   "title": "Anigeek LLC",
   "author": "Claw",
   "surface": "auto",
+  "source": "https://blog.anigeek.com",
   "capabilities": [
     { "kind": "data.file" },
-    { "kind": "ui.openUrl", "hosts": ["anigeek.com", "blog.anigeek.com"] }
+    { "kind": "ui.openUrl" }
   ],
   "data": { "staleAfter": "PT30M" },
   "layouts": {
@@ -327,4 +346,4 @@ See answers on [#116](https://github.com/Nasawa/config-launcher/pull/116#issueco
 }
 ```
 
-Data file: `.configlauncher/widgets-data/w-anigeek.json` (agent-written). First load prompts for `ui.openUrl` (phishing rule) when that capability is present; Show-only cards with just `data.file` go live with no prompt. The sample tap uses `{data:blog.url}` only (no redundant `host` field) — allowed when the resolved host **exactly** matches `hosts`.
+Data file: `.configlauncher/widgets-data/w-anigeek.json` (agent-written). First load prompts because the card declares `ui.openUrl` (consent for that kind, showing `source` `https://blog.anigeek.com`); Show-only cards with just `data.file` go live with no prompt. The sample tap uses `{data:blog.url}` only (no redundant `host` field): if it resolves to `https://blog.anigeek.com/…` it opens **silently**; a link to `anigeek.com` or any other site gets the per-tap confirm (with **Always allow this site**). Changing `source` later re-prompts.
