@@ -3,13 +3,17 @@ package dev.nasawa.configlauncher.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -20,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextAlign
@@ -43,7 +48,7 @@ private fun reasonText(r: ConsentUi.Reason) = stringResource(when (r) {
 
 /** 24 dp shield outline (§17.3); no icon library in the app, so it's drawn. */
 @Composable
-private fun Shield(color: Color) = Canvas(Modifier.size(24.dp)) {
+private fun Shield(color: Color, shadow: Boolean = false) = Canvas(Modifier.size(24.dp)) {
     val w = size.width; val h = size.height
     val p = Path().apply {
         moveTo(w * 0.5f, h * 0.08f); lineTo(w * 0.85f, h * 0.22f); lineTo(w * 0.85f, h * 0.48f)
@@ -51,6 +56,8 @@ private fun Shield(color: Color) = Canvas(Modifier.size(24.dp)) {
         cubicTo(w * 0.32f, h * 0.86f, w * 0.15f, h * 0.72f, w * 0.15f, h * 0.48f)
         lineTo(w * 0.15f, h * 0.22f); close()
     }
+    // Over the wallpaper it gets the home-label shadow (0x80 black, 1 px down), so it reads on a light wallpaper too.
+    if (shadow) translate(0f, 1f) { drawPath(p, LabelShadow.color, style = Stroke(width = 2.dp.toPx())) }
     drawPath(p, color, style = Stroke(width = 2.dp.toPx()))
 }
 
@@ -77,7 +84,6 @@ fun ConsentTile(tile: ConsentUi.Tile, onReview: () -> Unit, modifier: Modifier =
             .clickable(onClickLabel = review, onClick = onReview)
             .clearAndSetSemantics {
                 contentDescription = said
-                role = Role.Button
                 onClick(label = review) { onReview(); true }
                 customActions = listOf(CustomAccessibilityAction(review) { onReview(); true })
             }
@@ -85,10 +91,12 @@ fun ConsentTile(tile: ConsentUi.Tile, onReview: () -> Unit, modifier: Modifier =
         contentAlignment = Alignment.Center,
     ) {
         val p = tile.placement
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Shield(Color.White)
-            if (title != null && !(p.h == 1 && p.w <= 2)) Text(title, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-            if (!(p.w == 1 && p.h == 1)) Text(reason, color = Color(0xB3FFFFFF), fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        // #158 (Pragma): security UI must read on any wallpaper: home-label shadow, plus the 60 % scrim with Label backdrop on.
+        val shadowed = androidx.compose.ui.text.TextStyle(shadow = LabelShadow.shadow)
+        Column(LabelBackdrop.modifier(LocalLabelBackdrop.current), horizontalAlignment = Alignment.CenterHorizontally) {
+            Shield(Color.White, shadow = true)
+            if (title != null && !(p.h == 1 && p.w <= 2)) Text(title, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, style = shadowed)
+            if (!(p.w == 1 && p.h == 1)) Text(reason, color = Color(0xB3FFFFFF), fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, style = shadowed)
         }
     }
 }
@@ -108,17 +116,38 @@ fun UpdateHintSheet(onDismiss: () -> Unit) {
  * Focus starts on the title, not on `Allow`. Back or swipe-down decides nothing. The preview of the layout with `—`
  * comes with the card renderer (#140).
  */
-@OptIn(ExperimentalMaterial3Api::class)
+/** The home-label text shadow (PageList, ux.md §12): 50 % black, 1 px down. */
+object LabelShadow {
+    val color = Color(0x80000000)
+    val shadow = androidx.compose.ui.graphics.Shadow(color, androidx.compose.ui.geometry.Offset(0f, 1f), 1f)
+}
+
+/** MotionEvent flags that mean another app's window covered the touch (tap-jacking guard). */
+object Obscured {
+    const val MASK = android.view.MotionEvent.FLAG_WINDOW_IS_OBSCURED or android.view.MotionEvent.FLAG_WINDOW_IS_PARTIALLY_OBSCURED
+    fun of(flags: Int) = flags and MASK != 0
+}
+
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun ConsentSheet(prompt: ConsentUi.Prompt, appLabel: (String) -> String, onAllow: () -> Unit, onDismiss: () -> Unit) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val titleFocus = remember { FocusRequester() }
-    ModalBottomSheet(onDismiss, sheetState = sheet) {
+    val title = consentText(prompt.title) ?: prompt.id
+    val heading = stringResource(if (prompt.broadened) R.string.consent_title_more else R.string.consent_title, title)
+    ModalBottomSheet(onDismiss, sheetState = sheet, modifier = Modifier.semantics { paneTitle = heading }) {
+        // #158 review: no approving through an overlay. The sheet's window drops touches while another window covers
+        // it, and Allow also ignores a press flagged as partly obscured (Android 10/11 don't block pass-through touches).
+        val view = androidx.compose.ui.platform.LocalView.current
+        androidx.compose.runtime.DisposableEffect(view) {
+            val was = view.filterTouchesWhenObscured
+            view.filterTouchesWhenObscured = true
+            onDispose { view.filterTouchesWhenObscured = was }
+        }
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
-            val title = consentText(prompt.title) ?: prompt.id
-            Text(stringResource(if (prompt.broadened) R.string.consent_title_more else R.string.consent_title, title),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.focusRequester(titleFocus).semantics { heading(); paneTitle = title })
+            // §17.7: focus starts on the title (focusable so the request lands), never on Allow.
+            Text(heading, style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.focusRequester(titleFocus).focusable().semantics { heading() })
             prompt.seen?.let { t ->
                 val time = android.text.format.DateUtils.formatSameDayTime(t, System.currentTimeMillis(), java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).toString()
                 Text(stringResource(R.string.consent_source_file, time), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -134,11 +163,15 @@ fun ConsentSheet(prompt: ConsentUi.Prompt, appLabel: (String) -> String, onAllow
             Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.End) {
                 TextButton(onDismiss) { Text(stringResource(R.string.consent_keep_off)) }
                 Spacer(Modifier.width(8.dp))
-                Button(onAllow) { Text(stringResource(R.string.consent_allow)) }
+                var obscured by remember { androidx.compose.runtime.mutableStateOf(false) }
+                Button({ if (!obscured) onAllow() }, Modifier.pointerInteropFilter { ev ->
+                    if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) obscured = Obscured.of(ev.flags)
+                    false
+                }) { Text(stringResource(R.string.consent_allow)) }
             }
         }
     }
-    androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { titleFocus.requestFocus() } }
+    androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(100); runCatching { titleFocus.requestFocus() } }
 }
 
 @Composable
@@ -155,10 +188,14 @@ private fun LineList(header: String, lines: List<Line>, appLabel: (String) -> St
             }) {
                 Text("· $shown", modifier = Modifier.clearAndSetSemantics { contentDescription = spoken })
                 if (l.kind == Line.Kind.OpenSource) {
+                    // Q-C3 / §17.5: the http note sits directly under the source line, with ▲ so it isn't colour-only;
+                    // TalkBack reads it without the glyph (#158, Pragma).
+                    if (l.http) {
+                        val note = stringResource(R.string.cap_http_note_link, l.arg ?: "")
+                        Text("▲ $note", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 10.dp).clearAndSetSemantics { contentDescription = note })
+                    }
                     Text(stringResource(R.string.cap_open_others), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 10.dp))
-                    // Q-C3: the http note sits directly under the line, with ▲ so it isn't colour-only.
-                    if (l.http) Text("▲ " + stringResource(R.string.cap_http_note_link, l.arg ?: ""), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 10.dp))
                 }
             }
         }

@@ -98,7 +98,7 @@ fun HomeScreen(vm: HomeViewModel) {
     val consentVersion by (consent?.version ?: kotlinx.coroutines.flow.MutableStateFlow(0)).collectAsStateWithLifecycle()
     val consentReport = remember(ui.load.config, consentVersion) { consent?.report(ui.load.config).orEmpty() }
     fun consentTiles(pageId: String) = ConsentUi.tiles(ui.load.config, consentReport, pageId)
-    var consentFor by remember { mutableStateOf<String?>(null) }
+    var consentOpen by remember { mutableStateOf<ConsentUi.Opened?>(null) }
     var updateHint by remember { mutableStateOf(false) }
     var drawerSheet by remember { mutableStateOf<InstalledApp?>(null) }
     var hiddenSheet by remember { mutableStateOf(false) }
@@ -325,7 +325,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     userScrollEnabled = drag.dragged == null,
                 ) { index ->
                     pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true },
-                        tiles = consentTiles(it.id), onTile = { t -> if (t.reason == ConsentUi.Reason.Update) updateHint = true else consentFor = t.id }) }
+                        tiles = consentTiles(it.id), onTile = { t -> if (t.reason == ConsentUi.Reason.Update) updateHint = true else consentOpen = consent?.let { cs -> ConsentUi.open(ui.load.config, consentReport, cs::entry, t.id ?: "") } }) }
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.settledPage)
                 // ux.md §1.3: page label → page list → jump. Nothing is written.
@@ -418,19 +418,19 @@ fun HomeScreen(vm: HomeViewModel) {
             }, onDismiss = { sheetFor = null })
         }
 
-        consentFor?.let { id ->
-            val st = consentReport.firstOrNull { it.id == id }
-            val card = ui.load.config.elements.orEmpty().firstOrNull { (it["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content == id }
-            if (st == null || card == null || st.state == dev.nasawa.configlauncher.consent.Consent.State.Allowed) { consentFor = null; return@let }
-            val prompt = ConsentUi.prompt(card, st, consent?.entry(id))
+        consentOpen?.let { o ->
+            // #158 review: the sheet is a snapshot. If a poll changes the card's fingerprint while it's open, it closes
+            // (visibly) rather than changing under the user's finger, and Allow approves only the lines that were shown.
+            if (consent == null || !ConsentUi.current(o, consentReport)) { LaunchedEffect(o) { consentOpen = null }; return@let }
             val installed by vm.installedApps.collectAsStateWithLifecycle()
-            ConsentSheet(prompt, appLabel = { pkg -> installed.firstOrNull { it.packageName == pkg }?.label?.let(Labels::clean) ?: pkg },
+            ConsentSheet(o.prompt, appLabel = { pkg -> installed.firstOrNull { it.packageName == pkg }?.label?.let(Labels::clean) ?: pkg },
                 onAllow = {
-                    consent?.allow(id, st.lines)
-                    consentFor = null
-                    scope.launch(kotlinx.coroutines.Dispatchers.IO) { vm.store.engine.consentChanged() }
+                    consentOpen = null
+                    if (consent.allow(o.prompt.id, o.lines, vm.store.engine.state.value.config)) {
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) { vm.store.engine.consentChanged() }
+                    }
                 },
-                onDismiss = { consentFor = null })
+                onDismiss = { consentOpen = null })
         }
         if (updateHint) UpdateHintSheet { updateHint = false }
         if (titleBarSheet) TitleBarSheet(TitleBarEdits.state(ui.load.config),

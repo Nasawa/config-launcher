@@ -57,10 +57,17 @@ class ConsentStore(private val dir: File?, private val clock: () -> Long = Syste
         if (next != entries) { entries = next; save() }
     }
 
-    /** `Allow`: union every declared line into the ceiling and turn the widget on. */
-    @Synchronized fun allow(id: String, lines: List<String>) {
+    /**
+     * `Allow`: union the lines the user was [shown] into the ceiling and turn the widget on. Refused (false, nothing
+     * written) unless the card in [current] still has exactly that fingerprint, so no caller can approve lines the
+     * user didn't see, e.g. after a poll broadened the file while the sheet was open (#158 review).
+     */
+    @Synchronized fun allow(id: String, shown: List<String>, current: LauncherConfig): Boolean {
+        val card = Consent.cards(current).firstOrNull { (_, e) -> (e["id"] as? JsonPrimitive)?.content == id }?.second ?: return false
+        if (Consent.lines(card) != shown) return false
         val cur = entries[id] ?: Consent.Entry()
-        update(id, cur.copy(ceiling = cur.ceiling + lines, off = false))
+        update(id, cur.copy(ceiling = cur.ceiling + shown, off = false))
+        return true
     }
 
     /** `Turn off`: sticky, keeps the ceiling, so `Allow` restores without a prompt while the file stays within it. */

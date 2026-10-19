@@ -59,10 +59,27 @@ object ConsentUi {
 
     private fun tier(k: Line.Kind) = k.ordinal
 
+    /**
+     * The prompt as the user opened it, with the fingerprint it was built from. `Allow` approves exactly [lines]
+     * (ConsentStore.allow refuses if the card changed), never whatever the file says when the button is tapped.
+     */
+    data class Opened(val prompt: Prompt, val lines: List<String>)
+
+    fun open(c: LauncherConfig, report: List<Consent.Status>, entry: (String) -> Consent.Entry?, id: String): Opened? {
+        val st = report.firstOrNull { it.id == id }?.takeIf { it.state != Consent.State.Allowed } ?: return null
+        val card = c.elements.orEmpty().firstOrNull { it.str("id") == id && Elements.typeOf(it) == Card } ?: return null
+        return Opened(prompt(card, st, entry(id)), st.lines)
+    }
+
+    /** The open sheet still shows this card as it is: same fingerprint and still not live. Otherwise it closes. */
+    fun current(o: Opened, report: List<Consent.Status>): Boolean =
+        report.firstOrNull { it.id == o.prompt.id }?.let { it.lines == o.lines && it.state != Consent.State.Allowed } == true
+
     fun prompt(card: JsonObject, st: Consent.Status, entry: Consent.Entry?): Prompt {
         val ceiling = entry?.ceiling.orEmpty()
-        // Broadened only when something was approved before and is still remembered; after Forget it's first-time again.
-        val broadened = st.state == Consent.State.NeedsApprovalAgain
+        // Broadened whenever something is missing from a remembered approval: NeedsApprovalAgain, or a turned-off card
+        // whose file has since asked for more. After Forget the ceiling is empty, so it's first-time again.
+        val broadened = st.missing.isNotEmpty() && ceiling.isNotEmpty()
         val lines = st.lines.mapNotNull { l ->
             val isNew = broadened && l !in ceiling
             when {

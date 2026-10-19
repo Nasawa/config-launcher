@@ -99,7 +99,7 @@ class WidgetDataTest {
         assertTrue(v.e.widgetData.value.isEmpty())
         assertEquals(Reload.Ignored, v.e.reloadWidget("w-1"))
         // Allowed: read. Turned off: forgotten from memory, not read again.
-        v.consent.allow("w-1", v.e.consentReport().first { it.id == "w-1" }.lines); v.e.consentChanged()
+        v.consent.allow("w-1", v.e.consentReport().first { it.id == "w-1" }.lines, v.e.state.value.config); v.e.consentChanged()
         assertNotNull(v.e.widgetData.value["w-1"]!!.data)
         v.consent.turnOff("w-1"); v.e.consentChanged()
         assertNull(v.e.widgetData.value["w-1"])

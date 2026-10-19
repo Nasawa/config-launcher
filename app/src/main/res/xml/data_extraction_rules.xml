@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #158 review: widget approvals are per phone (ux.md §17, Q-D6). allowBackup=false covers Android 11 and older;
+     on Android 12+ these rules keep consent/ out of cloud backup and device-to-device transfer. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="consent/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="consent/" />
+    </device-transfer>
+</data-extraction-rules>

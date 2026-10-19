@@ -65,7 +65,7 @@ class ConsentUiTest {
     @Test fun broadenedPromptSplitsNewFromAlreadyAllowed() {
         val s = ConsentStore(tmp.newFolder())
         val v1 = cfg(doc(card(caps = """{"kind":"data.file"},$open""", extra = src)))
-        s.allow("w-1", s.report(v1).single().lines)
+        s.allow("w-1", s.report(v1).single().lines, v1)
         val v2 = cfg(doc(card(caps = """{"kind":"data.file"},$open""", extra = """"title":"Anigeek LLC","source":"anigeek.com",""")))
         val st = s.report(v2).single()
         val p = ConsentUi.prompt(v2.elements!![0], st, s.entry("w-1"))
@@ -85,5 +85,75 @@ class ConsentUiTest {
         assertEquals(Consent.State.Allowed, st.state)
         assertTrue(ConsentUi.tiles(c, s.report(c), "home").isEmpty())
         assertEquals(listOf(Kind.ShowFile, Kind.OpenAsk), ConsentUi.prompt(c.elements!![0], st, null).lines.map { it.kind })
+    }
+
+    @Test fun allowApprovesOnlyTheLinesTheSheetShowed() {
+        // #158 review: a poll broadens the card while the sheet is open.
+        val s = ConsentStore(tmp.newFolder())
+        val v1 = cfg(doc(card(caps = """{"kind":"data.file"},$open""", extra = src)))
+        val o = ConsentUi.open(v1, s.report(v1), s::entry, "w-1")!!
+        val v2 = cfg(doc(card(caps = """{"kind":"data.file"},$open,{"kind":"ui.reload"}""", extra = """"title":"Anigeek LLC","source":"evil.example",""")))
+        assertTrue(ConsentUi.current(o, s.report(v1)))
+        assertFalse(ConsentUi.current(o, s.report(v2)))  // the sheet closes instead of changing under the finger
+        // Even if Allow lands anyway, the store refuses: the card no longer has the fingerprint the user saw.
+        assertFalse(s.allow("w-1", o.lines, v2))
+        assertTrue(s.entry("w-1")?.ceiling.orEmpty().isEmpty())
+        val st = s.report(v2).single()
+        assertEquals(Consent.State.NeedsApproval, st.state)
+        // An allowed card has no sheet to open.
+        assertTrue(s.allow("w-1", o.lines, v1))
+        assertNull(ConsentUi.open(v1, s.report(v1), s::entry, "w-1"))
+        // A card that left the file can't be approved either.
+        assertFalse(s.allow("w-2", o.lines, v1))
+    }
+
+    @Test fun turnedOffCardThatBroadenedShowsWhatIsNew() {
+        val s = ConsentStore(tmp.newFolder())
+        val v1 = cfg(doc(card(caps = """{"kind":"data.file"},$open""", extra = src)))
+        s.allow("w-1", s.report(v1).single().lines, v1)
+        s.turnOff("w-1")
+        val v2 = cfg(doc(card(caps = """{"kind":"data.file"},$open""", extra = """"title":"Anigeek LLC","source":"anigeek.com",""")))
+        val st = s.report(v2).single()
+        assertEquals(Consent.State.Off, st.state)
+        val p = ConsentUi.prompt(v2.elements!![0], st, s.entry("w-1"))
+        assertTrue(p.broadened)
+        assertEquals(listOf("anigeek.com"), p.newLines.map { it.arg })
+    }
+
+    @Test fun sourceCaseNeverRePrompts() {
+        assertEquals("https://blog.anigeek.com", Consent.canonicalSource("Blog.Anigeek.COM"))
+        assertEquals("http://nas.lan", Consent.canonicalSource("HTTP://NAS.lan"))
+        // The validator already rejects a mixed-case source; this keeps the fingerprint stable regardless.
+        assertEquals(Consent.canonicalSource("blog.anigeek.com"), Consent.canonicalSource("https://BLOG.anigeek.com"))
+    }
+
+    @Test fun obscuredTouchesAreRecognised() {
+        assertFalse(dev.nasawa.configlauncher.ui.Obscured.of(0))
+        assertTrue(dev.nasawa.configlauncher.ui.Obscured.of(android.view.MotionEvent.FLAG_WINDOW_IS_OBSCURED))
+        assertTrue(dev.nasawa.configlauncher.ui.Obscured.of(android.view.MotionEvent.FLAG_WINDOW_IS_PARTIALLY_OBSCURED))
+    }
+
+    @Test fun untitledCardFallsBackToItsId() {
+        // title is optional: no crash, no blank title; the sheet and status.json name the card by its id.
+        val s = ConsentStore(tmp.newFolder())
+        val c = cfg(doc(card(caps = open, extra = """"source":"blog.anigeek.com",""")))
+        val st = s.report(c).single()
+        assertEquals("w-1", st.title)
+        val o = ConsentUi.open(c, s.report(c), s::entry, "w-1")!!
+        assertNull(o.prompt.title)
+        assertEquals("w-1", o.prompt.id)
+        assertNull(ConsentUi.tiles(c, s.report(c), "home").single().title)
+        // A blank title counts as none too.
+        val blank = cfg(doc(card(caps = open, extra = """"title":"  ","source":"blog.anigeek.com",""")))
+        assertNull(ConsentUi.prompt(blank.elements!![0], s.report(blank).single(), null).title)
+    }
+
+    @Test fun unknownCapabilityKindKeepsItsCellsAsAnUpdateTile() {
+        val c = cfg(doc(card(caps = """{"kind":"phone.calendar"}""", extra = src, y = 1)))
+        val s = ConsentStore(tmp.newFolder())
+        val t = ConsentUi.tiles(c, s.report(c), "home").single()
+        assertEquals(Reason.Update, t.reason)
+        assertNull(t.status)
+        assertEquals(setOf(0 to 1, 1 to 1, 0 to 2, 1 to 2), t.placement.cells())
     }
 }
