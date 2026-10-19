@@ -116,7 +116,7 @@ class ElementsTest {
         fun warnings() = Json.parseToJsonElement(File(src.dir, ".configlauncher/status.json").readText()).jsonObject["warnings"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(emptyList<String>(), warnings())
         e.setPhoneTheme(false, mapOf("primary" to "#303030"))
-        assertEquals(listOf("elements[0].style.color: contrast 1.5:1 on the backdrop (4.5:1 recommended), checked on this phone in light theme. Shown anyway."), warnings())
+        assertEquals(listOf("elements[0].style.color: contrast 1.5:1 on the backdrop (4.5:1 recommended), checked on this phone with dark mode off. Shown anyway."), warnings())
         e.setPhoneTheme(false, mapOf("primary" to "#FFFFFF"))
         assertEquals(emptyList<String>(), warnings())
     }

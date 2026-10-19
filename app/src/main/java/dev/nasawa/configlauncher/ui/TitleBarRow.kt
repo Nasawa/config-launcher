@@ -83,6 +83,19 @@ object TitleBarLayout {
         return Triple(s, c, rest - s)
     }
 
+    /** #149 (Pragma): the space kept between adjacent slots, reserved before widths are shared, like the ▾. */
+    const val GAP_DP = 8
+
+    /**
+     * Gap after start and after center, in px. With a centre and anything beside it, the gap is kept on both sides of
+     * the centre so it stays centred; with no centre, one gap between start and end when both show.
+     */
+    fun gaps(start: Int, center: Int, end: Int, gap: Int): Pair<Int, Int> = when {
+        center > 0 -> if (start > 0 || end > 0) gap to gap else 0 to 0
+        start > 0 && end > 0 -> gap to 0
+        else -> 0 to 0
+    }
+
     /** #149: the smallest a `{page}` button slot gets: the ▾, its 4 dp gap and an ellipsis at the default size. */
     const val PAGE_MIN_DP = 32
 
@@ -207,13 +220,16 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
             val fixed = Slot.entries.filter { bar.slots[it]?.let(TitleBarModel::clockOnly) == true }.map { it.ordinal }.toSet()
             // #149: the {page} button keeps room for its ▾ and an ellipsis; Compose widens its touch area to 48 dp.
             val page = if (tappable) Slot.entries.firstOrNull { bar.slots[it]?.let(TitleBarModel::hasPage) == true }?.ordinal else null
-            val (sw, cw, ew) = TitleBarLayout.widths(w, want[0], if (bar.slots[Slot.CENTER] == null) 0 else want[1], want[2], fixed,
+            val cWant = if (bar.slots[Slot.CENTER] == null) 0 else want[1]
+            val (g0, g1) = TitleBarLayout.gaps(want[0], cWant, want[2], TitleBarLayout.GAP_DP.dp.roundToPx())
+            val (sw, cw, ew) = TitleBarLayout.widths((w - g0 - g1).coerceAtLeast(0), want[0], cWant, want[2], fixed,
                 page, TitleBarLayout.PAGE_MIN_DP.dp.roundToPx())
             val ps = listOf(sw, cw, ew).mapIndexed { k, width -> ms[k].measure(Constraints.fixedWidth(width.coerceAtLeast(0)).copy(minHeight = 0, maxHeight = cs.maxHeight)) }
             val h = ps.maxOf { it.height }
             layout(w, h) {
                 var x = 0
-                ps.forEach { p -> p.placeRelative(x, (h - p.height) / 2); x += p.width }
+                val after = intArrayOf(g0, g1, 0)
+                ps.forEachIndexed { k, p -> p.placeRelative(x, (h - p.height) / 2); x += p.width + after[k] }
             }
         }
     }

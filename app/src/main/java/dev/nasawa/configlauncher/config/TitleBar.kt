@@ -199,7 +199,7 @@ object TitleBar : Elements.ElementType {
         val m = phoneContrast(style, dark, theme) ?: return emptyList()
         if (m.ratio >= MIN_CONTRAST) return emptyList()
         val tenths = floor(m.ratio * 10).toLong()
-        return listOf("$path.style.${m.key}: contrast ${tenths / 10}.${tenths % 10}:1 on the backdrop (4.5:1 recommended), checked on this phone in ${if (dark) "dark" else "light"} theme. Shown anyway.")
+        return listOf("$path.style.${m.key}: contrast ${tenths / 10}.${tenths % 10}:1 on the backdrop (4.5:1 recommended), checked on this phone with dark mode ${if (dark) "on" else "off"}. Shown anyway.")
     }
 
     private fun hex(s: String?): String? = when {

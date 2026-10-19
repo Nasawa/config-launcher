@@ -647,7 +647,7 @@ schemaVersion 2: an unknown element type, or one whose `requires` is above the l
 a warning** and kept in the file. Unknown keys inside a known type are still errors (B2). `backdrop: "auto"` (default)
 follows the device's `Label backdrop` setting; an explicit `none`, `scrim` or custom backdrop in the file wins.
 
-**Layout and size.** One line. `center` keeps at least 50 % of the width; side slots ellipsize first, then `center`. Clock
+**Layout and size.** One line, with an 8 dp gap between adjacent slots (#149). `center` keeps at least 50 % of the width when the sides leave that much; side slots ellipsize first, then `center`. Clock
 and date never truncate, and the page title ellipsizes at the end. **Default size is `small`, 14 sp (Q-T3)**: it matches
 the §1.3 page label and status-bar text, and at 200 % font (28 sp) it still fits one line and costs one grid row at most
 on small phones, where 18 sp (36 sp at 200 %) would push rows below the 64 × 80 dp minimum. The bar takes its height
@@ -684,7 +684,7 @@ They appear in the Warnings list like any other. The path names the key that hol
 `status.json` silently, with no snackbar, the same as Q-T2. `validate.py` can't measure them, so it prints **one**
 info line per run (not per colour), only when a shown bar's contrast depends on a theme colour, and doesn't count it as
 a warning. Final strings (#132):
-- `status.json`: `elements[0].style.color: contrast 3.2:1 on the backdrop (4.5:1 recommended), checked on this phone in dark theme. Shown anyway.` (`in light theme` when light is showing)
+- `status.json`: `elements[0].style.color: contrast 3.2:1 on the backdrop (4.5:1 recommended), checked on this phone with dark mode on. Shown anyway.` (`with dark mode off` when the phone's dark mode is off; home itself is always drawn dark, #150)
 - `validate.py`: `info: theme colours (primary, secondary, onSurface, surface) are only checked on the phone; see "checked on this phone" in .configlauncher/status.json.`
 
 **Skipped elements (Q-T4).** Nothing on home: no placeholder, banner or snackbar (an element is decoration and must

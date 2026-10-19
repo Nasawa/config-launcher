@@ -109,7 +109,7 @@ class TitleBarTest {
         val dim = mapOf("primary" to "#202020", "surface" to "#FFFFFF", "onSurface" to "#1B1B1F", "secondary" to "#FFFFFF")
         val c = ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":{"light":"primary","dark":"#FFFFFF"},"backdrop":"scrim"}}"""))
         assertTrue(Elements.warnings(c).isEmpty())   // nothing the script could measure is low
-        assertEquals(listOf("elements[0].style.color.light: contrast 1.2:1 on the backdrop (4.5:1 recommended), checked on this phone in light theme. Shown anyway."),
+        assertEquals(listOf("elements[0].style.color.light: contrast 1.2:1 on the backdrop (4.5:1 recommended), checked on this phone with dark mode off. Shown anyway."),
             Elements.phoneWarnings(c, dark = false) { dim[it] })
         assertTrue(Elements.phoneWarnings(c, dark = true) { dim[it] }.isEmpty())   // the dark variant is a hex: the static check covers it
         assertTrue(Elements.phoneWarnings(c, dark = false) { "#FFFFFF" }.isEmpty())  // a light primary passes
@@ -119,7 +119,7 @@ class TitleBarTest {
         assertEquals("color", TitleBar.phoneContrast(b, false) { dim[it] }!!.key)
         // The path names the key holding the token: a theme backdrop under hex text → style.backdrop.color; dark theme says so.
         val bd = ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"#000000","backdrop":{"color":"secondary","opacity":100}}}"""))
-        assertEquals(listOf("elements[0].style.backdrop.color: contrast 1.0:1 on the backdrop (4.5:1 recommended), checked on this phone in dark theme. Shown anyway."),
+        assertEquals(listOf("elements[0].style.backdrop.color: contrast 1.0:1 on the backdrop (4.5:1 recommended), checked on this phone with dark mode on. Shown anyway."),
             Elements.phoneWarnings(bd, dark = true) { mapOf("secondary" to "#000000")[it] })
         // No theme token, `auto`/`none`, or an unknown colour: nothing for the phone to add.
         assertNull(TitleBar.phoneContrast(buildJsonObject { put("backdrop", "scrim") }, false) { dim[it] })
@@ -185,6 +185,15 @@ class TitleBarTest {
         assertEquals(Triple(100, 800, 100), TitleBarLayout.widths(1000, 100, 900, 50, fixed = setOf(0, 2), page = 1, pageMin = 32))
     }
 
+    @Test fun slotsKeepAGapBetweenThem() {
+        // #149 (Pragma): 8 dp between adjacent slots, both sides of a centre so it stays centred.
+        assertEquals(8 to 8, TitleBarLayout.gaps(100, 50, 100, 8))
+        assertEquals(8 to 8, TitleBarLayout.gaps(0, 50, 100, 8))
+        assertEquals(0 to 0, TitleBarLayout.gaps(0, 50, 0, 8))
+        assertEquals(8 to 0, TitleBarLayout.gaps(100, 0, 100, 8))
+        assertEquals(0 to 0, TitleBarLayout.gaps(100, 0, 0, 8))
+    }
+
     @Test fun clockAndDateNeverTruncate() {
         // #123: a long date on the start side takes its width from the centre, which still stays centred.
         assertEquals(Triple(300, 400, 300), TitleBarLayout.widths(1000, 300, 800, 100, fixed = setOf(0)))
@@ -218,7 +227,7 @@ class TitleBarTest {
         assertEquals(1, Elements.warnings(size).size)   // only the element's own warning
         // The phone-only theme check covers overrides too.
         val theme = ok(doc("""{"id":"t-main","type":"titleBar","style":{"backdrop":"scrim"}}""", ""","overrides":{"t-main":{"style":{"color":"primary"}}}"""))
-        assertEquals(listOf("pages[0].overrides.t-main.style.color: contrast 1.2:1 on the backdrop (4.5:1 recommended), checked on this phone in light theme. Shown anyway."),
+        assertEquals(listOf("pages[0].overrides.t-main.style.color: contrast 1.2:1 on the backdrop (4.5:1 recommended), checked on this phone with dark mode off. Shown anyway."),
             Elements.phoneWarnings(theme, false) { mapOf("primary" to "#202020")[it] })
     }
 
