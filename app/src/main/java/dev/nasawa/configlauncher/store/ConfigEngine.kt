@@ -113,6 +113,8 @@ class ConfigEngine(
     private var lastStatusKey: String? = null
     /** Last load result reported in status.json, so backup/conflict changes can re-emit it. */
     private var statusResult: Triple<String, List<String>, String>? = null
+    /** #55: revision of the file at the status hash, when it was applied (null when rejected). */
+    private var statusRevision: Long? = null
     /** §17 Q4: last backup-copy failure (null once a later save succeeds). */
     private var backupError: String? = null
     /** OQ-21: sync/merge leftovers next to launcher.json. */
@@ -199,6 +201,16 @@ class ConfigEngine(
      */
     suspend fun poll(force: Boolean = false): Boolean = mutex.withLock { pollLocked(force) }
 
+    /**
+     * #55 adb reload: the same pipeline as ⋮ → Reload, then make sure status.json reflects it
+     * (rewritten even if unchanged, so its `time` is a receipt for this request).
+     */
+    suspend fun reloadForAgent(): Boolean = mutex.withLock {
+        val changed = pollLocked(force = true)
+        lastStatusKey = null; emitStatus()
+        changed
+    }
+
     private suspend fun pollLocked(force: Boolean): Boolean {
         if (dragging || pending.isNotEmpty() || _state.value.conflict) return false
         val src = source
@@ -233,7 +245,7 @@ class ConfigEngine(
             }
             is ParseResult.Ok -> {
                 invalidHash = null; invalidBytes = null
-                writeStatus("ok", emptyList(), hash)
+                writeStatus("ok", emptyList(), hash, r.config.revision)
                 // An external reload doesn't expire Undo (§18.2); it takes the "changed" path.
                 _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash, reconnectable = src.reconnectable,
                     mergeUndo = undoBytes != null, merge = _state.value.merge.takeIf { undoBytes != null })
@@ -408,7 +420,7 @@ class ConfigEngine(
         selfWrites.addLast(hash); while (selfWrites.size > 4) selfWrites.removeFirst()
         source.write(bytes)
         lastStamp = source.stamp()
-        writeStatus("ok", emptyList(), hash)
+        writeStatus("ok", emptyList(), hash, config.revision)
         _state.value = LoadState(config, Origin.FILE, source.displayName, hash, reconnectable = source.reconnectable)
         saveLastGood(bytes)
         return hash
@@ -433,17 +445,17 @@ class ConfigEngine(
     }
 
     /** §16/§17: `.configlauncher/status.json` so an agent can see why an edit was rejected. Best effort. */
-    private fun writeStatus(result: String, errors: List<String>, hash: String) {
-        statusResult = Triple(result, errors, hash)
+    private fun writeStatus(result: String, errors: List<String>, hash: String, revision: Long? = null) {
+        statusResult = Triple(result, errors, hash); statusRevision = revision
         emitStatus()
     }
 
     private fun emitStatus() {
         val (result, errors, hash) = statusResult ?: return
-        val key = "$result|$hash|${errors.hashCode()}|$backupError|$conflictFiles"
+        val key = "$result|$hash|$statusRevision|${errors.hashCode()}|$backupError|$conflictFiles"
         if (key == lastStatusKey) return
         try {
-            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles))
+            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles, revision = statusRevision))
             lastStatusKey = key
         } catch (_: Exception) { /* folder may be read-only or gone; the banner already says so */ }
     }

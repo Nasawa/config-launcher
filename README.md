@@ -201,6 +201,11 @@ versioning.
 - Write the whole file in one go.
 - Retry a read that fails to parse.
 - Check `.configlauncher/status.json` after a change.
+  `revision` is the applied file's `revision` (null when the file was rejected); `hash` stays the authority.
+- To reload immediately from a script (instead of waiting for the 2 s poll or pressing Home):
+  `adb shell am broadcast -a dev.nasawa.configlauncher.RELOAD -n dev.nasawa.configlauncher/.ReloadReceiver`.
+  It runs the same load as ⋮ → Reload and rewrites `status.json` before returning (result `1` = changed, `0` =
+  unchanged or rejected). Only adb shell can send it (it requires `android.permission.DUMP`).
 
 **Don't**
 - Add comments, trailing commas, or keys without an `x-` prefix.
