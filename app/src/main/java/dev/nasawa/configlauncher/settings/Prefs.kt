@@ -13,6 +13,16 @@ class Prefs(context: Context) {
         set(v) = sp.edit { if (v == null) remove("folderUri") else putString("folderUri", v.toString()) }
 
     /** §18.2 Q-C2: focus drawer search and show the keyboard on open (default on; off for wall displays). */
+    /** #61: the first-run "Set as home app" prompt was shown (never shown again). */
+    var homePromptShown: Boolean
+        get() = sp.getBoolean("homePromptShown", false)
+        set(v) = sp.edit { putBoolean("homePromptShown", v) }
+
+    /** #61: role-request denials; after [dev.nasawa.configlauncher.apps.HomeRole.MAX_DENIALS] we open Home settings. */
+    var homeRoleDenials: Int
+        get() = sp.getInt("homeRoleDenials", 0)
+        set(v) = sp.edit { putInt("homeRoleDenials", v) }
+
     var drawerKeyboard: Boolean
         get() = sp.getBoolean("drawerKeyboard", true)
         set(v) = sp.edit { putBoolean("drawerKeyboard", v) }
