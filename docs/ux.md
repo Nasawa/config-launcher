@@ -496,7 +496,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | Area | Spec |
 |---|---|
 | TalkBack labels | App: `<Label>`. Work app: `<Label>, work`. Dimmed: `<Label>, not installed` (or `, shortcut unavailable` / `, work apps paused`). Folder: `<Label> folder, 5 apps`. Dock item: `<Label>, dock`. Empty cell in edit mode: `Empty, column 2, row 3`. Page indicator: `Page 2 of 3` |
-| Actions | Every drag action also has custom accessibility actions on the item (`Move to…` with a page/row/column picker, `Add to folder…`, `Move to dock`, `Remove from home`, `Hide`), so the layout is fully editable without drag. Each is one write |
+| Actions | Every drag action also has custom accessibility actions on the item (`Move to…` with a page/row/column picker, `Add to folder…`, `Move to dock`, `Remove from home`, `Hide`), so the layout is fully editable without drag. Each is one write. `Add to folder…` is added in the same PR that builds dropping onto a folder |
 | Edit mode | Announce `Editing layout. Double-tap Done when finished.` Focus order: top bar, then grid in reading order, then dock |
 | Banners | Polite live region, announced once. Buttons are focusable. The error detail view reads as a list of problems |
 | Touch targets | ≥ **48 × 48 dp** for everything (cells 64 × 80 dp, dock slots 64 dp, chip ≥ 48 dp hit area, banner buttons 48 dp tall) |
@@ -534,7 +534,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 |---|---|---|---|---|
 | R1 | Folder item sheet | Confirmed: header `Folder, 5 apps` (`Folder, 1 app`), actions `Edit layout`, `Remove from home`. No `App info` | — | MVP |
 | R2 | Not-installed item sheet (long-press) | Confirmed: header `Not installed · <package>`, actions `Edit layout`, `Remove from home`, no `App info`. A **tap** still opens the dimmed-item hint sheet (§1.1) | — | MVP |
-| R3 | `Remove from home` on a folder | Removes the folder and its items **from home only**. The apps stay installed and in the drawer (the drawer always lists every app). No confirm dialog. Instead: one write plus snackbar `Removed folder "<Label>" from home.` [`Undo`] (Undo = a second write restoring the folder with its items and position). TalkBack: the same text | Add the snackbar with Undo | MVP |
+| R3 | `Remove from home` on a folder | Removes the folder and its items **from home only**. The apps stay installed and in the drawer (the drawer always lists every app). No confirm dialog. Instead: one write plus snackbar `Removed folder "<Label>" from home.` [`Undo`] (Undo = a second write restoring the folder with its items and position). TalkBack: the same text. If Undo can't restore because all pages are full: `Couldn't restore "<Label>": all 20 pages are full.` (TalkBack: the same text) | Add the snackbar with Undo | MVP |
 | R4 | Home key in edit mode | **Change:** Home leaves edit mode (as §4.1 says), after flushing pending writes, and goes to page 1 | Handle Home in edit mode | MVP |
 | R5 | Empty pages | **Change:** leaving edit mode deletes empty pages (as §4.2 says), never the last page. Folded into the same write as the last edit, or one write if there were no edits | Implement | MVP |
 | R6 | Home menu only on empty cells | Confirmed. Menu: `Edit layout`, `Wallpaper`, `Reload layout`, `Settings` (+ `Choose folder` in app-only mode). `Wallpaper` (#63) opens the system wallpaper picker and is confirmed | — | MVP |
