@@ -55,6 +55,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var backdrop by remember { mutableStateOf(vm.store.prefs.labelBackdrop) }
     var askMerge by remember { mutableStateOf(vm.store.prefs.askBeforeMerging) }
     var keyboardOnOpen by remember { mutableStateOf(vm.store.prefs.drawerKeyboard) }
+    var agentDocs by remember { mutableStateOf(vm.store.prefs.agentDocs) }
     var menuOpen by remember { mutableStateOf(false) }
     var folderInfo by remember { mutableStateOf<String?>(null) }   // "" = app-only
     // ux.md §4.1 edit mode: entered from `Edit layout` or a drag; left on Done, Back, Home or 30 s idle.
@@ -203,6 +204,11 @@ fun HomeScreen(vm: HomeViewModel) {
                             DropdownMenuItem({ Text(stringResource(R.string.menu_open_keyboard)) }, {
                                 keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
                             }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
+                            // §20.1: no Settings screen yet, so the setting and its Add again action live here.
+                            DropdownMenuItem({ Text(stringResource(R.string.menu_agent_docs)) }, {
+                                agentDocs = !agentDocs; vm.store.prefs.agentDocs = agentDocs
+                            }, trailingIcon = { Checkbox(agentDocs, null) })
+                            if (ui.load.reconnectable) DropdownMenuItem({ Text(stringResource(R.string.menu_agent_docs_again)) }, { menuOpen = false; vm.store.addAgentDocsAgain() })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_reload)) }, { menuOpen = false; vm.store.pollNow() })
                             if (!isHome) DropdownMenuItem({ Text(stringResource(R.string.home_role_button)) }, { menuOpen = false; becomeHome() })
                         }

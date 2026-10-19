@@ -27,6 +27,8 @@ android {
             keyPassword = "android"
         }
     }
+    // §20.1: templates/config-folder/AGENTS.md ships as the asset "config-folder/AGENTS.md".
+    sourceSets { getByName("main") { assets.srcDir("../templates") } }
     buildTypes {
         debug { signingConfig = signingConfigs.getByName("debug") }
         release {
