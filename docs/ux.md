@@ -709,7 +709,14 @@ Showing the last working layout.`). Warnings never raise a banner.
 | Empty pattern | Error | `elements[0].content.slots.end: {time:} has an empty pattern. Write {time} for the default format.` |
 | Line break in a template | Error | `elements[0].content.slots.center: A template is one line. Remove the line break.` |
 | Bad size | Error | `elements[0].style.size must be small, medium or large, or a number from 10 to 40.` |
-| Pattern letter run too long | Error | `elements[0].content.slots.start: MMMMMM is too long. Use at most 4 letters, like MMMM.` |
+| Bad weight | Error | `elements[0].style.weight must be regular, medium or bold, or 300 to 800 in steps of 100.` |
+| Bad colour | Error | `elements[0].style.color must be #RRGGBB or one of light, dark, onWallpaper, primary, secondary, onSurface, surface.` (also for `style.color.light`, `style.color.dark` and `style.backdrop.color`) |
+| Empty colour pair | Error | `elements[0].style.color needs light or dark.` |
+| Bad alignment | Error | `elements[0].style.align.center must be start, center or end.` |
+| Bad backdrop | Error | `elements[0].style.backdrop must be auto, none or scrim, or an object with color.` |
+| Bad anchor | Error | `elements[0].anchor must be "top".` |
+| Pattern letter run too long | Error | `elements[0].content.slots.start: MMMMMM is too long. Use at most 5, like MMMMM.` |
+| Pattern letter run too long (`a`) | Error | `elements[0].content.slots.end: aa is too long. Use at most 1, like a.` |
 | Unclosed quote in a pattern | Error | `elements[0].content.slots.start: A ' quote isn't closed. Add a closing ' after the text.` |
 | Low contrast | Warning | `elements[0].style.color: contrast 2.1:1 on the backdrop (4.5:1 recommended). Shown anyway.` |
 
@@ -727,7 +734,14 @@ Resources (character positions are 1-based, like line and column):
 <string name="err_pattern_empty">%1$s: {%2$s:} has an empty pattern. Write {%2$s} for the default format.</string>
 <string name="err_template_multiline">%1$s: A template is one line. Remove the line break.</string>
 <string name="err_size">%1$s must be small, medium or large, or a number from 10 to 40.</string>
-<string name="err_pattern_run">%1$s: %2$s is too long. Use at most %3$d letters, like %4$s.</string>
+<string name="err_weight">%1$s must be regular, medium or bold, or 300 to 800 in steps of 100.</string>
+<string name="err_color">%1$s must be #RRGGBB or one of light, dark, onWallpaper, primary, secondary, onSurface, surface.</string>
+<string name="err_color_pair">%1$s needs light or dark.</string>
+<string name="err_align">%1$s must be start, center or end.</string>
+<string name="err_backdrop">%1$s must be auto, none or scrim, or an object with color.</string>
+<string name="err_anchor">%1$s must be \"top\".</string>
+<!-- %2$s = the run as written, %3$d = that letter's maximum (table below), %4$s = the letter repeated %3$d times -->
+<string name="err_pattern_run">%1$s: %2$s is too long. Use at most %3$d, like %4$s.</string>
 <string name="err_pattern_quote">%1$s: A \' quote isn\'t closed. Add a closing \' after the text.</string>
 <string name="warn_element_type">%1$s: type \"%2$s\" isn\'t supported by this Config Launcher, so it was skipped. It stays in the file.</string>
 <string name="warn_element_level">%1$s needs feature level %2$d, but this Config Launcher supports up to %3$d, so it was skipped. It stays in the file. Update the app to show it.</string>
@@ -744,7 +758,24 @@ Resources (character positions are 1-based, like line and column):
 <string name="titlebar_custom">Custom (set in the file)</string>
 <string name="titlebar_custom_note">Picking another option replaces it.</string>
 ```
-Counts in the messages above (the maxima) are always ≥ 2, so they don't need plurals. `status.json` uses the same English
+**Letter-run maximum.** `n` in `err_pattern_run` is the formatter's real per-letter maximum, i.e. the longest run
+`DateTimeFormatter` accepts:
+
+| Letter | y | M | d | E | a | H | h | k | K | m |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Max in a row | 19 | **5** (`MMMMM` = narrow month, e.g. `O`) | 2 | 5 | 1 | 2 | 2 | 2 | 2 | 2 |
+
+The message has no unit word (`Use at most 5`, not `5 letters`), so `n = 1` reads correctly without a plural. **Sprite:**
+`Template.LETTERS` and `validate.py` currently cap `M` at 4. Raise it to 5 so the narrow month is allowed and the message
+matches.
+
+**Style keys.** All style and placement keys use the same `<path> must be …` form as `size` (path first, no colon, then
+the allowed values): `weight`, `color` (and `color.light` / `color.dark` / `backdrop.color`), `align.<slot>`,
+`backdrop` and `anchor`. The table above has the exact strings from #115. `color` also has one `needs` form for an
+empty `{}` pair. `backdrop.opacity` (0–100) and `backdrop.radius` (0–24) use the validator's generic number-range
+message.
+
+The other counts in the messages above (the maxima) are always ≥ 2, so they don't need plurals. `status.json` uses the same English
 text so agents and the phone say the same thing. The contrast ratio is formatted with one decimal, locale-independent (`2.1`).
 
 ## 16. Widgets (later, first post-MVP) — draft for #110
