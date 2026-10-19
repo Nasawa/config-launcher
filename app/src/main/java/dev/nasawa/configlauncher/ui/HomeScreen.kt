@@ -59,6 +59,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var folderInfo by remember { mutableStateOf<String?>(null) }   // "" = app-only
     // ux.md §4.1 edit mode: entered from `Edit layout` or a drag; left on Done, Back, Home or 30 s idle.
     var editing by remember { mutableStateOf(false) }
+    var pageList by remember { mutableStateOf(false) }
     var sheetFor by remember { mutableStateOf<ResolvedItem?>(null) }
     var homeMenu by remember { mutableStateOf(false) }
     var drawerSheet by remember { mutableStateOf<InstalledApp?>(null) }
@@ -223,9 +224,13 @@ fun HomeScreen(vm: HomeViewModel) {
                     pager, Modifier.weight(1f).fillMaxWidth(), key = { pages.getOrNull(it)?.id ?: it },
                     userScrollEnabled = drag.dragged == null,
                 ) { index ->
-                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true }) }
+                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true }, onShowPages = { pageList = true }) }
                 }
-                if (pages.size > 1) PageDots(pages.size, pager.currentPage)
+                if (pages.size > 1) PageDots(pages.size, pager.currentPage, onClick = { pageList = true })
+                // #78: tap the page title (or the dots) → list of pages → jump.
+                if (pageList) PageListSheet(PageList.rows(pages, pager.currentPage), onPick = { i ->
+                    pageList = false; scope.launch { pager.animateScrollToPage(i) }
+                }, onDismiss = { pageList = false })
                 }
                 Dock(ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y)
                 ui.load.merge?.let { m ->
@@ -453,11 +458,15 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
 }
 
 @Composable
-private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit) {
+private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit, onShowPages: () -> Unit) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = grid.rows
     Column(Modifier.fillMaxSize().padding(8.dp)) {
-        page.title?.let { Text(it, style = MaterialTheme.typography.titleSmall, color = Color.LightGray, modifier = Modifier.padding(4.dp)) }
+        page.title?.let {
+            val show = stringResource(R.string.pages_show)
+            Text(it, style = MaterialTheme.typography.titleSmall, color = Color.LightGray,
+                modifier = Modifier.clickable(onClickLabel = show, onClick = onShowPages).heightIn(min = 48.dp).padding(4.dp).wrapContentHeight())
+        }
         val body: @Composable ColumnScope.() -> Unit = {
             for (y in 0 until rows) {
                 Row(Modifier.fillMaxWidth().weight(1f)) {
@@ -479,8 +488,10 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
 }
 
 @Composable
-private fun PageDots(count: Int, current: Int) {
-    Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.Center) {
+private fun PageDots(count: Int, current: Int, onClick: () -> Unit) {
+    val desc = stringResource(R.string.page_of, current + 1, count); val show = stringResource(R.string.pages_show)
+    Row(Modifier.fillMaxWidth().clickable(onClickLabel = show, onClick = onClick).semantics(mergeDescendants = true) { contentDescription = desc }.padding(8.dp),
+        horizontalArrangement = Arrangement.Center) {
         repeat(count) { i ->
             Box(Modifier.padding(3.dp).size(6.dp).background(if (i == current) Color.White else Color.DarkGray, RoundedCornerShape(3.dp)))
         }

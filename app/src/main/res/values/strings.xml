@@ -94,6 +94,12 @@
     <string name="home_role_button">Set as home app</string>
     <string name="not_now">Not now</string>
     <string name="apps">Apps</string>
+    <!-- Page list (#78; minimal, pending Pragma's spec) -->
+    <string name="pages_title">Pages</string>
+    <string name="pages_show">Show pages</string>
+    <string name="page_of">Page %1$d of %2$d</string>
+    <string name="page_untitled">Page %1$d</string>
+    <string name="page_current">Current page</string>
     <string name="cancel">Cancel</string>
 
     <!-- First run (ux.md §7, §18.2) -->
