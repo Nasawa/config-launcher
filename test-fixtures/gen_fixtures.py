@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Regenerates test-fixtures/configs (run from the repo root). Deterministic."""
-import json, copy, os
+import json, copy, os, re
 import shutil
 for d in ('test-fixtures/configs/valid','test-fixtures/configs/invalid'):
     shutil.rmtree(d, ignore_errors=True); os.makedirs(d)
@@ -18,6 +18,13 @@ pg=lambda c: c['pages'][0]['items']
 add(V,'minimal.json',B,'valid','both','§3','copy of schema/examples/minimal.json')
 add(V,'bom.json',b'\xef\xbb\xbf'+dump(B),'valid (BOM stripped; next write has no BOM)','parser','§15 OQ-7','')
 add(V,'x-keys.json',m(lambda c:(c.__setitem__('x-note','agent notes'),pg(c)[0].__setitem__('x-color',{'a':[1,2]}))),'valid; x- keys round-trip verbatim','both','§15 OQ-4','')
+# #113: number text as the phone writes it (Long, then ULong, then Java Double.toString), in an x- key.
+NUMS=['1.50', '-1.250', '1e3', '2.50E2', '1.5e-7', '0.00099', '1e7', '1e21', '123456789.123456789', '5e-324', '-0', '-0.0', '0.0', '1E0', '12345678901234567890', '-12345678901234567890', '9007199254740993']
+def raw_nums(c, key, nums):
+    """Writes [nums] under [key] as literal JSON number text (json.dumps would normalize it)."""
+    c[key]=['@%d@'%k for k in range(len(nums))]
+    return re.sub(rb'"@(\d+)@"', lambda g: nums[int(g.group(1))].encode(), dump(c))
+add(V,'x-numbers.json',raw_nums(copy.deepcopy(B),'x-n',NUMS),'valid; numbers are rewritten as the phone writes them (1.50 -> 1.5, 1e3 -> 1000.0)','both','#113','')
 add(V,'no-revision.json',m(lambda c:c.pop('revision')),'valid','both','§15 OQ-20','')
 add(V,'same-app-dock-and-page.json',m(lambda c:c['dock'].append({'id':'a-settings2','type':'app','package':'com.android.settings'})),'valid','both','§15 OQ-5','')
 add(V,'same-app-twice-on-page.json',m(lambda c:pg(c).append({'id':'a-settings2','type':'app','package':'com.android.settings','x':3,'y':0})),'valid with warning','kotlin','§3, §15 OQ-5','')
@@ -155,7 +162,8 @@ add(I,'element-missing-type.json',m(els({'id':'w-x','anchor':'top'})),'invalid, 
 add(I,'override-unknown-key.json',m(lambda c:c['pages'][0].__setitem__('overrides',{'t-main':{'hidden':True}})),'invalid, B2: overrides take enabled, content or style','both','title-bar.md §4','#79')
 add(I,'element-duplicate-id.json',m(els(dict(_w, id='a-settings'))),'invalid, B2: element IDs are unique with item IDs','kotlin','title-bar.md §8','#79')
 
-RULES={'duplicate-id.json':'duplicate-ids','overlapping-cells.json':'overlapping-cells','cell-outside-grid.json':'cell-outside-grid','2016-items.json':'item-total','duplicate-key.json':'duplicate-keys','depth-9.json':'parser-depth','deep-nesting.json':'parser-depth','size-just-over-2mib.json':'byte-cap','nul-in-label.json':'nul-or-encoding','invalid-utf8.json':'nul-or-encoding','lone-surrogate.json':'nul-or-encoding','utf16.json':'nul-or-encoding','element-overlaps-item.json':'overlapping-cells','element-overlaps-element.json':'overlapping-cells','element-outside-grid.json':'cell-outside-grid','element-duplicate-id.json':'duplicate-ids'}
+add(I,'number-too-large.json',raw_nums(copy.deepcopy(B),'x-n',['1e309']),'B2: x-n[0] is outside the double range; the phone could not write it back','kotlin','#113','')
+RULES={'number-too-large.json':'number-range','duplicate-id.json':'duplicate-ids','overlapping-cells.json':'overlapping-cells','cell-outside-grid.json':'cell-outside-grid','2016-items.json':'item-total','duplicate-key.json':'duplicate-keys','depth-9.json':'parser-depth','deep-nesting.json':'parser-depth','size-just-over-2mib.json':'byte-cap','nul-in-label.json':'nul-or-encoding','invalid-utf8.json':'nul-or-encoding','lone-surrogate.json':'nul-or-encoding','utf16.json':'nul-or-encoding','element-overlaps-item.json':'overlapping-cells','element-overlaps-element.json':'overlapping-cells','element-outside-grid.json':'cell-outside-grid','element-duplicate-id.json':'duplicate-ids'}
 for e in man:
     r=RULES.get(e['file'].split('/')[1])
     if r: e['kotlinOnly']=r; e['layer']='kotlin-only'

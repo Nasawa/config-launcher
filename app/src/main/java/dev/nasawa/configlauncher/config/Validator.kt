@@ -13,7 +13,20 @@ object Validator {
     private val CLS = Regex("^[A-Za-z0-9_.$]+$")
     private val CATEGORIES = setOf("game", "audio", "video", "image", "social", "news", "maps", "productivity", "accessibility", "undefined")
 
-    fun validate(root: JsonElement): List<String> = Run().apply { root(root) }.errors
+    fun validate(root: JsonElement): List<String> = Run().apply { root(root); tooLarge(root, "") }.errors
+
+    /**
+     * #113: the writer emits a number as Long, then ULong, then Double (kotlinx JsonLiteralSerializer), and throws on
+     * a non-finite Double. A number outside the Double range anywhere (x- keys included) is therefore an error.
+     */
+    private fun Run.tooLarge(e: JsonElement, path: String) {
+        when (e) {
+            is JsonObject -> for ((k, v) in e) tooLarge(v, if (path.isEmpty()) k else "$path.$k")
+            is JsonArray -> e.forEachIndexed { i, v -> tooLarge(v, "$path[$i]") }
+            is JsonPrimitive -> if (!e.isString && e !is JsonNull && e.content.toLongOrNull() == null && e.content.toULongOrNull() == null &&
+                e.content.toDoubleOrNull()?.isFinite() == false) err(path, "${e.content} is too large for a number")
+        }
+    }
 
     private enum class Ctx { PAGE, FOLDER, DOCK }
 

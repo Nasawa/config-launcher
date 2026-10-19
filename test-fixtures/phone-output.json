@@ -237,6 +237,11 @@
       "not valid JSON: NUL character in a string (line 11)"
     ]
   },
+  "invalid/number-too-large.json": {
+    "errors": [
+      "x-n[0]: 1e309 is too large for a number"
+    ]
+  },
   "invalid/overlapping-cells.json": {
     "errors": [
       "pages[0].items[1]: overlaps pages[0].items[0] at cell (0, 0)"
@@ -384,7 +389,8 @@
   },
   "invalid/x-huge.json": {
     "errors": [
-      "pages[0].items[0].x: must be an integer"
+      "pages[0].items[0].x: must be an integer",
+      "pages[0].items[0].x: 1e309 is too large for a number"
     ]
   },
   "invalid/zero-pages.json": {
@@ -457,5 +463,8 @@
   },
   "valid/x-keys.json": {
     "canonicalSha256": "6e1a6d201e42acc25ab499041b2b9aea8bcaf914c4417d938c8e55128341b62b"
+  },
+  "valid/x-numbers.json": {
+    "canonicalSha256": "b700ba81bb37ee405c789cfb6fdfe2fedb126025ab5916236c12c85b4b456287"
   }
 }
