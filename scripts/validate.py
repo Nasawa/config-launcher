@@ -539,6 +539,20 @@ def _item(o):
     return out
 
 
+def _ordered(o, keys):
+    out = {k: o[k] for k in keys if k in o}
+    out.update({k: v for k, v in o.items() if k not in keys})
+    return out
+
+
+def _rule(r):
+    """ARCHITECTURE.md §20.3: id, group, match; inside match packages, packagePrefix, tag, category."""
+    out = _ordered(r, ("id", "group", "match"))
+    if isinstance(out.get("match"), dict):
+        out["match"] = _ordered(out["match"], ("packages", "packagePrefix", "tag", "category"))
+    return out
+
+
 def canonical(tree):
     """Valid tree -> canonical text, as the phone writes it."""
     out = {}
@@ -563,9 +577,11 @@ def canonical(tree):
         out["dock"] = [_item(i) for i in tree["dock"]]
     if "drawer" in tree:
         d, do = tree["drawer"], {}
-        for k in ("sort", "hidden", "rules"):
+        for k in ("sort", "hidden"):
             if k in d:
                 do[k] = d[k]
+        if "rules" in d:
+            do["rules"] = [_rule(r) for r in d["rules"]]
         out["drawer"] = do
     out.update(_x(tree))
     return dump(out) + "\n"

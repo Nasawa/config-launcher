@@ -579,6 +579,13 @@
     "note": "writer-refusal seed (WB-REFUSE)"
   },
   {
+    "file": "valid/drawer-rules-key-order.json",
+    "expect": "valid (rule keys rewritten as id, group, match)",
+    "layer": "both",
+    "ref": "§20.3",
+    "note": "#89"
+  },
+  {
     "file": "invalid/tags-17.json",
     "expect": "invalid, B2 (tags maxItems 16)",
     "layer": "both",

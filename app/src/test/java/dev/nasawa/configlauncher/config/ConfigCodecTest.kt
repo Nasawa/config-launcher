@@ -66,4 +66,12 @@ class ConfigCodecTest {
     @Test fun hashIsHexSha256() {
         assertEquals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", ConfigCodec.sha256(ByteArray(0)))
     }
+
+    @Test fun drawerRulesAreWrittenInCanonicalKeyOrder() {
+        val text = File("../test-fixtures/configs/valid/drawer-rules-key-order.json").readText()
+        val out = ConfigCodec.encode(ok(text)!!)
+        val rule = out.substringAfter("\"rules\"")
+        val keys = Regex("\"(id|group|match|packages|packagePrefix|tag|category)\"").findAll(rule).map { it.groupValues[1] }.toList()
+        assertEquals(listOf("id", "group", "match", "packages", "packagePrefix", "tag", "category", "id", "group", "match", "tag"), keys)
+    }
 }
