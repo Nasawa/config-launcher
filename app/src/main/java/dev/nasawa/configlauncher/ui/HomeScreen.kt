@@ -58,8 +58,17 @@ import dev.nasawa.configlauncher.store.AgentDocs
 @Composable
 fun HomeScreen(vm: HomeViewModel) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    // #79: load warnings for the file that's showing (none while a problem banner is up: that's the last-good layout).
-    val warnings = remember(ui.load.config, ui.load.issue) { if (ui.load.issue == null) dev.nasawa.configlauncher.config.Elements.warnings(ui.load.config) else emptyList() }
+    // #125: theme-colour contrast is measured with this phone's theme, at load and whenever the theme or the
+    // wallpaper (dynamic) colours change; the engine adds the warnings to status.json.
+    val themeDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val themeHex = TitleBarLayout.themeHex(MaterialTheme.colorScheme)
+    LaunchedEffect(themeDark, themeHex) { vm.store.engine.setPhoneTheme(themeDark, themeHex) }
+    // #79: load warnings for the file that's showing (none while a problem banner is up: that's the last-good layout),
+    // then the phone-only theme-colour ones (#125), the same lines as status.json.
+    val warnings = remember(ui.load.config, ui.load.issue, themeDark, themeHex) {
+        if (ui.load.issue != null) emptyList()
+        else dev.nasawa.configlauncher.config.Elements.let { it.warnings(ui.load.config) + it.phoneWarnings(ui.load.config, themeDark) { t -> themeHex[t] } }
+    }
     val ctx = LocalContext.current
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }

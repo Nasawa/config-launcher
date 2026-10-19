@@ -106,4 +106,17 @@ class ElementsTest {
         assertEquals("ok", s["result"]!!.jsonPrimitive.content)
         assertEquals(1, s["warnings"]!!.jsonArray.size)
     }
+
+    @Test fun statusJsonAddsThemeContrastCheckedOnThisPhone() = runBlocking {
+        // #125: the UI hands the engine its theme colours; the phone-only warning lands in status.json and follows changes.
+        val src = LocalFileSource(tmp.newFolder())
+        src.file.writeText(doc("""[{"id":"t-main","type":"titleBar","style":{"color":"primary","backdrop":"scrim"}}]"""))
+        val e = ConfigEngine(src, LastGoodStore(tmp.newFolder()), 0); e.poll(force = true)
+        fun warnings() = Json.parseToJsonElement(File(src.dir, ".configlauncher/status.json").readText()).jsonObject["warnings"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(emptyList<String>(), warnings())
+        e.setPhoneTheme(false, mapOf("primary" to "#303030"))
+        assertEquals(listOf("elements[0].style.color: contrast 1.5:1 on the backdrop (4.5:1 recommended), checked on this phone in light theme. Shown anyway."), warnings())
+        e.setPhoneTheme(false, mapOf("primary" to "#FFFFFF"))
+        assertEquals(emptyList<String>(), warnings())
+    }
 }
