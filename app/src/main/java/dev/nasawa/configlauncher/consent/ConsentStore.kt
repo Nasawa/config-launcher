@@ -22,9 +22,12 @@ import java.io.FileOutputStream
  * Per widget id it keeps the approval **ceiling** (a union of every line ever allowed; file edits never shrink it),
  * the sticky **off** switch and the Q-D5 **Always allow** sites (separate from the ceiling, never in the fingerprint).
  */
-class ConsentStore(private val dir: File?) {
+class ConsentStore(private val dir: File?, private val clock: () -> Long = System::currentTimeMillis) {
     private val file = dir?.let { File(it, "consent.json") }
     private var entries: MutableMap<String, Consent.Entry> = load()
+    private val _version = kotlinx.coroutines.flow.MutableStateFlow(0)
+    /** #142: bumps on every change, so the UI recomputes tiles and prompts. */
+    val version: kotlinx.coroutines.flow.StateFlow<Int> = _version
 
     @Synchronized fun entries(): Map<String, Consent.Entry> = entries.toMap()
     @Synchronized fun entry(id: String): Consent.Entry? = entries[id]
@@ -44,18 +47,27 @@ class ConsentStore(private val dir: File?) {
         cards.forEach { (_, e) ->
             val id = (e["id"] as JsonPrimitive).content
             val lines = Consent.lines(e)
-            val cur = next[id] ?: Consent.Entry()
-            val (s, _) = Consent.state(lines, next[id])
+            var cur = next[id] ?: Consent.Entry()
+            if (cur.seen == null) cur = cur.copy(seen = clock())
+            val (s, _) = Consent.state(lines, cur)
             val silent = lines.filterNot(Consent::needsOk).toSet()
-            if (s == Consent.State.Allowed && !cur.ceiling.containsAll(silent)) next[id] = cur.copy(ceiling = cur.ceiling + silent)
+            if (s == Consent.State.Allowed && !cur.ceiling.containsAll(silent)) cur = cur.copy(ceiling = cur.ceiling + silent)
+            next[id] = cur
         }
         if (next != entries) { entries = next; save() }
     }
 
-    /** `Allow`: union every declared line into the ceiling and turn the widget on. */
-    @Synchronized fun allow(id: String, lines: List<String>) {
+    /**
+     * `Allow`: union the lines the user was [shown] into the ceiling and turn the widget on. Refused (false, nothing
+     * written) unless the card in [current] still has exactly that fingerprint, so no caller can approve lines the
+     * user didn't see, e.g. after a poll broadened the file while the sheet was open (#158 review).
+     */
+    @Synchronized fun allow(id: String, shown: List<String>, current: LauncherConfig): Boolean {
+        val card = Consent.cards(current).firstOrNull { (_, e) -> (e["id"] as? JsonPrimitive)?.content == id }?.second ?: return false
+        if (Consent.lines(card) != shown) return false
         val cur = entries[id] ?: Consent.Entry()
-        update(id, cur.copy(ceiling = cur.ceiling + lines, off = false))
+        update(id, cur.copy(ceiling = cur.ceiling + shown, off = false))
+        return true
     }
 
     /** `Turn off`: sticky, keeps the ceiling, so `Allow` restores without a prompt while the file stays within it. */
@@ -65,7 +77,7 @@ class ConsentStore(private val dir: File?) {
     @Synchronized fun turnOn(id: String) { entries[id]?.let { update(id, it.copy(off = false)) } }
 
     /** `Forget approval` (widget detail): clears the ceiling and the Always-allow sites; the widget stays off. */
-    @Synchronized fun forget(id: String) = update(id, Consent.Entry(off = true))
+    @Synchronized fun forget(id: String) = update(id, Consent.Entry(off = true, seen = entries[id]?.seen))
 
     /** Q-D5 "Always allow <host>" ticked on a tap confirm: [origin] is the canonical scheme + host. */
     @Synchronized fun alwaysAllow(id: String, origin: String) {
@@ -86,7 +98,8 @@ class ConsentStore(private val dir: File?) {
         root?.get("widgets")?.jsonObject?.mapValues { (_, v) ->
             val o = v.jsonObject
             fun set(k: String) = o[k]?.jsonArray?.map { it.jsonPrimitive.content }?.toSet().orEmpty()
-            Consent.Entry(set("ceiling"), o["off"]?.jsonPrimitive?.booleanOrNull == true, set("alwaysAllow"))
+            Consent.Entry(set("ceiling"), o["off"]?.jsonPrimitive?.booleanOrNull == true, set("alwaysAllow"),
+                o["seen"]?.jsonPrimitive?.content?.toLongOrNull())
         }?.toMutableMap() ?: mutableMapOf()
     } catch (_: Exception) {
         // An unreadable store asks again rather than guessing: every card that needs OK waits.
@@ -94,6 +107,7 @@ class ConsentStore(private val dir: File?) {
     }
 
     private fun save() {
+        _version.value++
         val f = file ?: return
         val bytes = buildJsonObject {
             put("version", 1)
@@ -102,6 +116,7 @@ class ConsentStore(private val dir: File?) {
                     put("ceiling", JsonArray(e.ceiling.sorted().map { JsonPrimitive(it) }))
                     put("off", e.off)
                     put("alwaysAllow", JsonArray(e.alwaysAllow.sorted().map { JsonPrimitive(it) }))
+                    e.seen?.let { put("seen", it) }
                 }
             }))
         }.toString().toByteArray(Charsets.UTF_8)

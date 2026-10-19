@@ -546,7 +546,8 @@ class ConfigEngine(
     /** #139 `ui.reload`: re-read one card's data file now, if it's allowed and declares `ui.reload` and `data.file`. */
     suspend fun reloadWidget(id: String): dev.nasawa.configlauncher.widgetdata.WidgetDataReader.Reload = mutex.withLock {
         val t = dataTargets().firstOrNull { it.id == id }
-        if (t == null || consentReport().none { it.id == id && "ui.reload" in it.lines }) return@withLock dev.nasawa.configlauncher.widgetdata.WidgetDataReader.Reload.Ignored
+        // #158 review: only a live (allowed) card's reload tap counts, even before the #140 renderer can send one.
+        if (t == null || consentReport().none { it.id == id && it.state == dev.nasawa.configlauncher.consent.Consent.State.Allowed && "ui.reload" in it.lines }) return@withLock dev.nasawa.configlauncher.widgetdata.WidgetDataReader.Reload.Ignored
         widgetReader.reload(source, t).also { _widgetData.value = widgetReader.snapshots(); emitStatus() }
     }
 

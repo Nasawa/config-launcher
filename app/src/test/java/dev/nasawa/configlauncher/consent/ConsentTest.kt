@@ -55,7 +55,7 @@ class ConsentTest {
         assertEquals(State.NeedsApproval, st.state)
         assertEquals(listOf("ui.openUrl https://blog.anigeek.com"), st.missing)
         assertEquals("elements[0]: widget \"Anigeek LLC\" is waiting for approval on this phone. It isn't shown until then.", st.warning)
-        s.allow("w-1", st.lines)
+        s.allow("w-1", st.lines, v1)
         assertEquals(State.Allowed, s.state(v1))
         // Removing source: stricter (every tap confirms), stays live.
         assertEquals(State.Allowed, s.state(cfg(doc(card(caps = """{"kind":"data.file"},$open""")))))
@@ -74,9 +74,9 @@ class ConsentTest {
     @Test fun ceilingIsAUnionThatNeverShrinks() {
         val s = store()
         val a = cfg(doc(card(caps = open, extra = """"source":"a.org",""")))
-        s.allow("w-1", s.report(a).single().lines)
+        s.allow("w-1", s.report(a).single().lines, a)
         val b = cfg(doc(card(caps = open, extra = """"source":"b.org",""")))
-        s.allow("w-1", s.report(b).single().lines)
+        s.allow("w-1", s.report(b).single().lines, b)
         // Back to a.org (an earlier version): live with no prompt.
         s.settle(a)
         assertEquals(State.Allowed, s.state(a))
@@ -93,7 +93,7 @@ class ConsentTest {
     @Test fun turnOffKeepsTheCeilingAndForgetClearsIt() {
         val s = store()
         val c = cfg(doc(card(caps = open, extra = src)))
-        s.allow("w-1", s.report(c).single().lines)
+        s.allow("w-1", s.report(c).single().lines, c)
         s.turnOff("w-1")
         val off = s.report(c).single()
         assertEquals(State.Off, off.state)
@@ -118,7 +118,7 @@ class ConsentTest {
         val dir = tmp.newFolder()
         val s = ConsentStore(dir)
         val c = cfg(doc(card(caps = open, extra = src), card(id = "w-2", caps = open, extra = src, y = 2)))
-        s.allow("w-1", s.report(c)[0].lines); s.allow("w-2", s.report(c)[1].lines); s.alwaysAllow("w-2", "https://x.org")
+        s.allow("w-1", s.report(c)[0].lines, c); s.allow("w-2", s.report(c)[1].lines, c); s.alwaysAllow("w-2", "https://x.org")
         val again = ConsentStore(dir)
         assertEquals(State.Allowed, again.state(c, "w-2"))
         assertTrue(again.isAlwaysAllowed("w-2", "https://x.org"))
@@ -163,7 +163,7 @@ class ConsentTest {
         assertFalse(File(dir, ".configlauncher/status.json").readText().contains("ceiling"))
         assertFalse(dir.walk().any { it.name == "consent.json" })
 
-        store.allow("w-1", e.consentReport().single { it.id == "w-1" }.lines)
+        store.allow("w-1", e.consentReport().single { it.id == "w-1" }.lines, e.state.value.config)
         e.consentChanged()
         assertEquals("allowed", status()["consent"]!!.jsonObject["w-1"]!!.jsonObject["state"]!!.jsonPrimitive.content)
         store.turnOff("w-1"); e.consentChanged()

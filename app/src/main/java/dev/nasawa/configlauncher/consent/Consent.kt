@@ -33,10 +33,18 @@ object Consent {
     }
 
     /** What this phone remembers for one widget id. Never written to the synced folder. */
-    data class Entry(val ceiling: Set<String> = emptySet(), val off: Boolean = false, val alwaysAllow: Set<String> = emptySet())
+    data class Entry(val ceiling: Set<String> = emptySet(), val off: Boolean = false, val alwaysAllow: Set<String> = emptySet(),
+                     /** #142: when this phone first saw the card in launcher.json (epoch ms), for `Added in launcher.json · <time>`. */
+                     val seen: Long? = null)
 
-    /** `source` as scheme + host: a bare host means https (dynamic-widgets.md §4 "Normalising source"). */
-    fun canonicalSource(s: String): String = if (s.startsWith("http://") || s.startsWith("https://")) s else "https://$s"
+    /**
+     * `source` as scheme + host: a bare host means https (dynamic-widgets.md §4 "Normalising source"). Scheme and host
+     * are case-insensitive, so they're lowercased and a case-only edit never re-prompts (#158 review).
+     */
+    fun canonicalSource(s: String): String {
+        val l = s.lowercase(java.util.Locale.ROOT)
+        return if (l.startsWith("http://") || l.startsWith("https://")) l else "https://$l"
+    }
 
     private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
@@ -89,6 +97,6 @@ object Consent {
         val id = e.str("id")!!
         val lines = lines(e)
         val (s, missing) = state(lines, entries[id])
-        Status(id, path, e.str("title") ?: id, s, lines, missing)
+        Status(id, path, e.str("title")?.takeIf { it.isNotBlank() } ?: id, s, lines, missing)
     }
 }

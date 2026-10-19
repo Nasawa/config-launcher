@@ -53,6 +53,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import dev.nasawa.configlauncher.store.AgentDocs
+import dev.nasawa.configlauncher.consent.ConsentUi
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,6 +93,13 @@ fun HomeScreen(vm: HomeViewModel) {
     var pageList by remember { mutableStateOf(false) }
     var sheetFor by remember { mutableStateOf<ResolvedItem?>(null) }
     var homeMenu by remember { mutableStateOf(false) }
+    // #142 (S3-C): consent states for the file that's showing, recomputed whenever an approval changes.
+    val consent = vm.store.engine.consent
+    val consentVersion by (consent?.version ?: kotlinx.coroutines.flow.MutableStateFlow(0)).collectAsStateWithLifecycle()
+    val consentReport = remember(ui.load.config, consentVersion) { consent?.report(ui.load.config).orEmpty() }
+    fun consentTiles(pageId: String) = ConsentUi.tiles(ui.load.config, consentReport, pageId)
+    var consentOpen by remember { mutableStateOf<ConsentUi.Opened?>(null) }
+    var updateHint by remember { mutableStateOf(false) }
     var drawerSheet by remember { mutableStateOf<InstalledApp?>(null) }
     var hiddenSheet by remember { mutableStateOf(false) }
     // ux.md §14 R3/R8: one Undo snackbar at a time (folder removed, app hidden).
@@ -316,7 +324,8 @@ fun HomeScreen(vm: HomeViewModel) {
                         }, key = { pages.getOrNull(it)?.id ?: it },
                     userScrollEnabled = drag.dragged == null,
                 ) { index ->
-                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true }) }
+                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true },
+                        tiles = consentTiles(it.id), onTile = { t -> if (t.reason == ConsentUi.Reason.Update) updateHint = true else consentOpen = consent?.let { cs -> ConsentUi.open(ui.load.config, consentReport, cs::entry, t.id ?: "") } }) }
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.settledPage)
                 // ux.md §1.3: page label → page list → jump. Nothing is written.
@@ -409,6 +418,21 @@ fun HomeScreen(vm: HomeViewModel) {
             }, onDismiss = { sheetFor = null })
         }
 
+        consentOpen?.let { o ->
+            // #158 review: the sheet is a snapshot. If a poll changes the card's fingerprint while it's open, it closes
+            // (visibly) rather than changing under the user's finger, and Allow approves only the lines that were shown.
+            if (consent == null || !ConsentUi.current(o, consentReport)) { LaunchedEffect(o) { consentOpen = null }; return@let }
+            val installed by vm.installedApps.collectAsStateWithLifecycle()
+            ConsentSheet(o.prompt, appLabel = { pkg -> installed.firstOrNull { it.packageName == pkg }?.label?.let(Labels::clean) ?: pkg },
+                onAllow = {
+                    consentOpen = null
+                    if (consent.allow(o.prompt.id, o.lines, vm.store.engine.state.value.config)) {
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) { vm.store.engine.consentChanged() }
+                    }
+                },
+                onDismiss = { consentOpen = null })
+        }
+        if (updateHint) UpdateHintSheet { updateHint = false }
         if (titleBarSheet) TitleBarSheet(TitleBarEdits.state(ui.load.config),
             onToggle = { on -> TitleBarEdits.toggle(vm.store.engine.state.value.config, on)?.let(vm.store::edit) },
             onPick = { slot, choice ->
@@ -584,7 +608,8 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
 }
 
 @Composable
-private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit) {
+private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit,
+                     tiles: List<ConsentUi.Tile> = emptyList(), onTile: (ConsentUi.Tile) -> Unit = {}) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = grid.rows
     Column(Modifier.fillMaxSize().padding(8.dp)) {
@@ -604,14 +629,23 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
         }
         // §1.1: long-press on empty space opens the home menu. Detected on the whole grid (#75: the gutters between
         // cells count too); a press that lands on an occupied cell is the tile's own long-press.
-        val occupied by rememberUpdatedState(byCell.keys)
+        val occupied by rememberUpdatedState(byCell.keys + tiles.flatMap { it.placement.cells() })
         val onEmpty by rememberUpdatedState(onEmptyLong)
-        Column(Modifier.weight(1f).onGloballyPositioned { drag.gridRect = it.boundsInRoot() }.pointerInput(grid) {
+        BoxWithConstraints(Modifier.weight(1f).onGloballyPositioned { drag.gridRect = it.boundsInRoot() }.pointerInput(grid) {
             detectTapGestures(onLongPress = { pos ->
                 val cell = GridHit.cell(pos.x, pos.y, size.width.toFloat(), size.height.toFloat(), grid.columns, grid.rows)
                 if (cell !in occupied) onEmpty()
             })
-        }, content = body)
+        }) {
+            Column(Modifier.fillMaxSize(), content = body)
+            // #142: a non-live widget's consent tile spans its cells (ux.md §17.3); its content is never drawn.
+            val cw = maxWidth / grid.columns
+            val ch = maxHeight / rows
+            tiles.forEach { t ->
+                val p = t.placement
+                ConsentTile(t, onReview = { onTile(t) }, modifier = Modifier.offset(cw * p.x, ch * p.y).size(cw * p.w, ch * p.h))
+            }
+        }
     }
 }
 
