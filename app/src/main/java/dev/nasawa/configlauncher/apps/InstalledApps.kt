@@ -51,7 +51,8 @@ class InstalledApps(context: Context) {
             users[profile] = user
             val paused = profile == Profile.WORK && runCatching { userManager.isQuietModeEnabled(user) }.getOrDefault(false)
             for (info in launcherApps.getActivityList(null, user)) {
-                val app = InstalledApp(info.componentName.packageName, info.componentName.className, info.label.toString(), profile, paused)
+                val app = InstalledApp(info.componentName.packageName, info.componentName.className, info.label.toString(), profile, paused,
+                    runCatching { info.firstInstallTime }.getOrDefault(0L))
                 infos[app.key] = info
                 out += app
             }

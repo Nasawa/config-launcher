@@ -8,6 +8,8 @@ data class InstalledApp(
     val profile: Profile = Profile.PERSONAL,
     /** Work profile is paused (quiet mode): shown greyed; tapping asks the system to unpause (OQ-30). */
     val paused: Boolean = false,
+    /** First install time (ms since epoch), 0 if unknown. Exported in apps.json (#54). */
+    val installTime: Long = 0,
 ) {
     val key: String get() = "${profile.wire}:$packageName/$activityName"
 }

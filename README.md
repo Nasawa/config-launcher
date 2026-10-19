@@ -58,8 +58,9 @@ only reads and writes `launcher.json` in that folder.
    ```gitignore
    .configlauncher/launcher.json.tmp
    .configlauncher/status.json
+   .configlauncher/apps.json
    ```
-   Never commit `.tmp` or `status.json`. They change on every phone write and cause pointless conflicts. `backup/`
+   Never commit `.tmp`, `status.json` or `apps.json`. They change on every phone write and cause pointless conflicts. `backup/`
    and `broken/` are yours to commit or ignore. Configure the phone's git app to respect `.gitignore` (most do).
 
 **Other sync tools (secondary).** Syncthing works the same without commits: edit, save, and it syncs. Its conflict
@@ -174,11 +175,14 @@ Shape in brief:
 `.configlauncher/` holds:
 - `status.json`: the last load result (ok or the list of errors, the hash and the time) and any sync-conflict copies it
   noticed. **Read this to find out why your edit was rejected** without picking up the phone.
+- `apps.json`: every launchable app the drawer shows (`package`, `activity`, `label`, `profile`, `installTime`), rewritten
+  when apps are installed, removed or changed. Use it to place apps by their real package and activity. Work apps are
+  listed only when *Include work apps in config* is on.
 - `launcher.json.tmp`: the write-verify copy (above).
 - `broken/`: copies of invalid files saved before a phone edit replaced them.
 - `backup/`: originals saved before an *Upgrade now* (as `launcher.v{N}.{timestamp}.json`), *Restore last working version* or *Start fresh*.
 
-Ignore `launcher.json.tmp` and `status.json` in git (see [the git workflow](#recommended-keep-the-folder-in-git)).
+Ignore `launcher.json.tmp`, `status.json` and `apps.json` in git (see [the git workflow](#recommended-keep-the-folder-in-git)).
 
 `launcher.json` is never created automatically. If it's missing, the phone shows `No launcher.json yet.` with
 *Create from current layout* and *Reconnect*.

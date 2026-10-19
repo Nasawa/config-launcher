@@ -29,5 +29,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             installed.value = apps.load()
             apps.changes().collect { installed.value = apps.load() }
         }
+        // #54: keep .configlauncher/apps.json current on app changes and after a source switch.
+        viewModelScope.launch(Dispatchers.IO) {
+            combine(installed, store.state.map { it.sourceName }.distinctUntilChanged()) { inst, _ -> inst }
+                .filter { it.isNotEmpty() }
+                .collect { store.engine.writeApps(it) }
+        }
     }
 }
