@@ -5,6 +5,8 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
@@ -80,12 +82,20 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
      * release without moving → [onLongClick] (item sheet); hold then move more than 8 dp → drag (when
      * [canDrag]). A release after a long-press never fires [onClick].
      */
-    fun Modifier.tile(item: ResolvedItem, canDrag: Boolean, onClick: () -> Unit, onLongClick: () -> Unit): Modifier {
+    fun Modifier.tile(
+        item: ResolvedItem, canDrag: Boolean, onClick: () -> Unit, onLongClick: () -> Unit,
+        actions: List<CustomAccessibilityAction> = emptyList(),
+    ): Modifier {
         val key = item.item.id + "|" + item.app?.key
         val isMe = dragged?.item?.id == item.item.id && dragged?.app == item.app
         return this
             .onGloballyPositioned { rects[key] = it.boundsInRoot() }
-            .semantics { onClick { onClick(); true }; onLongClick { onLongClick(); true } }
+            // One TalkBack node: the label merges into the node that owns tap, long-press (the item sheet)
+            // and the ux.md §12 custom actions.
+            .semantics(mergeDescendants = true) {
+                onClick { onClick(); true }; onLongClick { onLongClick(); true }
+                if (actions.isNotEmpty()) customActions = actions
+            }
             .pointerInput(item.item.id, item.app?.key, canDrag) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
