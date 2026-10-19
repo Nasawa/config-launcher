@@ -66,3 +66,14 @@ class HomeMenuTest {
         assertEquals(listOf(HomeAction.EDIT_LAYOUT, HomeAction.RELOAD, HomeAction.SETTINGS), HomeMenu.actions)
     }
 }
+
+class DrawerMenuTest {
+    private val personal = InstalledApp("p.a", "p.a.M", "A")
+    private val work = InstalledApp("p.a", "p.a.M", "A", Profile.WORK)
+
+    @Test fun actionsPerUx() {
+        assertEquals(listOf(DrawerAction.ADD_TO_HOME, DrawerAction.HIDE, DrawerAction.APP_INFO), DrawerMenu.actions(personal, includeWork = false))
+        assertEquals("work apps: Add to home only when included", listOf(DrawerAction.HIDE, DrawerAction.APP_INFO), DrawerMenu.actions(work, includeWork = false))
+        assertTrue(DrawerAction.ADD_TO_HOME in DrawerMenu.actions(work, includeWork = true))
+    }
+}

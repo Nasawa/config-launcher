@@ -19,7 +19,7 @@ import dev.nasawa.configlauncher.model.ResolvedItem
  * ux.md §12: every drag action also exists as a custom accessibility action on the item, so the layout
  * is editable without drag. Each is one write.
  */
-enum class TileAction { MOVE_TO, MOVE_TO_DOCK, REMOVE }
+enum class TileAction { MOVE_TO, MOVE_TO_DOCK, REMOVE, HIDE }
 
 enum class TilePlace { PAGE, DOCK, FOLDER }
 
@@ -28,11 +28,11 @@ object TileActions {
      * [dockFull]: the dock is at the drag cap, so `Move to dock` would be refused.
      * Folder children only get `Remove from home` (moving out of a folder isn't a drag target yet).
      */
-    fun of(place: TilePlace, dockFull: Boolean): List<TileAction> = when (place) {
+    fun of(place: TilePlace, dockFull: Boolean, canHide: Boolean = false): List<TileAction> = when (place) {
         TilePlace.PAGE -> listOfNotNull(TileAction.MOVE_TO, TileAction.MOVE_TO_DOCK.takeUnless { dockFull }, TileAction.REMOVE)
         TilePlace.DOCK -> listOf(TileAction.MOVE_TO, TileAction.REMOVE)
         TilePlace.FOLDER -> listOf(TileAction.REMOVE)
-    }
+    } + listOfNotNull(TileAction.HIDE.takeIf { canHide })   // [canHide]: an app (hides its package from the drawer)
 }
 
 /** ux.md §12 `Move to…` with a page/row/column picker. Starts at the item's own cell when it's on a page. */

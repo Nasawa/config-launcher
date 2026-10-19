@@ -15,4 +15,9 @@ class TileActionsTest {
         assertEquals(listOf(TileAction.MOVE_TO, TileAction.REMOVE), TileActions.of(TilePlace.DOCK, dockFull = true))
         assertEquals(listOf(TileAction.REMOVE), TileActions.of(TilePlace.FOLDER, dockFull = false))
     }
+
+    @Test fun appsAlsoGetHide() {
+        assertEquals(listOf(TileAction.MOVE_TO, TileAction.MOVE_TO_DOCK, TileAction.REMOVE, TileAction.HIDE), TileActions.of(TilePlace.PAGE, false, canHide = true))
+        assertEquals(listOf(TileAction.REMOVE, TileAction.HIDE), TileActions.of(TilePlace.FOLDER, false, canHide = true))
+    }
 }
