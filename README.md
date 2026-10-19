@@ -31,11 +31,16 @@ only reads and writes `launcher.json` in that folder.
 2. **Edit `launcher.json`.** Keep IDs stable, give new items new IDs, put notes in `x-` keys (see [Schema](#schema)).
 3. **Validate before committing.**
    ```sh
-   pip install jsonschema
-   python -c "import json,jsonschema;jsonschema.validate(json.load(open('launcher.json')),json.load(open('schema/launcher-config.v1.schema.json')),cls=jsonschema.Draft202012Validator)"
+   pip install jsonschema            # optional; the phone's own rules run without it
+   python3 scripts/validate.py launcher.json            # same errors, same wording as the phone
+   python3 scripts/validate.py --format launcher.json   # rewrite in the phone's canonical form
    ```
-   (Keep a copy of the schema in the repo, or point at this repo's `schema/`.) The schema doesn't catch everything the
-   phone checks, such as duplicate IDs or two items in one cell (see the list under [Rules](#rules-the-launcher-follows-and-expects)).
+   `scripts/validate.py` (Python 3.9+, stdlib only) runs the phone's checks: the schema, unique IDs across the whole
+   file, no two items in one cell, cells inside the grid, no nested folders, no x/y in the dock or folders, and the
+   size limits. `--format` writes exactly what the phone writes, so your commit won't show up as a diff after the phone's
+   next save. It never rewrites an invalid file. `--check` exits 1 if the file isn't already canonical, which is useful
+   in a pre-commit hook. Exit codes: 0 valid, 1 invalid (or not canonical with `--check`), 2 usage error. Syntax
+   errors are worded by Python's JSON parser, so they read differently from the phone's.
 4. **Commit and push.**
    ```sh
    git add launcher.json && git commit -m "Move Maps to the dock" && git push
@@ -197,7 +202,7 @@ versioning.
 
 ### Dos and don'ts
 **Do**
-- Validate against the schema before saving.
+- Validate with `scripts/validate.py` before saving.
 - Keep IDs stable and unique, and give new items new IDs.
 - Use `package` (and `activity` only when you need a specific one).
 - Put notes in `x-` keys.
