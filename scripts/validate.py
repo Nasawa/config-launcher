@@ -821,6 +821,23 @@ class TitleBar:
                 m = r if m is None else min(m, r)
         return m
 
+    THEME = ("primary", "secondary", "onSurface", "surface")
+
+    @staticmethod
+    def uses_theme(o):
+        """#125: the phone measures this bar's contrast with its theme colours (TitleBar.phoneContrast); we can't."""
+        st = o.get("style")
+        if not isinstance(st, dict):
+            return False
+        b = st.get("backdrop")
+        if b != "scrim" and not isinstance(b, dict):
+            return False
+        col = st.get("color")
+        texts = [col.get("light", "light"), col.get("dark", "light")] if isinstance(col, dict) else [col]
+        if isinstance(b, dict):
+            texts.append(b.get("color"))
+        return any(t in TitleBar.THEME for t in texts if _is_str(t))
+
     @staticmethod
     def warnings(o, path):
         st = o.get("style")
@@ -870,6 +887,16 @@ def warnings(tree):
             if k not in ids:
                 out.append(f'pages[{j}].overrides: "{k}" doesn\'t match any element, so it was ignored.')
     return out
+
+
+THEME_INFO = ("theme colours (primary, secondary, onSurface, surface) are only checked on the phone; "
+              "its status.json warnings show any marked \"Checked on this phone\".")
+
+
+def infos(tree):
+    """#125 (Pragma): one info line when a shown title bar's contrast depends on theme colours."""
+    shown = [e for e in tree.get("elements") or [] if isinstance(e, dict) and not skip(e) and e.get("type") == "titleBar"]
+    return [THEME_INFO] if any(TitleBar.uses_theme(e) for e in shown) else []
 
 
 def validate(raw, use_schema=True):
@@ -1109,7 +1136,8 @@ def main(argv=None):
                 print(f"  {e}")
             continue
         ws = warnings(tree)
-        say = lambda msg: print(msg + "".join(f"\n  warning: {w}" for w in ws))
+        notes = [f"\n  warning: {w}" for w in ws] + [f"\n  info: {i}" for i in infos(tree)]
+        say = lambda msg: print(msg + "".join(notes))
         if a.format:
             text = canonical(tree).encode("utf-8")
             if text != raw:

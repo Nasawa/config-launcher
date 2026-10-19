@@ -98,6 +98,27 @@ class TitleBarTest {
         assertTrue(Elements.warnings(ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"#FFFFFF","backdrop":{"color":"#000000"}}}"""))).isEmpty())
     }
 
+    @Test fun themeColourContrastIsCheckedOnThePhone() {
+        // #125 (Pragma): theme tokens are measured on the phone with its current colours; validate.py can't.
+        val dim = mapOf("primary" to "#202020", "surface" to "#FFFFFF", "onSurface" to "#1B1B1F", "secondary" to "#FFFFFF")
+        val c = ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":{"light":"primary","dark":"#FFFFFF"},"backdrop":"scrim"}}"""))
+        assertTrue(Elements.warnings(c).isEmpty())   // nothing the script could measure is low
+        assertEquals(listOf("elements[0].style.color: contrast 1.2:1 on the backdrop with this phone's theme colours (4.5:1 recommended). Shown anyway. Checked on this phone."),
+            Elements.phoneWarnings(c, dark = false) { dim[it] })
+        assertTrue(Elements.phoneWarnings(c, dark = true) { dim[it] }.isEmpty())   // the dark variant is a hex: the static check covers it
+        assertTrue(Elements.phoneWarnings(c, dark = false) { "#FFFFFF" }.isEmpty())  // a light primary passes
+        // A theme-coloured custom backdrop, opaque: one wallpaper.
+        val b = buildJsonObject { put("color", "onSurface"); putJsonObject("backdrop") { put("color", "surface") } }
+        assertEquals(17.17, TitleBar.phoneContrast(b, false) { dim[it] }!!, 0.01)
+        // No theme token, `auto`/`none`, or an unknown colour: nothing for the phone to add.
+        assertNull(TitleBar.phoneContrast(buildJsonObject { put("backdrop", "scrim") }, false) { dim[it] })
+        assertNull(TitleBar.phoneContrast(buildJsonObject { put("color", "primary"); put("backdrop", "auto") }, false) { dim[it] })
+        assertNull(TitleBar.phoneContrast(buildJsonObject { put("color", "primary"); put("backdrop", "scrim") }, false) { null })
+        // A skipped bar isn't measured.
+        val skipped = ok(doc("""{"id":"t-main","type":"titleBar","requires":99,"style":{"color":"primary","backdrop":"scrim"}}"""))
+        assertTrue(Elements.phoneWarnings(skipped, false) { dim[it] }.isEmpty())
+    }
+
     @Test fun modelAppliesOverridesAndDefaults() {
         val c = ok(doc("""{"id":"t-main","type":"titleBar","content":{"slots":{"start":"{date}","center":"{page}","end":"clock"}},"style":{"size":"medium","weight":"bold"}}""",
             ""","overrides":{"t-main":{"content":{"slots":{"end":""}},"style":{"size":20}}}"""))

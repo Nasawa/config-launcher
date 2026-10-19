@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -64,6 +65,11 @@ object TitleBarLayout {
         token == "light" || token == "onWallpaper" -> Color.White
         else -> theme(token) ?: Color.White
     }
+
+    /** #125: the theme tokens as `#RRGGBB` (opaque), for the phone-only contrast check. */
+    fun themeHex(scheme: androidx.compose.material3.ColorScheme): Map<String, String> =
+        mapOf("primary" to scheme.primary, "secondary" to scheme.secondary, "onSurface" to scheme.onSurface, "surface" to scheme.surface)
+            .mapValues { (_, c) -> String.format(Locale.ROOT, "#%06X", c.toArgb() and 0xFFFFFF) }
 
     /** ux.md §15: light text always gets the label shadow; dark text never does. */
     fun shadow(c: Color) = c.luminance() > 0.5f

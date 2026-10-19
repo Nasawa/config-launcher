@@ -143,6 +143,11 @@ fun HomeScreen(vm: HomeViewModel) {
     // §1.4: the part of the system-gesture inset not already covered by systemBarsPadding.
     val density = androidx.compose.ui.platform.LocalDensity.current
     val gestureBottomPx = (WindowInsets.systemGestures.getBottom(density) - WindowInsets.navigationBars.getBottom(density)).coerceAtLeast(0).toFloat()
+    // #125: theme-colour contrast is measured with this phone's theme, at load and whenever the theme or the
+    // wallpaper (dynamic) colours change; the engine adds the warnings to status.json.
+    val themeDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val themeHex = TitleBarLayout.themeHex(MaterialTheme.colorScheme)
+    LaunchedEffect(themeDark, themeHex) { vm.store.engine.setPhoneTheme(themeDark, themeHex) }
     LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it.resolve(res), Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
     val toast = { msg: String -> Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
     LaunchedEffect(menuOpen) { if (menuOpen) agentAction = withContext(Dispatchers.IO) { vm.store.agentDocsMenuAction() } }

@@ -88,6 +88,33 @@ class Rules(unittest.TestCase):
         self.assertIn("dock[0]: x/y are not allowed in the dock", e)
 
 
+class ThemeInfo(unittest.TestCase):
+    """#125: theme colours are only checked on the phone; the script says so once."""
+    def tree(self, style, **bar):
+        doc = {"schemaVersion": 1, "pages": [{"id": "home", "items": []}],
+               "elements": [dict({"id": "t-main", "type": "titleBar", "style": style}, **bar)]}
+        tree, errs = V.validate(json.dumps(doc).encode(), use_schema=False)
+        self.assertEqual([], errs)
+        return tree
+
+    def test_info_only_when_a_measured_bar_uses_theme_colours(self):
+        self.assertEqual([V.THEME_INFO], V.infos(self.tree({"color": "primary", "backdrop": "scrim"})))
+        self.assertEqual([V.THEME_INFO], V.infos(self.tree({"color": {"dark": "onSurface"}, "backdrop": "scrim"})))
+        self.assertEqual([V.THEME_INFO], V.infos(self.tree({"backdrop": {"color": "surface"}})))
+        self.assertEqual([], V.infos(self.tree({"color": "primary"})))
+        self.assertEqual([], V.infos(self.tree({"color": "#FFFFFF", "backdrop": "scrim"})))
+        self.assertEqual([], V.infos(self.tree({"color": "primary", "backdrop": "scrim"}, requires=99)))
+
+    def test_cli_prints_one_info_line(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = pathlib.Path(d) / "launcher.json"
+            f.write_text(json.dumps({"schemaVersion": 1, "pages": [{"id": "home", "items": []}], "elements": [
+                {"id": "t-main", "type": "titleBar", "style": {"color": "primary", "backdrop": "scrim"}}]}))
+            out = subprocess.run([sys.executable, str(HERE / "validate.py"), "--no-schema", str(f)], capture_output=True, text=True).stdout
+        self.assertEqual(1, out.count("info: "), out)
+        self.assertIn("only checked on the phone", out)
+
+
 class Format(unittest.TestCase):
     hand = ('{"pages":[{"items":[{"y":0,"x":1,"x-note":"hi","package":"a.b","type":"app","id":"a"}],"id":"home"}],'
             '"x-z":1.50,"schemaVersion":1,"revision":3,"unsorted":{"mode":"page"}}')

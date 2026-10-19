@@ -128,6 +128,10 @@ class ConfigEngine(
     /** #55: revision of the file at the status hash, when it was applied (null when rejected). */
     private var statusRevision: Long? = null
     private var statusWarnings: List<String> = emptyList()
+    /** #125: the phone's current theme (dark?, token → `#RRGGBB`) for the phone-only contrast check; null until the UI sets it. */
+    /** #125: the loaded config at the status hash, for [phoneWarnings] (null when rejected). */
+    private var statusConfig: LauncherConfig? = null
+    private var phoneTheme: Pair<Boolean, Map<String, String>>? = null
     /** §17 Q4: last backup-copy failure (null once a later save succeeds). */
     private var backupError: String? = null
     /** OQ-21: sync/merge leftovers next to launcher.json. */
@@ -192,7 +196,7 @@ class ConfigEngine(
                 lastStamp = target.stamp()
                 _state.value = LoadState(adopted, Origin.FILE, target.displayName, hash, reconnectable = target.reconnectable)
                 // #103: a fresh receipt for the adopted file, so status.json isn't left from an earlier install.
-                writeStatus("ok", emptyList(), hash, adopted.revision, Elements.warnings(adopted))
+                writeStatus("ok", emptyList(), hash, adopted.revision, Elements.warnings(adopted), adopted)
                 saveLastGood(existing)
             } else writeLocked(oldState.config)
             true
@@ -258,7 +262,7 @@ class ConfigEngine(
             lastStamp = stamp
             if (_state.value.issue != null) _state.update { it.copy(issue = null) }
             // #103: first look at a newly connected folder holding the file we already show: still write a receipt.
-            if (statusResult == null) writeStatus("ok", emptyList(), hash, _state.value.config.revision, Elements.warnings(_state.value.config))
+            if (statusResult == null) writeStatus("ok", emptyList(), hash, _state.value.config.revision, Elements.warnings(_state.value.config), _state.value.config)
             return false
         }
         if (stabilityMs > 0) {
@@ -276,7 +280,7 @@ class ConfigEngine(
             }
             is ParseResult.Ok -> {
                 invalidHash = null; invalidBytes = null
-                writeStatus("ok", emptyList(), hash, r.config.revision, Elements.warnings(r.config))
+                writeStatus("ok", emptyList(), hash, r.config.revision, Elements.warnings(r.config), r.config)
                 // An external reload doesn't expire Undo (§18.2); it takes the "changed" path.
                 _state.value = LoadState(r.config, Origin.FILE, src.displayName, hash, reconnectable = src.reconnectable,
                     mergeUndo = undoBytes != null, merge = _state.value.merge.takeIf { undoBytes != null })
@@ -451,7 +455,7 @@ class ConfigEngine(
         selfWrites.addLast(hash); while (selfWrites.size > 4) selfWrites.removeFirst()
         source.write(bytes)
         lastStamp = source.stamp()
-        writeStatus("ok", emptyList(), hash, config.revision, Elements.warnings(config))
+        writeStatus("ok", emptyList(), hash, config.revision, Elements.warnings(config), config)
         _state.value = LoadState(config, Origin.FILE, source.displayName, hash, reconnectable = source.reconnectable)
         saveLastGood(bytes)
         return hash
@@ -476,10 +480,24 @@ class ConfigEngine(
     }
 
     /** §16/§17: `.configlauncher/status.json` so an agent can see why an edit was rejected. Best effort. */
-    private fun writeStatus(result: String, errors: List<String>, hash: String, revision: Long? = null, warnings: List<String> = emptyList()) {
-        statusResult = Triple(result, errors, hash); statusRevision = revision; statusWarnings = warnings
+    private fun writeStatus(result: String, errors: List<String>, hash: String, revision: Long? = null, warnings: List<String> = emptyList(), config: LauncherConfig? = null) {
+        statusResult = Triple(result, errors, hash); statusRevision = revision; statusWarnings = warnings; statusConfig = config
         emitStatus()
     }
+
+    /**
+     * #125 (Pragma): the UI passes the theme colours at load and whenever the theme or wallpaper colours change.
+     * Theme-colour contrast warnings ([Elements.phoneWarnings]) for the loaded file are then appended to
+     * status.json `warnings`, marked "Checked on this phone". status.json is rewritten only if they change.
+     */
+    suspend fun setPhoneTheme(dark: Boolean, colors: Map<String, String>) = mutex.withLock {
+        if (phoneTheme == (dark to colors)) return@withLock
+        phoneTheme = dark to colors
+        emitStatus()
+    }
+
+    private fun phoneWarnings(): List<String> =
+        phoneTheme?.let { (dark, colors) -> statusConfig?.let { c -> Elements.phoneWarnings(c, dark) { colors[it] } } }.orEmpty()
 
     private var lastApps: Pair<ConfigSource, List<kotlinx.serialization.json.JsonObject>>? = null
 
@@ -498,10 +516,11 @@ class ConfigEngine(
 
     private fun emitStatus() {
         val (result, errors, hash) = statusResult ?: return
-        val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${statusWarnings.hashCode()}|$backupError|$conflictFiles"
+        val warnings = if (result == "ok") statusWarnings + phoneWarnings() else statusWarnings
+        val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${warnings.hashCode()}|$backupError|$conflictFiles"
         if (key == lastStatusKey) return
         try {
-            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles, source.location, revision = statusRevision, warnings = statusWarnings))
+            source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles, source.location, revision = statusRevision, warnings = warnings))
             lastStatusKey = key
         } catch (_: Exception) { /* folder may be read-only or gone; the banner already says so */ }
     }

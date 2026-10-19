@@ -145,6 +145,39 @@ object TitleBar : Elements.ElementType {
         return listOf("$path.style.color: contrast ${tenths / 10}.${tenths % 10}:1 on the backdrop (4.5:1 recommended). Shown anyway.")
     }
 
+    /** The system-theme colour tokens: known only on the phone (#125). */
+    val THEME = setOf("primary", "secondary", "onSurface", "surface")
+
+    /**
+     * #125 (Pragma): contrast with the theme colours this phone uses right now, for a bar whose text colour (in the
+     * current light or dark variant) or custom backdrop colour is a theme token. [theme] maps a token to `#RRGGBB`.
+     * Same worst-case-wallpaper rule as [contrast]. Null when no theme token is involved or nothing is measurable.
+     */
+    fun phoneContrast(style: JsonObject, dark: Boolean, theme: (String) -> String?): Double? {
+        val text = when (val col = style["color"]) {
+            null -> "light"
+            is JsonObject -> (col[if (dark) "dark" else "light"] as? JsonPrimitive)?.content ?: "light"
+            else -> (col as JsonPrimitive).content
+        }
+        val (bg, opacity) = when (val b = style["backdrop"]) {
+            is JsonPrimitive -> if (b.isString && b.content == "scrim") "#000000" to 60L else return null
+            is JsonObject -> ((b["color"] as? JsonPrimitive)?.content ?: "#000000") to ((b["opacity"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 100L)
+            else -> return null
+        }
+        if (text !in THEME && bg !in THEME) return null
+        val resolve = { t: String -> hex(t) ?: if (t in THEME) theme(t)?.takeIf { HEX.matches(it) } else null }
+        return worst(resolve(bg) ?: return null, opacity, listOf(resolve(text) ?: return null))
+    }
+
+    /** #125: the phone-only warning for [phoneContrast], marked as checked on this phone. */
+    fun phoneWarnings(o: JsonObject, path: String, dark: Boolean, theme: (String) -> String?): List<String> {
+        val style = o["style"] as? JsonObject ?: return emptyList()
+        val ratio = phoneContrast(style, dark, theme) ?: return emptyList()
+        if (ratio >= MIN_CONTRAST) return emptyList()
+        val tenths = floor(ratio * 10).toLong()
+        return listOf("$path.style.color: contrast ${tenths / 10}.${tenths % 10}:1 on the backdrop with this phone's theme colours (4.5:1 recommended). Shown anyway. Checked on this phone.")
+    }
+
     private fun hex(s: String?): String? = when {
         s == null -> null
         HEX.matches(s) -> s
@@ -168,6 +201,10 @@ object TitleBar : Elements.ElementType {
             else -> listOf((col as JsonPrimitive).content)
         }.mapNotNull(::hex)
         if (texts.isEmpty()) return null
+        return worst(bg, opacity, texts)
+    }
+
+    private fun worst(bg: String, opacity: Long, texts: List<String>): Double {
         val a = opacity / 100.0
         val walls = if (opacity >= 100) listOf("#FFFFFF") else listOf("#FFFFFF", "#000000")
         var min = Double.MAX_VALUE

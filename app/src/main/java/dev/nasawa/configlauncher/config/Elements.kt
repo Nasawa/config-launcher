@@ -85,6 +85,15 @@ object Elements {
     fun canonical(o: JsonObject): JsonObject = typeOf(o)?.canonical(o) ?: o
 
     /**
+     * #125: warnings only the phone can check (theme-colour contrast with the current theme). [theme] maps a theme
+     * token to `#RRGGBB`. Not mirrored by validate.py, which says so instead.
+     */
+    fun phoneWarnings(c: LauncherConfig, dark: Boolean, theme: (String) -> String?): List<String> =
+        c.elements.orEmpty().flatMapIndexed { i, e ->
+            if (skip(e) == null && typeOf(e) == TitleBar) TitleBar.phoneWarnings(e, "elements[$i]", dark, theme) else emptyList()
+        }
+
+    /**
      * Load warnings (ux.md §15.1): skipped elements and overrides naming no element. They never reject the file;
      * they go to status.json `warnings` and the error detail view's Warnings section.
      */
