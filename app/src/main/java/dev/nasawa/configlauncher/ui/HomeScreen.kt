@@ -4,6 +4,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import dev.nasawa.configlauncher.R
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -63,6 +64,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var hiddenSheet by remember { mutableStateOf(false) }
     // ux.md §14 R3/R8: one Undo snackbar at a time (folder removed, app hidden).
     var undoSnack by remember { mutableStateOf<UndoSnack?>(null) }
+    var moveFor by remember { mutableStateOf<ResolvedItem?>(null) }
     val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }, onStart = { editing = true }) { vm.store.edit(it) } }
     var cloudUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var onboarded by remember { mutableStateOf(vm.store.prefs.onboarded) }
@@ -120,6 +122,31 @@ fun HomeScreen(vm: HomeViewModel) {
     val leaveEdit = { if (editing) { editing = false; vm.store.leaveEditMode() } }
     LaunchedEffect(editing, ui.load.config) { if (editing) { kotlinx.coroutines.delay(30_000); if (drag.dragged == null) leaveEdit() } }
     androidx.activity.compose.BackHandler(editing) { leaveEdit() }
+    // §14 R3: a folder goes with one write and an Undo snackbar, no confirm dialog (sheet and TalkBack action alike).
+    val removeItem = { r: ResolvedItem ->
+        val undo = (r.item as? FolderItem)?.let { Edits.undoRemove(vm.store.engine.state.value.config, it.id) }
+        vm.store.edit(Edit.Remove(r.item.id))
+        if (undo != null) undoSnack = UndoSnack(res.getString(R.string.removed_folder, Labels.clean(r.title)), undo, Labels.clean(r.title))
+    }
+    // §14 R8: Hide gets an Undo snackbar.
+    val hideApp = { pkg: String, label: String ->
+        vm.store.edit(Edit.Hide(pkg))
+        undoSnack = UndoSnack(res.getString(R.string.app_hidden, label), Edit.Unhide(pkg), label)
+    }
+    // ux.md §12: drag-free editing through TalkBack custom actions, one write each.
+    val a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction> = { r, place ->
+        val pkg = (r.item as? AppItem)?.packageName
+        TileActions.of(place, dockFull = ui.layout.dock.size >= Edits.MAX_DOCK, canHide = pkg != null).map { a ->
+            when (a) {
+                TileAction.MOVE_TO -> CustomAccessibilityAction(res.getString(R.string.a11y_move_to)) { moveFor = r; true }
+                TileAction.MOVE_TO_DOCK -> CustomAccessibilityAction(res.getString(R.string.a11y_move_to_dock)) { vm.store.edit(Edit.MoveToDock(r.item.id, Int.MAX_VALUE)); true }
+                TileAction.REMOVE -> CustomAccessibilityAction(res.getString(R.string.action_remove_home)) { removeItem(r); true }
+                TileAction.HIDE -> CustomAccessibilityAction(res.getString(R.string.action_hide)) { hideApp(pkg!!, Labels.clean(r.app?.label ?: r.title)); true }
+            }
+        }
+    }
+    LaunchedEffect(editing, ui.load.config) { if (editing) { kotlinx.coroutines.delay(30_000); if (drag.dragged == null) editing = false } }
+    androidx.activity.compose.BackHandler(editing) { editing = false }
 
     MaterialTheme(colorScheme = darkColorScheme()) {
         Surface(Modifier.fillMaxSize(), color = Color(0xFF101418)) {
@@ -171,17 +198,26 @@ fun HomeScreen(vm: HomeViewModel) {
                     pager, Modifier.weight(1f).fillMaxWidth(), key = { pages.getOrNull(it)?.id ?: it },
                     userScrollEnabled = drag.dragged == null,
                 ) { index ->
-                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, onEmptyLong = { homeMenu = true }) }
+                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true }) }
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.currentPage)
                 }
-                Dock(ui.layout.dock, vm.apps, drag, onOpen, onLong)
+                Dock(ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y)
                 ui.load.merge?.let { m ->
                     MergeSnackbar(m, onUndo = { vm.store.undoMerge() }.takeIf { m.undo && ui.load.mergeUndo },
                         onDismiss = { vm.store.engine.dismissMergeUndo() })
                 }
                 undoSnack?.let { u ->
-                    UndoSnackbar(u, onUndo = { undoSnack = null; vm.store.edit(u.undo) }, onDismiss = { if (undoSnack == u) undoSnack = null })
+                    UndoSnackbar(u, onUndo = {
+                        undoSnack = null
+                        // Restore only fails when home has no room left; say so instead of doing nothing (Grace, #70).
+                        val cfg = vm.store.engine.state.value.config
+                        val undo = u.undo
+                        when {
+                            undo !is Edit.Restore || Edits.apply(cfg, undo).applied -> vm.store.edit(undo)
+                            cfg.allItems().none { it.id == undo.item.id } -> toast(res.getString(R.string.undo_no_room, u.label))
+                        }
+                    }, onDismiss = { if (undoSnack == u) undoSnack = null })
                 }
             }
         }
@@ -200,10 +236,7 @@ fun HomeScreen(vm: HomeViewModel) {
                         if (Edits.apply(cfg, Edit.AddToHome(item)).applied) { drawerOpen = false; vm.store.edit(Edit.AddToHome(item)) }
                         else toast(res.getString(R.string.home_full))
                     }
-                    DrawerAction.HIDE -> {
-                        vm.store.edit(Edit.Hide(app.packageName))
-                        undoSnack = UndoSnack(res.getString(R.string.app_hidden, Labels.clean(app.label)), Edit.Unhide(app.packageName))
-                    }
+                    DrawerAction.HIDE -> hideApp(app.packageName, Labels.clean(app.label))
                     DrawerAction.APP_INFO -> if (!vm.apps.appInfo(app.packageName, app.activityName, app.profile)) toast(res.getString(R.string.open_failed, Labels.clean(app.label)))
                 }
             }, onDismiss = { drawerSheet = null })
@@ -219,6 +252,10 @@ fun HomeScreen(vm: HomeViewModel) {
             }
         }, onDismiss = { homeMenu = false })
 
+        moveFor?.let { r ->
+            MoveToDialog(r, ui.layout.pages.map { it.id }, ui.layout.grid, onMove = { pageId, x, y -> moveFor = null; vm.store.edit(Edit.MoveToCell(r.item.id, pageId, x, y)) }, onDismiss = { moveFor = null })
+        }
+
         sheetFor?.let { r ->
             ItemSheet(r, onAction = { a ->
                 sheetFor = null
@@ -228,12 +265,7 @@ fun HomeScreen(vm: HomeViewModel) {
                         val (pkg, act) = when (val i = r.item) { is AppItem -> i.packageName to (r.app?.activityName ?: i.activity); is ShortcutItem -> i.packageName to null; else -> null to null }
                         if (pkg == null || !vm.apps.appInfo(pkg, act, r.app?.profile ?: Profile.PERSONAL)) toast(res.getString(R.string.open_failed, Labels.clean(r.title)))
                     }
-                    ItemAction.REMOVE -> {
-                        // §14 R3: a folder goes with one write and an Undo snackbar, no confirm dialog.
-                        val undo = (r.item as? FolderItem)?.let { Edits.undoRemove(vm.store.engine.state.value.config, it.id) }
-                        vm.store.edit(Edit.Remove(r.item.id))
-                        if (undo != null) undoSnack = UndoSnack(res.getString(R.string.removed_folder, Labels.clean(r.title)), undo)
-                    }
+                    ItemAction.REMOVE -> removeItem(r)
                 }
             }, onDismiss = { sheetFor = null })
         }
@@ -246,7 +278,7 @@ fun HomeScreen(vm: HomeViewModel) {
                 text = {
                     LazyVerticalGrid(GridCells.Fixed(4)) {
                         items(folder.children, key = { it.item.id }) { c ->
-                            with(drag) { Tile(c, vm.apps, Modifier.tile(c, canDrag = false, onClick = { openFolder = null; onOpen(c) }, onLongClick = { openFolder = null; onLong(c) })) }
+                            with(drag) { Tile(c, vm.apps, Modifier.tile(c, canDrag = false, onClick = { openFolder = null; onOpen(c) }, onLongClick = { openFolder = null; onLong(c) }, actions = a11y(c, TilePlace.FOLDER))) }
                         }
                     }
                 },
@@ -369,7 +401,7 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
 }
 
 @Composable
-private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, onEmptyLong: () -> Unit) {
+private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = grid.rows
     Column(Modifier.fillMaxSize().padding(8.dp)) {
@@ -384,7 +416,7 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
                             // §1.1: long-press on empty space opens the home menu.
                             if (byCell[x to y] == null) Modifier.pointerInput(Unit) { detectTapGestures(onLongPress = { onEmptyLong() }) } else Modifier),
                             contentAlignment = Alignment.Center) {
-                            byCell[x to y]?.let { r -> with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) })) } }
+                            byCell[x to y]?.let { r -> with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.PAGE))) } }
                         }
                     }
                 }
@@ -404,12 +436,14 @@ private fun PageDots(count: Int, current: Int) {
 }
 
 @Composable
-private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragController, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit) {
+private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragController, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>) {
+    val res = androidx.compose.ui.platform.LocalResources.current
     Row(
         Modifier.fillMaxWidth().padding(8.dp).heightIn(min = 64.dp).onGloballyPositioned { drag.dockRect = it.boundsInRoot() }.background(Color(0x22FFFFFF), RoundedCornerShape(20.dp)).padding(6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        items.forEach { r -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }), showLabel = false) } } }
+        items.forEach { r -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.DOCK))
+                    .semantics { contentDescription = res.getString(R.string.a11y_dock_item, Labels.clean(r.title)) }, showLabel = false) } } }
         if (items.isEmpty()) Text(stringResource(R.string.dock_empty), color = Color.Gray, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterVertically))
     }
 }

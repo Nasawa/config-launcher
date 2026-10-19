@@ -23,6 +23,7 @@ class RulingsTest {
         assertEquals("Unhide", strings["action_unhide"])
         assertEquals("Undo", strings["merge_undo"])
         assertEquals("No room on home: all 20 pages are full.", strings["home_full"])
+        assertEquals("Couldn't restore \"%1\$s\": all 20 pages are full.", strings["undo_no_room"])
         assertEquals("Choose folder", strings["menu_pick_folder"])
         assertEquals("Reload layout", strings["menu_reload"])
     }

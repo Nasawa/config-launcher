@@ -61,10 +61,17 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     fun retrySave() { scope.launch(Dispatchers.IO) { engine.retrySave() } }
 
     /**
-     * Leaving edit mode (ux.md §4.1, §14 R4/R5): queue the empty-page cleanup and write now, so it goes out
+     * Leaving edit mode (ux.md §4.1, §14 R4/R5): queue the cleanup of the pages empty right now and write now, so it goes out
      * in the same write as any pending edit (or as one write if the edits were already saved).
      */
-    fun leaveEditMode() { scope.launch(Dispatchers.IO) { engine.edit(dev.nasawa.configlauncher.model.Edit.DropEmptyPages); engine.retrySave() } }
+    fun leaveEditMode() {
+        // Snapshot which pages are empty right now (Grace, #70): only those are dropped, even on a later replay.
+        val ids = dev.nasawa.configlauncher.model.Edits.emptyPageIds(engine.state.value.config)
+        scope.launch(Dispatchers.IO) {
+            if (ids.isNotEmpty()) engine.edit(dev.nasawa.configlauncher.model.Edit.DropPages(ids))
+            engine.retrySave()
+        }
+    }
 
     fun undoMerge() { scope.launch(Dispatchers.IO) { engine.undoMerge() } }
 

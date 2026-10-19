@@ -134,4 +134,17 @@
     <string name="no_hidden_apps">No hidden apps.</string>
     <string name="action_unhide">Unhide</string>
     <string name="drawer_menu">More options</string>
+    <string name="undo_no_room">Couldn\'t restore \"%1$s\": all 20 pages are full.</string>
+
+    <!-- Accessibility, ux.md §12 -->
+    <string name="a11y_move_to">Move to…</string>
+    <string name="a11y_move_to_dock">Move to dock</string>
+    <string name="a11y_dock_item">%1$s, dock</string>
+    <string name="move_to_title">Move %1$s</string>
+    <string name="move_to_page">Page %1$d of %2$d</string>
+    <string name="move_to_row">Row %1$d</string>
+    <string name="move_to_column">Column %1$d</string>
+    <string name="move_to_confirm">Move</string>
+    <string name="a11y_decrease">Decrease: %1$s</string>
+    <string name="a11y_increase">Increase: %1$s</string>
 </resources>

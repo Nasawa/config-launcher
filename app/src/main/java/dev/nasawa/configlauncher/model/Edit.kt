@@ -21,12 +21,18 @@ sealed interface Edit {
     data class Unhide(val packageName: String) : Edit
     /**
      * Undo of `Remove from home` (ux.md §14 R3): put [item] (a folder keeps its items) back where it was.
-     * [dockIndex] set = dock; else page [pageId] at its own x/y, recreating that page at [pageIndex] if it was
-     * deleted meanwhile. A taken cell falls back to the next free cell after it (Edits.freeCell, as Add does).
+     * [dockIndex] set = dock; else page [pageId] at its own x/y. [siblings] are the IDs of the other items that were on
+     * that page, so a *different* page that later reused the ID (R9 `page-N`) isn't mistaken for it: then the page is
+     * recreated at [pageIndex] under a free ID. A taken cell falls back to the next free cell on that page, then the
+     * first free cell on home, then a new page; it fails only when all 20 pages are full.
      */
-    data class Restore(val item: Item, val pageId: String?, val pageIndex: Int, val dockIndex: Int?) : Edit
-    /** Leaving edit mode (ux.md §4.2, §14 R5): delete empty pages, never the last one. */
-    data object DropEmptyPages : Edit
+    data class Restore(val item: Item, val pageId: String?, val pageIndex: Int, val dockIndex: Int?, val siblings: Set<String> = emptySet()) : Edit
+    /**
+     * Leaving edit mode (ux.md §4.2, §14 R5): delete the pages in [ids] (the ones that were empty when edit mode
+     * ended), only if they still exist and are still empty, and never the last page. A page an agent added
+     * meanwhile isn't listed, so a replay onto its file never deletes it.
+     */
+    data class DropPages(val ids: List<String>) : Edit
 }
 
 data class ApplyResult(val config: LauncherConfig, val applied: Boolean, val folder: FolderSkip? = null)
@@ -55,12 +61,14 @@ object Edits {
         is Edit.Hide -> hide(c, e)
         is Edit.Unhide -> unhide(c, e)
         is Edit.Restore -> restore(c, e)
-        Edit.DropEmptyPages -> dropEmptyPages(c)
+        is Edit.DropPages -> dropPages(c, e)
     }
 
     /** The [Edit.Restore] that undoes removing top-level item [id] from [c], or null if it isn't on a page or in the dock. */
     fun undoRemove(c: LauncherConfig, id: String): Edit.Restore? = when (val loc = find(c, id)) {
-        is Loc.OnPage -> Edit.Restore(c.pages[loc.page].items[loc.index], c.pages[loc.page].id, loc.page, null)
+        is Loc.OnPage -> c.pages[loc.page].let { p ->
+            Edit.Restore(p.items[loc.index], p.id, loc.page, null, p.items.map { it.id }.filter { it != id }.toSet())
+        }
         is Loc.InDock -> Edit.Restore(c.dock!![loc.index], null, 0, loc.index)
         null -> null
     }
@@ -73,21 +81,33 @@ object Edits {
     }
 
     private fun restore(c: LauncherConfig, e: Edit.Restore): ApplyResult {
-        if (e.dockIndex != null) return add(c, Edit.Add(e.item, null, index = e.dockIndex))
-        val pageId = e.pageId ?: return ApplyResult(c, false)
-        var base = c
-        if (c.pages.none { it.id == pageId }) {
-            if (c.pages.size >= MAX_PAGES) return ApplyResult(c, false)
-            base = c.copy(pages = c.pages.toMutableList().also { it.add(e.pageIndex.coerceIn(0, it.size), Page(pageId)) })
+        if (c.allItems().any { it.id == e.item.id }) return ApplyResult(c, false)   // already back
+        if (e.dockIndex != null) add(c, Edit.Add(e.item, null, index = e.dockIndex)).takeIf { it.applied }?.let { return it }
+        val page = c.pages.firstOrNull { it.id == e.pageId }
+        // Same page: it still holds one of the folder's old neighbours, or it was alone there and the page is still empty.
+        val same = page != null && (page.items.any { it.id in e.siblings } || e.siblings.isEmpty() && page.items.isEmpty())
+        if (same) add(c, Edit.Add(e.item, page!!.id, e.item.x ?: 0, e.item.y ?: 0)).takeIf { it.applied }?.let { return it }
+        if (page == null || !same) {
+            if (c.pages.size < MAX_PAGES) {
+                val taken = c.pages.map { it.id }.toSet()
+                val id = e.pageId?.takeIf { it !in taken } ?: generateSequence(1) { it + 1 }.map { "page-$it" }.first { it !in taken }
+                val base = c.copy(pages = c.pages.toMutableList().also { it.add(e.pageIndex.coerceIn(0, it.size), Page(id)) })
+                add(base, Edit.Add(e.item, id, e.item.x ?: 0, e.item.y ?: 0)).takeIf { it.applied }?.let { return it }
+            }
         }
-        val r = add(base, Edit.Add(e.item, pageId, e.item.x ?: 0, e.item.y ?: 0))
-        return if (r.applied) r else ApplyResult(c, false, r.folder)
+        val r = addToHome(c, Edit.AddToHome(e.item))
+        return if (r.applied) r else ApplyResult(c, false)
     }
 
-    private fun dropEmptyPages(c: LauncherConfig): ApplyResult {
-        val kept = c.pages.filter { it.items.isNotEmpty() }.ifEmpty { c.pages.take(1) }
+    private fun dropPages(c: LauncherConfig, e: Edit.DropPages): ApplyResult {
+        val drop = c.pages.filter { it.id in e.ids && it.items.isEmpty() }.map { it.id }.toSet()
+        var kept = c.pages.filter { it.id !in drop }
+        if (kept.isEmpty()) kept = c.pages.take(1)
         return ApplyResult(c.copy(pages = kept), kept.size != c.pages.size)
     }
+
+    /** IDs of the pages that are empty now: what [Edit.DropPages] gets when edit mode ends. */
+    fun emptyPageIds(c: LauncherConfig): List<String> = c.pages.filter { it.items.isEmpty() }.map { it.id }
 
     const val MAX_PAGES = 20   // schema pages.maxItems
 

@@ -22,7 +22,7 @@ import dev.nasawa.configlauncher.model.LauncherConfig
 import dev.nasawa.configlauncher.model.Profile
 
 /** ux.md §14 R3/R8: snackbar [text] with `Undo`, which queues [undo] as a normal edit (same hash-checked write path). */
-data class UndoSnack(val text: String, val undo: Edit) {
+data class UndoSnack(val text: String, val undo: Edit, val label: String) {
     companion object { const val DURATION_MS = 10_000L }   // the §18.2 Undo window
 }
 
