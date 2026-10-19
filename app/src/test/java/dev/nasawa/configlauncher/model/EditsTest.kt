@@ -74,6 +74,25 @@ class EditsTest {
         assertTrue(id.startsWith("a-chrome-"))
     }
 
+    @Test fun generatedIdsUsePrefixes() {   // §20.4
+        val pat = Regex("^[a-z0-9][a-z0-9_-]{0,63}$")
+        val f = Edits.newId(base, Edits.IdKind.FOLDER, "Games & Fun!")
+        val s = Edits.newId(base, Edits.IdKind.SHORTCUT, "Chrome: New tab")
+        val r = Edits.newId(base, Edits.IdKind.RULE, "")
+        assertTrue(f, f.startsWith("f-games-fun-") && pat.matches(f))
+        assertTrue(s, s.startsWith("s-chrome-new-tab-") && pat.matches(s))
+        assertTrue(r, Regex("^r-[a-z0-9]+$").matches(r))
+        assertTrue(pat.matches(Edits.newId(base, Edits.IdKind.FOLDER, "x".repeat(200))))
+    }
+
+    @Test fun generatedIdAvoidsPageAndRuleIds() {
+        val rule = kotlinx.serialization.json.buildJsonObject { put("id", kotlinx.serialization.json.JsonPrimitive("r-1")) }
+        val c = base.copy(pages = base.pages + Page("f-0"), drawer = Drawer(null, null, listOf(rule)))
+        val seq = { start: Int -> var n = start; { n++ } }
+        assertEquals("f-1", Edits.newId(c, Edits.IdKind.FOLDER, "", seq(0)))   // f-0 is a page
+        assertEquals("r-2", Edits.newId(c, Edits.IdKind.RULE, "", seq(1)))     // r-1 is a rule
+    }
+
     // §17 Q9 / ux.md §9.1: folder info from replay.
     private fun folder(vararg ids: String) = FolderItem("f", "Work", ids.map { app(it) })
 
