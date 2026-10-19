@@ -830,7 +830,9 @@ element, `elements[]`, `requires`/feature level, `style`, skip-and-keep, Stage 1
 
 **v1 capability kinds (closed list, Q-A1):** `data.file` (Show), `ui.openApp` and `ui.openUrl` (Open), `net.fetch`
 (Internet, feature level 5). Phone data and Act tiers have **no kinds in v1**. Their UX below is kept ready for later.
-Never-offered kinds aren't in the schema at all. An unknown `kind` is a validation error (B2).
+Never-offered kinds aren't in the schema at all. On the phone, an unknown `kind` **skips only that element** (skip-and-keep,
+cells kept, consent tile `Update Config Launcher to show this`, §17.3). It doesn't B2-reject the whole file. `validate.py`/CI
+at the current feature level may still flag it as an error so agents catch typos ([#116 follow-up](https://github.com/Nasawa/config-launcher/pull/116) and [#117](https://github.com/Nasawa/config-launcher/pull/117)).
 
 Assumptions A1–A5, all **✅ resolved** in the [#116 comment](https://github.com/Nasawa/config-launcher/pull/116#issuecomment-6270653131):
 - ✅ **A1** Approval is **device-local** (like `bindings.json`, §16) and never stored in the synced folder, so nothing that
@@ -855,11 +857,11 @@ The prompt groups capabilities by what they mean to a person, not by API. Each t
 |---|---|---|---|---|
 | **Show** | `data.file` (a path under `.configlauncher/widgets-data/`) | Static text, `{time}`/`{date}`/`{page}`, the widget's own data file | `Show data from widgets-data/w-anigeek.json in your config folder` | **No.** It's listed in the review screen, but on its own it never prompts (Q-D1). The folder is already yours, and displaying data can't reach anything |
 | **Open** | `ui.openApp` (package names) | Tap to open an app, or a launcher target (drawer, page list) | `Open Signal when you tap it` (the app label; the package if it isn't installed) | **No**, same rule as title-bar tap targets |
-| **Open** | `ui.openUrl` (hostnames) | Tap to open a link in the browser | `Open links to anigeek.com when you tap it` | **Yes.** It's in the Open tier, but a file-written link is the phishing path, so it prompts (Q-D5) |
+| **Open** | `ui.openUrl` (hostnames) | Tap to open a link in the browser | `Open links to anigeek.com when you tap it` | **Yes, always**: on first enable and whenever a host is added. It's in the Open tier, but a file-written link is the phishing path. Documented as the Open-tier split in #117 (`ui.openApp` silent, `ui.openUrl` prompts). Christopher confirms in Q-D5 |
 | **Internet** (feature level 5, only if Q-D3 says yes) | `net.fetch` (exact origins `https://host[:port]`) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable) | **Yes** |
 | **Phone data** (later, no v1 kinds) | — (future `phone.*`) | Calendar, next alarm, battery, notification counts | `Read your calendar` · `See notification counts` | **Yes.** After `Allow`, Android may ask for its own permission too |
 | **Act** (later, no v1 kinds) | — | Write back to the data file, toggles, webhooks. In v1 buttons only Open | `Change values in widgets-data/w-anigeek.json` | **Yes** |
-| **Never offered** | — (not in the schema) | Send SMS, place calls, read contacts or messages, mic, camera, location, VPN or tunnel control, run code | — | The schema has no kind for these (the iappyx lesson: one bridge for every widget). Writing one is a validation error |
+| **Never offered** | — (not in the schema) | Send SMS, place calls, read contacts or messages, mic, camera, location, VPN or tunnel control, run code | — | The schema has no kind for these (the iappyx lesson: one bridge for every widget). One written anyway is an unknown kind: the phone skips that element (§17.3), and `validate.py` reports it |
 
 **Combination line (later).** When a widget asks for **Phone data** *and* **Internet**, the prompt adds a final line in
 bold: `It could send what it reads from your phone to these sites.` It can't happen in v1, because there are no `phone.*`
@@ -905,7 +907,16 @@ the §16.2 placeholder so every non-live widget looks like the same family:
 | User chose `Keep off` | `Turned off` | Widget detail (§17.6) with `Allow` |
 | User revoked it | `Turned off` | Same |
 | Above this launcher's feature level (`requires`, e.g. `net.fetch` at 5 on a level-4 phone) | `Update Config Launcher to show this` | Hint sheet. Same skip-and-keep rule as §15, but it **keeps its cells and shows the tile**, because a dashboard card going missing looks broken |
+| Declares a capability `kind` this launcher doesn't know (a newer kind that's missing its `requires` bump, a typo, or a never-offered kind) | `Update Config Launcher to show this` | Same hint sheet and skip-and-keep: cells kept, the element stays in the file, and nothing is rendered or granted. The `status.json` warning names the kind (below), so a typo is visible to the agent even though the phone's copy suggests an update. No prompt, no B2 |
 | Data file missing or unreadable on first load | *(live; values show `—`, `as of` gets ▲, §17.9)* | — |
+
+Warnings for the two skip rows (Warnings section + `status.json`, §15.1 style; the `consent` map shows no `state` for a
+skipped element):
+- `requires` too high: the existing §15.1 `warn_element_level` text.
+- Unknown kind: `elements[4]: capability kind "phone.calendar" isn't supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo.`
+```xml
+<string name="warn_capability_kind">%1$s: capability kind \"%2$s\" isn\'t supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo.</string>
+```
 
 Long-press: the item sheet with the title, `Widget · from launcher.json`, then `Review`, `Edit layout`,
 `Remove from home`. TalkBack: `<Title>, widget, needs your OK. Double-tap to review.`
@@ -1160,7 +1171,7 @@ The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may
 }
 ```
 Normative names from the [#116 comment](https://github.com/Nasawa/config-launcher/pull/116#issuecomment-6270653131): the kinds `data.file` / `ui.openApp` / `ui.openUrl` / `net.fetch`, `author`,
-`minSpan` `{w,h}`, `layouts` keyed `"WxH"` (max 3), `priority` 0–9, `showIn`, `staleAfter` (ISO-8601 duration), and
+`minSpan` `{w,h}`, `layouts` keyed `"WxH"` with a **lowercase `x`** (confirmed, e.g. `"4x3"`, pattern `^[1-9][0-9]*x[1-9][0-9]*$`; max 3), `priority` 0–9, `showIn`, `staleAfter` (ISO-8601 duration), and
 `updatedAt` (ISO-8601) at the root of the data file. The shape of each capability entry (`targets` here) and of `tap` are
 illustrative. The `data.file` target is relative to `.configlauncher/widgets-data/`, so this card reads
 `.configlauncher/widgets-data/w-anigeek.json`, which the agent writes, e.g.
@@ -1232,14 +1243,13 @@ Dashboard capability model (§17): all eight are answered in the [#116 comment](
 | ~~Q-A3~~ | ✅ `status.json` `consent` map keyed by element id: `state` (`needsApproval` / `needsApprovalAgain` / `off` / `allowed`) + optional `warning`. No approval secret in it |
 | ~~Q-A4~~ | ✅ Real optional field `author` (string, max 40). Quoted, never trusted |
 | ~~Q-A5~~ | ✅ `{data:…}` with dots + `[index]` only, `list` binds to an array, `updatedAt` at the data file root, `staleAfter` on the element. One file per widget: `.configlauncher/widgets-data/<elementId>.json` |
-| ~~Q-A6~~ | ✅ `minSpan` `{w,h}`, `layouts` keyed `"WxH"` (max 3), `priority` 0–9 (default 5), `showIn`. Proposed levels: container 1, titleBar 2, appWidget 3, card local data 4, `net.fetch` 5. No per-device grid schema in v1 |
-| ~~Q-A7~~ | ✅ Only APIs in the approved manifest are granted. An unknown `kind` is a validation error |
+| ~~Q-A6~~ | ✅ `minSpan` `{w,h}`, `layouts` keyed `"WxH"`, lowercase `x` confirmed (`"4x3"`; max 3), `priority` 0–9 (default 5), `showIn`. Proposed levels: container 1, titleBar 2, appWidget 3, card local data 4, `net.fetch` 5. No per-device grid schema in v1 |
+| ~~Q-A7~~ | ✅ Only APIs in the approved manifest are granted. **Revised:** an unknown `kind` skips only that element (warning, cells kept). New kinds ship with a feature-level bump, and elements using them set `requires`. `validate.py`/CI may stay strict |
 | ~~Q-A8~~ | ✅ Hosted AppWidgets stay outside; listed as read-only `Allowed by Android` |
 
-Follow-up (Pragma): an unknown `kind` being a **validation error** rejects the whole file (B2, last working layout kept).
-That's right for typos. But when a later release adds a kind (e.g. `phone.calendar`), a widget using it must also raise
-`requires`, so older phones **skip** that one element (consent tile `Update Config Launcher to show this`) instead of
-rejecting the whole layout.
+~~Follow-up (Pragma): an unknown `kind` rejecting the whole file~~ ✅ Resolved in the [#116 follow-up](https://github.com/Nasawa/config-launcher/pull/116) and [#117](https://github.com/Nasawa/config-launcher/pull/117): on the phone it skips
+only that element (§17.3 tile `Update Config Launcher to show this`). New kinds bump the feature level and set
+`requires`, and `validate.py`/CI may stay strict for typos.
 
 All seven are answered in ARCHITECTURE §16 and applied above:
 
