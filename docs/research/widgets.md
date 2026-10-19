@@ -1,5 +1,8 @@
 # Widgets: research and recommendation
 
+> **Update (draft):** Christopher reframed the product around AI-composed **dynamic cards** > ([docs/design/dynamic-widgets.md](../design/dynamic-widgets.md)). Sections that assumed first-party widgets > were only `text`/`clock`, or that INTERNET must never land, are **partly superseded**. > Stage 1 cell reservation, `appWidget` hosting, tap-to-bind, and phone-private widget IDs **still stand**. > HA Q-C5 is revised in the design doc (§8).
+
+
 Status: research and design proposal, 2026-10-19. Author: Archimedes (architecture). **Docs only: nothing in `schema/` or the app changes until this is accepted.** Builds on the element model in [docs/design/title-bar.md](../design/title-bar.md) (#81, ARCHITECTURE §19), where `appWidget` was a placeholder type, and on the spike's widget notes ([docs/research-spike.md](../research-spike.md)).
 
 Christopher's framing: widgets are critical to the end vision and the first post-MVP item (ARCHITECTURE §18, row "§14 Q9"). Grok Bot's ask: survey existing schemas we could adapt before designing anything.
