@@ -11,8 +11,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nasawa.configlauncher.R
 import dev.nasawa.configlauncher.model.TitleBarEdits
@@ -20,16 +24,24 @@ import dev.nasawa.configlauncher.model.TitleBarEdits.Choice
 import dev.nasawa.configlauncher.model.TitleBarModel.Slot
 
 /**
- * #79 phone controls (ux.md §15): the on/off switch and, when on, a picker per slot with `Page title`, `Clock`,
+ * #79 phone controls (ux.md §15.2): the on/off switch and, when on, a picker per slot with `Page title`, `Clock`,
  * `Date` and `None`. A slot holding anything else shows a selected, read-only `Custom (set in the file)` row with the
  * raw template, and `Picking another option replaces it.` Each change is one write.
  */
+/** §15.2: what the user sees is Left / Center / Right, mirrored in RTL (start is on the right there). The file keeps start/end. */
+fun slotLabel(slot: Slot, rtl: Boolean): Int = when (slot) {
+    Slot.CENTER -> R.string.titlebar_slot_center
+    Slot.START -> if (rtl) R.string.titlebar_slot_right else R.string.titlebar_slot_left
+    Slot.END -> if (rtl) R.string.titlebar_slot_left else R.string.titlebar_slot_right
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TitleBarSheet(state: TitleBarEdits.State, onToggle: (Boolean) -> Unit, onPick: (Slot, Choice) -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-            Text(stringResource(R.string.titlebar_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            Text(stringResource(R.string.titlebar_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() })
+            val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
             val present = state as? TitleBarEdits.State.Present
             val on = present?.on == true
             Row(
@@ -41,13 +53,14 @@ fun TitleBarSheet(state: TitleBarEdits.State, onToggle: (Boolean) -> Unit, onPic
             }
             if (present != null && on) for (slot in Slot.entries) {
                 val s = present.slots.getValue(slot)
-                Text(stringResource(when (slot) { Slot.START -> R.string.titlebar_slot_start; Slot.CENTER -> R.string.titlebar_slot_center; Slot.END -> R.string.titlebar_slot_end }),
-                    style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp))
+                Text(stringResource(slotLabel(slot, rtl)),
+                    style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp).semantics { heading() })
                 Column(Modifier.selectableGroup()) {
                     if (s.choice == Choice.CUSTOM) {
-                        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).selectable(true, enabled = false, role = Role.RadioButton, onClick = {}).padding(horizontal = 16.dp),
+                        // Read-only but not disabled (§15.2): TalkBack reads "Custom (set in the file), <template>, selected".
+                        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).selectable(true, role = Role.RadioButton, onClick = {}).padding(horizontal = 16.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(true, onClick = null, enabled = false)
+                            RadioButton(true, onClick = null)
                             Column(Modifier.padding(start = 16.dp)) {
                                 Text(stringResource(R.string.titlebar_custom))
                                 Text(s.raw.orEmpty(), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)

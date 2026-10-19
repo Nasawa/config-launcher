@@ -13,6 +13,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.semantics.Role
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,6 +58,8 @@ import dev.nasawa.configlauncher.store.AgentDocs
 @Composable
 fun HomeScreen(vm: HomeViewModel) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    // #79: load warnings for the file that's showing (none while a problem banner is up: that's the last-good layout).
+    val warnings = remember(ui.load.config, ui.load.issue) { if (ui.load.issue == null) dev.nasawa.configlauncher.config.Elements.warnings(ui.load.config) else emptyList() }
     val ctx = LocalContext.current
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }
@@ -72,6 +75,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var menuOpen by remember { mutableStateOf(false) }
     var folderInfo by remember { mutableStateOf<String?>(null) }   // "" = app-only
     var titleBarSheet by remember { mutableStateOf(false) }
+    var warningsOpen by remember { mutableStateOf(false) }
     // ux.md §4.1 edit mode: entered from `Edit layout` or a drag; left on Done, Back, Home or 30 s idle.
     var editing by remember { mutableStateOf(false) }
     var pageList by remember { mutableStateOf(false) }
@@ -407,7 +411,18 @@ fun HomeScreen(vm: HomeViewModel) {
             AlertDialog(
                 onDismissRequest = { folderInfo = null },
                 title = { Text(stringResource(R.string.menu_config_folder)) },
-                text = { androidx.compose.foundation.text.selection.SelectionContainer { Text(path.ifEmpty { stringResource(R.string.folder_app_only) }) } },
+                text = {
+                    Column {
+                        androidx.compose.foundation.text.selection.SelectionContainer { Text(path.ifEmpty { stringResource(R.string.folder_app_only) }) }
+                        // ux.md §15: a valid file with warnings says so here; tap → the Warnings list.
+                        if (warnings.isNotEmpty()) Text(
+                            pluralStringResource(R.plurals.status_loaded_warnings, warnings.size, warnings.size),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 12.dp).heightIn(min = 48.dp)
+                                .clickable(role = Role.Button) { warningsOpen = true }.wrapContentHeight(),
+                        )
+                    }
+                },
                 confirmButton = {
                     if (path.isNotEmpty()) TextButton({
                         ctx.getSystemService(android.content.ClipboardManager::class.java)
@@ -418,6 +433,11 @@ fun HomeScreen(vm: HomeViewModel) {
                 dismissButton = { TextButton({ folderInfo = null }) { Text(stringResource(R.string.close)) } },
             )
         }
+
+        if (warningsOpen && warnings.isNotEmpty()) WarningsDialog(warnings, onCopy = { text ->
+            ctx.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("launcher.json", text))
+            toast(res.getString(R.string.copied))
+        }, onDismiss = { warningsOpen = false })
 
         openFolder?.let { folder ->
             AlertDialog(

@@ -28,7 +28,7 @@ class TitleBarTest {
         assertEquals(Template.Problem.Unknown("wether"), Template.check("{wether}"))
         assertEquals(Template.Problem.Letter("s", "{time:HH:mm:ss}"), Template.check("{time:HH:mm:ss}"))
         assertEquals(Template.Problem.Letter("z", "{time:HH z}"), Template.check("{time:HH z}"))
-        assertEquals(Template.Problem.RunTooLong("MMMMMM", 4), Template.check("{date:MMMMMM}"))
+        assertEquals(Template.Problem.RunTooLong("MMMMMM", 5), Template.check("{date:MMMMMM}"))
         assertEquals(Template.Problem.RunTooLong("aa", 1), Template.check("{time:h aa}"))
         assertEquals(Template.Problem.QuoteUnclosed, Template.check("{date:d 'x}"))
         assertEquals(Template.Problem.Unclosed(5), Template.check("Day {date"))
@@ -43,15 +43,15 @@ class TitleBarTest {
             errors(doc("""{"id":"t-main","type":"titleBar","content":{"slots":{"center":"{page:x}"}}}""")))
         assertEquals(listOf("elements[0].style.size must be small, medium or large, or a number from 10 to 40."),
             errors(doc("""{"id":"t-main","type":"titleBar","style":{"size":"huge"}}""")))
-        assertEquals(listOf("elements[0].content.slots.start: MMMMMM is too long. Use at most 4 letters, like MMMM."),
+        assertEquals(listOf("elements[0].content.slots.start: MMMMMM is too long. Use at most 5, like MMMMM."),
             errors(doc("""{"id":"t-main","type":"titleBar","content":{"slots":{"start":"{date:MMMMMM}"}}}""")))
         // Pragma's copy (#115 review).
         val p = "elements[0].content.slots.end"
         assertEquals("$p: {page:x} doesn't take a pattern. Only {time} and {date} do.", Template.message(Template.check("{page:x}")!!, p))
         assertEquals("$p: {time:} has an empty pattern. Write {time} for the default format.", Template.message(Template.check("{time:}")!!, p))
         assertEquals("$p: A template is one line. Remove the line break.", Template.message(Template.check("a\nb")!!, p))
-        assertEquals("$p: MMMMMM is too long. Use at most 4 letters, like MMMM.", Template.message(Template.check("{date:MMMMMM}")!!, p))
-        assertEquals("$p: aa is too long. Use at most 1 letters, like a.", Template.message(Template.check("{time:h aa}")!!, p))
+        assertEquals("$p: MMMMMM is too long. Use at most 5, like MMMMM.", Template.message(Template.check("{date:MMMMMM}")!!, p))
+        assertEquals("$p: aa is too long. Use at most 1, like a.", Template.message(Template.check("{time:h aa}")!!, p))
         assertEquals("$p: A ' quote isn't closed. Add a closing ' after the text.", Template.message(Template.check("{date:d 'x}")!!, p))
         // Positions count code points, like the length limit.
         assertEquals(Template.Problem.Unclosed(3), Template.check("😀a{x"))
@@ -59,11 +59,16 @@ class TitleBarTest {
 
     @Test fun everyAllowedPatternFormatsWithoutThrowing() {
         val now = ZonedDateTime.parse("2026-10-18T22:42:00-06:00")
-        for (p in listOf("yyyy-MM-dd", "EEEE d MMMM", "EEEEE", "h:mm a", "HH:mm", "kk:mm", "KK:mm", "d/M/yy", "'week' d", "MMM ''yy", "y".repeat(19))) {
+        for (p in listOf("yyyy-MM-dd", "EEEE d MMMM", "EEEEE", "MMMMM", "h:mm a", "HH:mm", "kk:mm", "KK:mm", "d/M/yy", "'week' d", "MMM ''yy", "y".repeat(19))) {
             assertNull(p, Template.badInPattern(p))
             DateTimeFormatter.ofPattern(p, Locale.US).format(now)
         }
         assertEquals("10:42 PM", DateTimeFormatter.ofPattern("h:mm a", Locale.US).format(now))
+        // The run limits are the formatter's real maxima: max letters format, one more throws.
+        for ((c, max) in Template.LETTERS) {
+            DateTimeFormatter.ofPattern(c.toString().repeat(max), Locale.US).format(now)
+            assertThrows(IllegalArgumentException::class.java) { DateTimeFormatter.ofPattern(c.toString().repeat(max + 1), Locale.US) }
+        }
     }
 
     @Test fun validatesStrictlyAndOnlyOnce() {
@@ -131,6 +136,25 @@ class TitleBarTest {
         assertEquals(Triple(100, 800, 100), TitleBarLayout.widths(1000, 100, 900, 50))
         // No centre: the sides split the bar.
         assertEquals(Triple(500, 0, 500), TitleBarLayout.widths(1000, 900, 0, 900))
+    }
+
+    @Test fun clockAndDateNeverTruncate() {
+        // #123: a long date on the start side takes its width from the centre, which still stays centred.
+        assertEquals(Triple(300, 400, 300), TitleBarLayout.widths(1000, 300, 800, 100, fixed = setOf(0)))
+        // Without the rule the centre would keep half and the date would ellipsize.
+        assertEquals(Triple(250, 500, 250), TitleBarLayout.widths(1000, 300, 800, 100))
+        // A clock in the centre keeps its full width even past half; the sides ellipsize.
+        assertEquals(Triple(150, 700, 150), TitleBarLayout.widths(1000, 900, 700, 900, fixed = setOf(1)))
+        // No centre: a fixed end slot can take more than half.
+        assertEquals(Triple(300, 0, 700), TitleBarLayout.widths(1000, 900, 0, 700, fixed = setOf(2)))
+        // Never wider than the bar.
+        assertEquals(Triple(0, 0, 1000), TitleBarLayout.widths(1000, 10, 0, 1500, fixed = setOf(2)))
+        val parts = { t: String -> (Template.parse(t) as Template.Ok).parts }
+        assertTrue(TitleBarModel.clockOnly(parts("{time:HH:mm}")))
+        assertTrue(TitleBarModel.clockOnly(parts("{date} · {time}")))
+        assertTrue(TitleBarModel.clockOnly(parts("clock")))
+        assertFalse(TitleBarModel.clockOnly(parts("{page} {time}")))
+        assertFalse(TitleBarModel.clockOnly(parts("Hello")))
         assertEquals(30f, TitleBarLayout.cappedSp(30f, 1f))
         assertEquals(26f, TitleBarLayout.cappedSp(40f, 2f))
     }

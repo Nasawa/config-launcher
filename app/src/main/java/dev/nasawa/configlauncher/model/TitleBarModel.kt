@@ -91,6 +91,13 @@ object TitleBarModel {
 
     fun hasPage(parts: List<Template.Part>) = parts.any { it is Template.Tok && it.name == "page" }
 
+    /**
+     * ux.md §15 / #123: a slot whose tokens are only `{time}` and `{date}` (with any literal text around them) never
+     * truncates. A slot with `{page}`, `{pageNumber}` or `{pageCount}`, or with no token, can ellipsize.
+     */
+    fun clockOnly(parts: List<Template.Part>) =
+        parts.any { it is Template.Tok } && parts.all { it !is Template.Tok || it.name == "time" || it.name == "date" }
+
     private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.takeIf { it.isString }?.content
     private fun JsonObject.bool(k: String) = (this[k] as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toBooleanStrictOrNull()
     private fun JsonObject.int(k: String) = (this[k] as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toIntOrNull()
