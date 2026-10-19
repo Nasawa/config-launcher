@@ -164,6 +164,26 @@ class TitleBarTest {
         assertEquals(Triple(500, 0, 500), TitleBarLayout.widths(1000, 900, 0, 900))
     }
 
+    @Test fun fixedSidesGiveUpCentringBeforeTruncating() {
+        // #149 (Grace, 320 dp bar): date 170 + clock 60 fit in 272, so neither is cut and the centre takes what's between.
+        val (s, c, e) = TitleBarLayout.widths(272, 170, 120, 60, fixed = setOf(0, 2))
+        assertTrue("start $s", s >= 170); assertTrue("end $e", e >= 60); assertEquals(272, s + c + e)
+        assertEquals(Triple(170, 42, 60), TitleBarLayout.widths(272, 170, 120, 60, fixed = setOf(0, 2), page = 1, pageMin = 32))
+        // A non-fixed side still ellipsizes first (ux.md §15), here all the way, while the centre keeps its width.
+        assertEquals(Triple(170, 102, 0), TitleBarLayout.widths(272, 170, 120, 300, fixed = setOf(0), page = 1, pageMin = 32))
+        // The {page} button never collapses: before #149 this gave the centre 0 (2 × 140 > 272).
+        assertEquals(Triple(140, 32, 100), TitleBarLayout.widths(272, 140, 120, 100, fixed = setOf(0, 2), page = 1, pageMin = 32))
+        // ...or its own width, if that's less.
+        assertEquals(20, TitleBarLayout.widths(272, 300, 20, 300, page = 1, pageMin = 32).second)
+        // Page button on a side: it keeps its minimum there too.
+        assertEquals(Triple(32, 0, 240), TitleBarLayout.widths(272, 200, 0, 240, fixed = setOf(2), page = 0, pageMin = 32))
+        // Too narrow for everything: shared by need, nothing at zero.
+        val (a, b, d) = TitleBarLayout.widths(200, 170, 120, 60, fixed = setOf(0, 2), page = 1, pageMin = 32)
+        assertTrue(a > 0 && b > 0 && d > 0); assertEquals(200, a + b + d)
+        // Still centred whenever the fixed sides allow it.
+        assertEquals(Triple(100, 800, 100), TitleBarLayout.widths(1000, 100, 900, 50, fixed = setOf(0, 2), page = 1, pageMin = 32))
+    }
+
     @Test fun clockAndDateNeverTruncate() {
         // #123: a long date on the start side takes its width from the centre, which still stays centred.
         assertEquals(Triple(300, 400, 300), TitleBarLayout.widths(1000, 300, 800, 100, fixed = setOf(0)))
