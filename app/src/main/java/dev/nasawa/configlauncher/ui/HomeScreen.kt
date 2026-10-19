@@ -59,6 +59,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var editing by remember { mutableStateOf(false) }
     var sheetFor by remember { mutableStateOf<ResolvedItem?>(null) }
     var homeMenu by remember { mutableStateOf(false) }
+    var drawerSheet by remember { mutableStateOf<InstalledApp?>(null) }
     val drag = remember { DragController({ vm.store.engine }, onCancel = { vm.store.pollNow() }, onStart = { editing = true }) { vm.store.edit(it) } }
     var cloudUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var onboarded by remember { mutableStateOf(vm.store.prefs.onboarded) }
@@ -172,6 +173,23 @@ fun HomeScreen(vm: HomeViewModel) {
         cloudUri?.let { uri -> CloudDialog({ cloudUri = null; proceed(uri) }, { cloudUri = null }, { cloudUri = null; pickFolder.launch(null) }) }
         moveAsk?.let { (uri, ins) -> MoveDialog(ins, { moveAsk = null; vm.store.moveToFolder(uri, it) }, { moveAsk = null }) }
 
+        drawerSheet?.let { app ->
+            DrawerAppSheet(app, includeWork = false, onAction = { a ->
+                drawerSheet = null
+                when (a) {
+                    DrawerAction.ADD_TO_HOME -> {
+                        val cfg = vm.store.engine.state.value.config
+                        val item = AppItem(Edits.newId(cfg, app.packageName), app.packageName, app.activityName,
+                            profile = app.profile.takeIf { it == Profile.WORK })
+                        if (Edits.apply(cfg, Edit.AddToHome(item)).applied) { drawerOpen = false; vm.store.edit(Edit.AddToHome(item)) }
+                        else toast(res.getString(R.string.home_full))
+                    }
+                    DrawerAction.HIDE -> vm.store.edit(Edit.Hide(app.packageName))
+                    DrawerAction.APP_INFO -> if (!vm.apps.appInfo(app.packageName, app.activityName, app.profile)) toast(res.getString(R.string.open_failed, Labels.clean(app.label)))
+                }
+            }, onDismiss = { drawerSheet = null })
+        }
+
         if (homeMenu) HomeMenuSheet(onAction = { a ->
             homeMenu = false
             when (a) {
@@ -236,9 +254,8 @@ fun HomeScreen(vm: HomeViewModel) {
                 if (shown.isEmpty()) Text(stringResource(R.string.search_no_match, query.trim()), Modifier.padding(16.dp), color = Color.Gray)
                 LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxHeight(0.85f).padding(8.dp), state = gridState) {
                     items(shown, key = { it.key }) { app ->
-                        Tile(ResolvedItem(AppItem("drawer", app.packageName, app.activityName), app), vm.apps) {
-                            drawerOpen = false; launchApp(app)
-                        }
+                        val ri = ResolvedItem(AppItem("drawer", app.packageName, app.activityName), app)
+                        with(drag) { Tile(ri, vm.apps, Modifier.tile(ri, canDrag = false, onClick = { drawerOpen = false; launchApp(app) }, onLongClick = { drawerSheet = app })) }
                     }
                 }
             }

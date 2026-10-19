@@ -119,4 +119,26 @@ class EditsTest {
         assertFalse(Edit.Remove("d1").on(c).config.dock!!.any { it.id == "d1" })
         assertFalse("unknown id is skipped on replay", Edit.Remove("zzz").on(c).applied)
     }
+
+    // #53 drawer actions.
+    @Test fun addToHomeUsesFirstFreeCellFromPageOne() {
+        val r = Edit.AddToHome(app("n")).on()
+        assertEquals(Triple("home", 2, 0), r.config.cell("n"))
+    }
+
+    @Test fun addToHomeSpillsToLaterPageThenNewPage() {
+        val full = base.copy(pages = listOf(Page("home", items = (0 until 6).map { app("h$it", it % 3, it / 3) })))
+        val r = Edit.AddToHome(app("n")).on(full)
+        assertTrue(r.applied)
+        assertEquals(2, r.config.pages.size)
+        assertEquals(Triple("page-2", 0, 0), r.config.cell("n"))
+        val atCap = full.copy(pages = (1..Edits.MAX_PAGES).map { Page("p$it", items = (0 until 6).map { j -> app("p${it}x$j", j % 3, j / 3) }) })
+        assertFalse(Edit.AddToHome(app("n")).on(atCap).applied)
+    }
+
+    @Test fun hideAppendsOnce() {
+        val r = Edit.Hide("p.x").on()
+        assertEquals(listOf("p.x"), r.config.drawer!!.hidden)
+        assertFalse(Edit.Hide("p.x").on(r.config).applied)
+    }
 }

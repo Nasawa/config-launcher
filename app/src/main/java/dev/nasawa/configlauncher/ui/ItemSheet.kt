@@ -97,3 +97,34 @@ fun HomeMenuSheet(onAction: (HomeAction) -> Unit, onDismiss: () -> Unit) {
         }
     }
 }
+
+enum class DrawerAction { ADD_TO_HOME, HIDE, APP_INFO }
+
+/** ux.md §2: long-press a drawer app → `Add to home`, `Hide`, `App info`; work apps get `Add to home` only with work apps included. */
+object DrawerMenu {
+    fun actions(app: dev.nasawa.configlauncher.model.InstalledApp, includeWork: Boolean): List<DrawerAction> = listOfNotNull(
+        DrawerAction.ADD_TO_HOME.takeIf { app.profile != dev.nasawa.configlauncher.model.Profile.WORK || includeWork },
+        DrawerAction.HIDE, DrawerAction.APP_INFO,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DrawerAppSheet(app: dev.nasawa.configlauncher.model.InstalledApp, includeWork: Boolean, onAction: (DrawerAction) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+            Text(Labels.clean(app.label), style = MaterialTheme.typography.titleMedium)
+            Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            Spacer(Modifier.height(12.dp))
+            DrawerMenu.actions(app, includeWork).forEach { a ->
+                TextButton({ onAction(a) }, Modifier.fillMaxWidth()) {
+                    Text(stringResource(when (a) {
+                        DrawerAction.ADD_TO_HOME -> R.string.action_add_to_home
+                        DrawerAction.HIDE -> R.string.action_hide
+                        DrawerAction.APP_INFO -> R.string.action_app_info
+                    }), Modifier.fillMaxWidth())
+                }
+            }
+        }
+    }
+}
