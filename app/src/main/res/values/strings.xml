@@ -87,6 +87,18 @@
     <string name="folder_app_only">Layout stored on this phone only</string>
     <string name="copy">Copy</string>
     <string name="copied">Copied</string>
+    <!-- Title bar settings, ux.md §15.2 (#79, interim). Slot labels follow the layout direction. -->
+    <string name="titlebar_title">Title bar</string>
+    <string name="titlebar_show">Show title bar</string>
+    <string name="titlebar_slot_left">Left</string>
+    <string name="titlebar_slot_center">Center</string>
+    <string name="titlebar_slot_right">Right</string>
+    <string name="titlebar_page">Page title</string>
+    <string name="titlebar_clock">Clock</string>
+    <string name="titlebar_date">Date</string>
+    <string name="titlebar_none">None</string>
+    <string name="titlebar_custom">Custom (set in the file)</string>
+    <string name="titlebar_custom_note">Picking another option replaces it.</string>
     <!-- Load warnings, ux.md §15 / §15.1 (#79) -->
     <plurals name="warnings_header">
         <item quantity="one">%d warning</item>
