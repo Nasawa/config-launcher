@@ -4,6 +4,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import dev.nasawa.configlauncher.R
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -220,16 +221,21 @@ fun HomeScreen(vm: HomeViewModel) {
                 drag.grid = ui.layout.grid
                 drag.dockCount = ui.layout.dock.size
                 CompositionLocalProvider(LocalLabelBackdrop provides backdrop) {
+                PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true }
+                val listPages = stringResource(R.string.pages_action)
                 HorizontalPager(
-                    pager, Modifier.weight(1f).fillMaxWidth(), key = { pages.getOrNull(it)?.id ?: it },
+                    pager, Modifier.weight(1f).fillMaxWidth()
+                        // §1.3: "List pages" custom action on the home grid (≥ 2 pages).
+                        .semantics { if (pages.size >= 2) customActions = listOf(CustomAccessibilityAction(listPages) { pageList = true; true }) }, key = { pages.getOrNull(it)?.id ?: it },
                     userScrollEnabled = drag.dragged == null,
                 ) { index ->
-                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true }, onShowPages = { pageList = true }) }
+                    pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true }) }
                 }
-                if (pages.size > 1) PageDots(pages.size, pager.currentPage, onClick = { pageList = true })
-                // #78: tap the page title (or the dots) → list of pages → jump.
-                if (pageList) PageListSheet(PageList.rows(pages, pager.currentPage), onPick = { i ->
-                    pageList = false; scope.launch { pager.animateScrollToPage(i) }
+                if (pages.size > 1) PageDots(pages.size, pager.settledPage)
+                // ux.md §1.3: page label → page list → jump. Nothing is written.
+                if (pageList) PageListSheet(PageList.rows(pages, pager.settledPage), onPick = { i ->
+                    pageList = false
+                    if (i != pager.settledPage) scope.launch { if (ReducedMotion.on(ctx)) pager.scrollToPage(i) else pager.animateScrollToPage(i) }
                 }, onDismiss = { pageList = false })
                 }
                 Dock(ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y)
@@ -458,15 +464,10 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
 }
 
 @Composable
-private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit, onShowPages: () -> Unit) {
+private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = grid.rows
     Column(Modifier.fillMaxSize().padding(8.dp)) {
-        page.title?.let {
-            val show = stringResource(R.string.pages_show)
-            Text(it, style = MaterialTheme.typography.titleSmall, color = Color.LightGray,
-                modifier = Modifier.clickable(onClickLabel = show, onClick = onShowPages).heightIn(min = 48.dp).padding(4.dp).wrapContentHeight())
-        }
         val body: @Composable ColumnScope.() -> Unit = {
             for (y in 0 until rows) {
                 Row(Modifier.fillMaxWidth().weight(1f)) {
@@ -488,9 +489,10 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
 }
 
 @Composable
-private fun PageDots(count: Int, current: Int, onClick: () -> Unit) {
-    val desc = stringResource(R.string.page_of, current + 1, count); val show = stringResource(R.string.pages_show)
-    Row(Modifier.fillMaxWidth().clickable(onClickLabel = show, onClick = onClick).semantics(mergeDescendants = true) { contentDescription = desc }.padding(8.dp),
+private fun PageDots(count: Int, current: Int) {
+    // §1.3: not tappable. §12 "Page 2 of 3", announced politely after a jump.
+    val desc = stringResource(R.string.page_of, current + 1, count)
+    Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = desc; liveRegion = LiveRegionMode.Polite }.padding(4.dp),
         horizontalArrangement = Arrangement.Center) {
         repeat(count) { i ->
             Box(Modifier.padding(3.dp).size(6.dp).background(if (i == current) Color.White else Color.DarkGray, RoundedCornerShape(3.dp)))

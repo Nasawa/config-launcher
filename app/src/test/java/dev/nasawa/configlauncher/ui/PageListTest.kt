@@ -13,4 +13,14 @@ class PageListTest {
             PageList.rows(pages, current = 1),
         )
     }
+
+    private fun page(t: String?) = ResolvedPage("x", t, emptyList())
+
+    @Test fun labelVisibilityAndTapTarget() {
+        assertEquals(false, PageList.showLabel(listOf(page(null))))
+        assertEquals(true, PageList.showLabel(listOf(page("Home"))))
+        assertEquals(false, PageList.tappable(listOf(page("Home"))))
+        assertEquals(true, PageList.showLabel(listOf(page(null), page(null))))
+        assertEquals(true, PageList.tappable(listOf(page(null), page(null))))
+    }
 }
