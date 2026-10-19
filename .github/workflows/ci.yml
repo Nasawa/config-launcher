@@ -15,6 +15,8 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6
+      - name: validate.py agrees with the phone
+        run: pip install jsonschema && python3 scripts/test_validate.py
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
       - name: Assemble debug APK
