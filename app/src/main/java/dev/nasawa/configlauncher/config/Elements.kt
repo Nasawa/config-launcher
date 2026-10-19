@@ -13,11 +13,11 @@ import kotlinx.serialization.json.JsonPrimitive
  *   not validated further, not shown, kept verbatim on every write.
  * - A known type validates strictly (unknown keys are errors) through its [ElementType].
  *
- * Feature level 1 was the container release (no element type). Level 2 adds the title bar ([TitleBar]); widgets
- * later reuse the same registry.
+ * Feature level 1 was the container release (no element type). Level 2 adds the title bar ([TitleBar]). Level 3 is
+ * reserved for the hosted `appWidget` (stage 2, not built). Level 4 adds the dashboard `card` ([Card], #137).
  */
 object Elements {
-    const val FEATURE_LEVEL = 2
+    const val FEATURE_LEVEL = 4
     val TYPE = Regex("^[a-zA-Z][a-zA-Z0-9]{0,31}$")
     /** Grid-placement base block (docs/research/widgets.md §5.1). An element has these or `anchor`, never both. */
     val PLACEMENT = listOf("page", "x", "y", "w", "h")
@@ -56,16 +56,20 @@ object Elements {
         fun warnings(o: JsonObject, path: String): List<String> = emptyList()
         /** #118: load warnings for `pages[].overrides[<id>]` ([ov]) of the shown element [base], at [path]. */
         fun overrideWarnings(base: JsonObject, ov: JsonObject, path: String): List<String> = emptyList()
+        /** #137: a capability kind this launcher doesn't know: the element is skipped (cells kept) with a warning. */
+        fun unknownCapability(o: JsonObject): String? = null
         /** Canonical key order for writing; default verbatim. */
         fun canonical(o: JsonObject): JsonObject = o
     }
 
     /** Known types by name. */
-    val types: Map<String, ElementType> = listOf<ElementType>(TitleBar).associateBy { it.name }
+    val types: Map<String, ElementType> = listOf<ElementType>(TitleBar, Card).associateBy { it.name }
 
     sealed interface Skip {
         data class UnknownType(val type: String) : Skip
         data class TooNew(val requires: Long) : Skip
+        /** #137: a `capabilities[].kind` this launcher doesn't know (dynamic-widgets.md §4 "Enforcement"). */
+        data class UnknownCapability(val kind: String) : Skip
     }
 
     private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.takeIf { it.isString }?.content
@@ -75,7 +79,8 @@ object Elements {
     fun skip(o: JsonObject): Skip? {
         o.requires()?.let { if (it > FEATURE_LEVEL) return Skip.TooNew(it) }
         val type = o.str("type") ?: return null
-        return if (types[type] == null) Skip.UnknownType(type) else null
+        val t = types[type] ?: return Skip.UnknownType(type)
+        return t.unknownCapability(o)?.let { Skip.UnknownCapability(it) }
     }
 
     /** The known type for [o], if it is shown. */
@@ -118,6 +123,7 @@ object Elements {
             when (val s = skip(e)) {
                 is Skip.TooNew -> out += "elements[$i] needs feature level ${s.requires}, but this Config Launcher supports up to $FEATURE_LEVEL, so it was skipped. It stays in the file. Update the app to show it."
                 is Skip.UnknownType -> out += "elements[$i]: type \"${s.type}\" isn't supported by this Config Launcher, so it was skipped. It stays in the file."
+                is Skip.UnknownCapability -> out += "elements[$i]: capability kind \"${s.kind}\" isn't supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo."
                 null -> typeOf(e)?.let { out += it.warnings(e, "elements[$i]") }
             }
         }

@@ -47,8 +47,8 @@ add(I,'lone-surrogate.json',dump(B).replace(b'"Home"',b'"Ho\\ud800me"'),'parse e
 add(I,'nul-in-label.json',dump(B).replace(b'"Home"',b'"Ho\\u0000me"'),'parse error, B1 (escaped NUL)','parser','§17 Q3','')
 add(I,'nul-raw.json',dump(B).replace(b'"Home"',b'"Ho\x00me"'),'parse error, B1 (raw NUL byte: an unescaped control character, so a syntax error for any JSON parser)','parser','§17 Q3','')
 add(I,'duplicate-key.json',dump(B).replace(b'"schemaVersion": 1,',b'"schemaVersion": 1,\n  "schemaVersion": 1,'),'parse error with path, B1','parser','§15 OQ-12','')
-add(I,'deep-nesting.json',b'{"schemaVersion":1,"pages":'+b'['*100000+b']'*100000+b'}\n','parse error, depth > 8, no StackOverflowError','parser','§15 OQ-9','100k nested arrays')
-add(I,'depth-9.json',m(lambda c:c.__setitem__('x-deep',[[[[[[[[1]]]]]]]])),'parse error, depth 9 > 8','parser','§15 OQ-9','x- keys still count toward depth')
+add(I,'deep-nesting.json',b'{"schemaVersion":1,"pages":'+b'['*100000+b']'*100000+b'}\n','parse error, depth > 16, no StackOverflowError','parser','§15 OQ-9','100k nested arrays')
+add(I,'depth-17.json',m(lambda c:c.__setitem__('x-deep',json.loads('['*16+'1'+']'*16))),'parse error, depth 17 > 16 (#137: cards need 13 levels)','parser','§15 OQ-9','x- keys still count toward depth')
 add(I,'missing-schemaVersion.json',m(lambda c:c.pop('schemaVersion')),'invalid, B2','both','§15 OQ-3','')
 add(I,'newer-schemaVersion.json',m(lambda c:c.__setitem__('schemaVersion',2)),'refused, "needs a newer Config Launcher" banner, never downgrade-written','both','§3 rule 4, §15 OQ-3','')
 add(I,'schemaVersion-string.json',m(lambda c:c.__setitem__('schemaVersion','1')),'invalid, B2','both','§15 OQ-3','')
@@ -176,7 +176,7 @@ add(V,'titlebar-shorthands.json',m(els(_tb(content={'slots':{'start':'pageTitle'
 add(V,'titlebar-low-contrast.json',m(els(_tb(style={'color':'dark','backdrop':'scrim'}))),'valid with a contrast warning (dark text on the scrim)','both','ux.md §15.1','#79')
 add(V,'override-low-contrast.json',m(lambda c:(els(_tb(style={'color':'light','backdrop':'scrim'}))(c),
     c['pages'][0].__setitem__('overrides',{'t-main':{'style':{'color':'dark'}}}))),'valid with a contrast warning: a page override darkens the text on the scrim','both','#118','#79')
-add(V,'titlebar-requires-3.json',m(els(_tb(requires=3, future={'a':1}))),'valid with a warning: requires above the feature level skips the bar (kept verbatim, unknown keys allowed)','both','title-bar.md §6','#79')
+add(V,'titlebar-requires-5.json',m(els(_tb(requires=5, future={'a':1}))),'valid with a warning: requires above the feature level skips the bar (kept verbatim, unknown keys allowed)','both','title-bar.md §6','#79')
 add(I,'token-unknown.json',m(els(_slot('{wether}'))),'invalid, B2: unknown token','kotlin','ux.md §15.1','#79')
 add(I,'token-letter.json',m(els(_slot('{time:HH:mm:ss}'))),'invalid, B2: seconds are not allowed','kotlin','ux.md §15.1','#79')
 add(I,'token-run.json',m(els(_slot('{date:MMMMMM}'))),'invalid, B2: too many pattern letters in a row','kotlin','title-bar.md §5','#79')
@@ -192,8 +192,33 @@ add(I,'titlebar-bad-style.json',m(els(_tb(style={'size':50,'weight':450,'color':
 add(I,'titlebar-anchor-bottom.json',m(els(_tb(anchor='bottom'))),'invalid, B2: the only anchor is top','both','title-bar.md §4','#79')
 add(I,'override-bad-template.json',m(lambda c:(els(_tb())(c), c['pages'][0].__setitem__('overrides',{'t-main':{'content':{'slots':{'end':'{wether}'}}}}))),'invalid, B2: overrides of a title bar follow its rules','kotlin','title-bar.md §4','#79')
 
+# #137 S3-A: dashboard card (feature level 4; docs/design/dynamic-widgets.md §1-§4, §11). Schema only, nothing renders.
+_card = lambda **kw: {**{'id':'w-anigeek','type':'card','requires':4,'page':'home','x':0,'y':1,'w':4,'h':3,
+    'layouts':{'2x1':[{'type':'metric','label':'Monitors','value':'{data:monitors.summary}'}]}}, **kw}
+add(V,'card-example.json',m(els(_card(minSpan={'w':3,'h':2},title='Anigeek LLC',author='Claw',source='https://blog.anigeek.com',surface='auto',
+    capabilities=[{'kind':'data.file'},{'kind':'ui.openUrl'},{'kind':'ui.reload'}],data={'staleAfter':'PT30M'},
+    layouts={'2x1':[{'type':'metric','label':'Monitors','value':'{data:monitors.summary}','status':'{data:monitors.status}'}],
+             '4x3':[{'type':'tile','children':[{'type':'text','role':'caption','text':'Latest on blog.anigeek.com'},
+                     {'type':'text','role':'body','text':'{data:blog.title}','maxLines':2}],'tap':{'kind':'ui.openUrl','url':'{data:blog.url}'}},
+                    {'type':'row','children':[{'type':'metric','label':'PicSpin site','value':'{data:picspin.value}','status':'{data:picspin.status}'},
+                     {'type':'metric','label':'letmeaithatforyou','value':'{data:lmaitfy.value}','priority':4}]},
+                    {'type':'list','label':'Unhealthy monitors','items':'{data:unhealthy}','maxItems':'auto','emptyText':'All monitors up'},
+                    {'type':'row','children':[{'type':'button','label':'Refresh','tap':{'kind':'ui.reload'}},{'type':'progress','value':0.5},
+                     {'type':'icon','name':'cloud','tap':{'kind':'ui.openUrl','url':'https://status.example.org/'}}]}]}))),
+    'valid: the worked example (Q-D5: bare ui.openUrl, optional source)','both','dynamic-widgets.md §11','#137')
+add(V,'card-key-order.json',m(els({'x-note':'mine','layouts':{'1x1':[{'type':'icon','package':'com.android.settings','tap':{'package':'com.android.settings','kind':'ui.openApp'}}]},
+    'capabilities':[{'packages':['com.android.settings'],'kind':'ui.openApp'}],'h':1,'w':1,'y':1,'x':0,'page':'home','requires':4,'type':'card','id':'w-settings'})),
+    'valid: card keys are written back in canonical order, x- keys last','both','#137','')
+add(I,'card-no-requires.json',m(lambda c:(els(_card())(c), c['elements'][0].pop('requires'))),'invalid, B2: a card must set requires 4','both','#137','')
+add(I,'card-requires-3.json',m(els(_card(requires=3))),'invalid, B2: requires 3 is appWidget\'s level; cards need 4','both','#137','')
+add(I,'card-layout-key.json',m(els(_card(layouts={'4X3':[{'type':'text','text':'x'}]}))),'invalid, B2: layout keys use a lowercase x','both','dynamic-widgets.md §1','#137')
+add(I,'card-node-type.json',m(els(_card(layouts={'1x1':[{'type':'chart'}]}))),'invalid, B2: unknown node type','both','dynamic-widgets.md §1','#137')
+add(I,'card-openurl-hosts.json',m(els(_card(capabilities=[{'kind':'ui.openUrl','hosts':['anigeek.com']}]))),'invalid, B2: ui.openUrl takes no hosts (Q-D5)','both','#137','')
+add(I,'card-tap-undeclared.json',m(els(_card(layouts={'1x1':[{'type':'button','label':'Go','tap':{'kind':'ui.openApp','package':'com.android.settings'}}]}))),
+    'invalid, B2: a tap needs its capability on the same card','kotlin','dynamic-widgets.md §4','#137')
+
 add(I,'number-too-large.json',raw_nums(copy.deepcopy(B),'x-n',['1e309']),'B2: x-n[0] is outside the double range; the phone could not write it back','kotlin','#113','')
-RULES={'number-too-large.json':'number-range','token-unknown.json':'template-grammar','token-letter.json':'template-grammar','token-run.json':'template-grammar','token-unclosed.json':'template-grammar','token-stray.json':'template-grammar','token-pattern-long.json':'template-grammar','token-pattern-on-page.json':'template-grammar','tokens-many.json':'template-grammar','override-bad-template.json':'template-grammar','titlebar-twice.json':'single-title-bar','duplicate-id.json':'duplicate-ids','overlapping-cells.json':'overlapping-cells','cell-outside-grid.json':'cell-outside-grid','2016-items.json':'item-total','duplicate-key.json':'duplicate-keys','depth-9.json':'parser-depth','deep-nesting.json':'parser-depth','size-just-over-2mib.json':'byte-cap','nul-in-label.json':'nul-or-encoding','invalid-utf8.json':'nul-or-encoding','lone-surrogate.json':'nul-or-encoding','utf16.json':'nul-or-encoding','element-overlaps-item.json':'overlapping-cells','element-overlaps-element.json':'overlapping-cells','element-outside-grid.json':'cell-outside-grid','element-duplicate-id.json':'duplicate-ids'}
+RULES={'number-too-large.json':'number-range','token-unknown.json':'template-grammar','token-letter.json':'template-grammar','token-run.json':'template-grammar','token-unclosed.json':'template-grammar','token-stray.json':'template-grammar','token-pattern-long.json':'template-grammar','token-pattern-on-page.json':'template-grammar','tokens-many.json':'template-grammar','override-bad-template.json':'template-grammar','titlebar-twice.json':'single-title-bar','duplicate-id.json':'duplicate-ids','overlapping-cells.json':'overlapping-cells','cell-outside-grid.json':'cell-outside-grid','2016-items.json':'item-total','duplicate-key.json':'duplicate-keys','depth-17.json':'parser-depth','deep-nesting.json':'parser-depth','size-just-over-2mib.json':'byte-cap','nul-in-label.json':'nul-or-encoding','invalid-utf8.json':'nul-or-encoding','lone-surrogate.json':'nul-or-encoding','utf16.json':'nul-or-encoding','element-overlaps-item.json':'overlapping-cells','element-overlaps-element.json':'overlapping-cells','element-outside-grid.json':'cell-outside-grid','element-duplicate-id.json':'duplicate-ids','card-tap-undeclared.json':'card-capability-ref'}
 for e in man:
     r=RULES.get(e['file'].split('/')[1])
     if r: e['kotlinOnly']=r; e['layer']='kotlin-only'

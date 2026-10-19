@@ -181,15 +181,15 @@
   },
   {
     "file": "invalid/deep-nesting.json",
-    "expect": "parse error, depth > 8, no StackOverflowError",
+    "expect": "parse error, depth > 16, no StackOverflowError",
     "layer": "kotlin-only",
     "ref": "§15 OQ-9",
     "note": "100k nested arrays",
     "kotlinOnly": "parser-depth"
   },
   {
-    "file": "invalid/depth-9.json",
-    "expect": "parse error, depth 9 > 8",
+    "file": "invalid/depth-17.json",
+    "expect": "parse error, depth 17 > 16 (#137: cards need 13 levels)",
     "layer": "kotlin-only",
     "ref": "§15 OQ-9",
     "note": "x- keys still count toward depth",
@@ -744,7 +744,7 @@
     "note": "#79"
   },
   {
-    "file": "valid/titlebar-requires-3.json",
+    "file": "valid/titlebar-requires-5.json",
     "expect": "valid with a warning: requires above the feature level skips the bar (kept verbatim, unknown keys allowed)",
     "layer": "both",
     "ref": "title-bar.md §6",
@@ -857,6 +857,63 @@
     "ref": "title-bar.md §4",
     "note": "#79",
     "kotlinOnly": "template-grammar"
+  },
+  {
+    "file": "valid/card-example.json",
+    "expect": "valid: the worked example (Q-D5: bare ui.openUrl, optional source)",
+    "layer": "both",
+    "ref": "dynamic-widgets.md §11",
+    "note": "#137"
+  },
+  {
+    "file": "valid/card-key-order.json",
+    "expect": "valid: card keys are written back in canonical order, x- keys last",
+    "layer": "both",
+    "ref": "#137",
+    "note": ""
+  },
+  {
+    "file": "invalid/card-no-requires.json",
+    "expect": "invalid, B2: a card must set requires 4",
+    "layer": "both",
+    "ref": "#137",
+    "note": ""
+  },
+  {
+    "file": "invalid/card-requires-3.json",
+    "expect": "invalid, B2: requires 3 is appWidget's level; cards need 4",
+    "layer": "both",
+    "ref": "#137",
+    "note": ""
+  },
+  {
+    "file": "invalid/card-layout-key.json",
+    "expect": "invalid, B2: layout keys use a lowercase x",
+    "layer": "both",
+    "ref": "dynamic-widgets.md §1",
+    "note": "#137"
+  },
+  {
+    "file": "invalid/card-node-type.json",
+    "expect": "invalid, B2: unknown node type",
+    "layer": "both",
+    "ref": "dynamic-widgets.md §1",
+    "note": "#137"
+  },
+  {
+    "file": "invalid/card-openurl-hosts.json",
+    "expect": "invalid, B2: ui.openUrl takes no hosts (Q-D5)",
+    "layer": "both",
+    "ref": "#137",
+    "note": ""
+  },
+  {
+    "file": "invalid/card-tap-undeclared.json",
+    "expect": "invalid, B2: a tap needs its capability on the same card",
+    "layer": "kotlin-only",
+    "ref": "dynamic-widgets.md §4",
+    "note": "#137",
+    "kotlinOnly": "card-capability-ref"
   },
   {
     "file": "invalid/number-too-large.json",

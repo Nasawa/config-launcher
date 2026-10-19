@@ -76,18 +76,35 @@
   },
   "elements": [
     {
-      "id": "t-main",
-      "type": "titleBar",
-      "anchor": "top",
-      "content": {
-        "slots": {
-          "center": "{page}"
-        }
+      "x-note": "mine",
+      "layouts": {
+        "1x1": [
+          {
+            "type": "icon",
+            "package": "com.android.settings",
+            "tap": {
+              "package": "com.android.settings",
+              "kind": "ui.openApp"
+            }
+          }
+        ]
       },
-      "requires": 3,
-      "future": {
-        "a": 1
-      }
+      "capabilities": [
+        {
+          "packages": [
+            "com.android.settings"
+          ],
+          "kind": "ui.openApp"
+        }
+      ],
+      "h": 1,
+      "w": 1,
+      "y": 1,
+      "x": 0,
+      "page": "home",
+      "requires": 4,
+      "type": "card",
+      "id": "w-settings"
     }
   ]
 }

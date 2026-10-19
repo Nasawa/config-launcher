@@ -119,6 +119,31 @@ class ThemeInfo(unittest.TestCase):
                       'see "checked on this phone" in .configlauncher/status.json.', out)
 
 
+class CardKinds(unittest.TestCase):
+    """#137: the phone skips a card with an unknown capability kind (warning); the script (CI) calls it an error."""
+    doc = {"schemaVersion": 1, "pages": [{"id": "home", "items": []}], "elements": [
+        {"id": "w-1", "type": "card", "requires": 4, "page": "home", "x": 0, "y": 0, "w": 1, "h": 1,
+         "capabilities": [{"kind": "data.file"}, {"kind": "net.fetch", "origins": ["https://x.org"]}],
+         "layouts": {"1x1": [{"type": "text", "text": "hi"}]}}]}
+
+    def test_phone_rules_warn_ci_errors(self):
+        raw = json.dumps(self.doc).encode()
+        tree, errs = V.validate(raw, use_schema=False)
+        self.assertEqual([], errs)
+        self.assertEqual(['elements[0]: capability kind "net.fetch" isn\'t supported by this Config Launcher, so the widget was skipped. '
+                          'It stays in the file. Update the app, or check the kind for a typo.'], V.warnings(tree))
+        _, errs = V.validate(raw, use_schema=False, ci=True)
+        self.assertEqual(['elements[0].capabilities[1].kind: unknown capability "net.fetch". Use data.file, ui.reload, ui.openApp, ui.openUrl.'], errs)
+
+    def test_cli_rejects_unknown_kind(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = pathlib.Path(d) / "launcher.json"
+            f.write_text(json.dumps(self.doc))
+            p = subprocess.run([sys.executable, str(HERE / "validate.py"), "--no-schema", str(f)], capture_output=True, text=True)
+        self.assertEqual(1, p.returncode, p.stdout)
+        self.assertIn('unknown capability "net.fetch"', p.stdout)
+
+
 class Format(unittest.TestCase):
     hand = ('{"pages":[{"items":[{"y":0,"x":1,"x-note":"hi","package":"a.b","type":"app","id":"a"}],"id":"home"}],'
             '"x-z":1.50,"schemaVersion":1,"revision":3,"unsorted":{"mode":"page"}}')

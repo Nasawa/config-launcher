@@ -79,7 +79,7 @@ class TitleBarTest {
         assertEquals(listOf("pages[0].overrides.t-main.style.size must be small, medium or large, or a number from 10 to 40."),
             errors(doc(preset, ""","overrides":{"t-main":{"style":{"size":9}}}""")))
         // A skipped title bar (requires too high) is not checked strictly and doesn't count as the one bar.
-        ok(doc("""{"id":"t-new","type":"titleBar","requires":3,"anything":1},$preset"""))
+        ok(doc("""{"id":"t-new","type":"titleBar","requires":5,"anything":1},$preset"""))
     }
 
     @Test fun canonicalOrderAndRoundTrip() {
@@ -149,7 +149,7 @@ class TitleBarTest {
         assertNull(TitleBarModel.forPage(ok(doc(preset, ""","overrides":{"t-main":{"enabled":false}}""")), "home"))
         assertNotNull(TitleBarModel.forPage(ok(doc(preset, ""","overrides":{"t-main":{"enabled":false}}""")), "two"))
         assertNull(TitleBarModel.forPage(ok(doc("""{"id":"t-main","type":"titleBar","enabled":false}""")), "home"))
-        assertNull(TitleBarModel.forPage(ok(doc("""{"id":"t-main","type":"titleBar","requires":3}""")), "home"))
+        assertNull(TitleBarModel.forPage(ok(doc("""{"id":"t-main","type":"titleBar","requires":5}""")), "home"))
         assertNull(TitleBarModel.forPage(ok("""{"schemaVersion":1,"pages":[{"id":"home","items":[]}]}"""), "home"))
     }
 
@@ -199,5 +199,19 @@ class TitleBarTest {
         val theme = ok(doc("""{"id":"t-main","type":"titleBar","style":{"backdrop":"scrim"}}""", ""","overrides":{"t-main":{"style":{"color":"primary"}}}"""))
         assertEquals(listOf("pages[0].overrides.t-main.style.color: contrast 1.2:1 on the backdrop (4.5:1 recommended), checked on this phone in light theme. Shown anyway."),
             Elements.phoneWarnings(theme, false) { mapOf("primary" to "#202020")[it] })
+    }
+
+    @Test fun spokenLabelExpandsEachTokenOnce() {
+        // #133: a page titled "1" next to {pageNumber}/{pageCount} was read "1, page 1 of 2 1, page 1 of 2/2".
+        val parts = (Template.parse("{page} {pageNumber}/{pageCount}") as Template.Ok).parts
+        val pages = { t: String -> "$t, Pages" }
+        val one = TitleBarModel.Values("1", 1, 2, { "" }, { "" })
+        assertEquals("1 1/2, Pages", TitleBarModel.spoken(parts, one, button = true, pages = pages))
+        assertEquals("Home 1/2, Pages", TitleBarModel.spoken(parts, one.copy(pageName = "Home"), button = true, pages = pages))
+        // A page name that's also in literal text or another token's output stays as written.
+        val oct = (Template.parse("{page} · Oct {date:d MMM}") as Template.Ok).parts
+        assertEquals("Oct · Oct 18 Oct, Pages", TitleBarModel.spoken(oct, one.copy(pageName = "Oct", date = { "18 Oct" }), button = true, pages = pages))
+        // One page: not a button, so no ", Pages".
+        assertEquals("Home 1/1", TitleBarModel.spoken(parts, TitleBarModel.Values("Home", 1, 1, { "" }, { "" }), button = false, pages = pages))
     }
 }
