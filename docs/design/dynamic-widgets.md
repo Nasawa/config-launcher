@@ -155,6 +155,8 @@ APK-level `INTERNET` is coarse (see §7). Capability approval is the real contro
 | Exfiltration via fetch URL (path/query) | Origin pin; optional path allowlist later; show full URL in prompt; re-prompt on new origin |
 | Tracking pixels / beacon `icon` URLs | v1: no arbitrary image URLs; icons = Material / installed app only |
 | **SSRF to LAN** (homelab monitors) | Default **deny** RFC1918, link-local, metadata IPs for `net.fetch` unless user enables a stern "allow private origin" pin per origin; document that agent-written **local** JSON is the preferred path for LAN data |
+| **DNS rebinding** (public name → LAN IP later) | Re-validate the connected peer IP on **every** connection, not only when the origin was approved |
+| **Stale secret after origin edit** | Delete Keystore entries for origins removed from the capability before the next fetch |
 | Cross-widget data read | One file per element id; `data.file` cannot name another id's file |
 | Secret leakage across widgets | Keystore entries keyed by element id + origin |
 | OpenURL phishing | Host allowlist in capability; tap targets must match |
@@ -209,52 +211,4 @@ We still recommend **against** a built-in HA API client with broad rights. Claw 
 - **Q-C4:** Is `author` useful enough to keep, knowing it is only a quote?
 - **Q-C5:** (revised HA) Confirm companion widgets + agent JSON is enough for v1 of (b).
 - **Q-C6:** Any capability missing for Outer Shell besides `data.file` + `ui.openUrl`?
-
-### For Pragma
-
-See answers on [#116](https://github.com/Nasawa/config-launcher/pull/116#issuecomment-6270653131) (Q-A1–Q-A8). Please align §17.11 sample kinds to `data.file` / `ui.openApp` / `ui.openUrl` / `net.fetch` and `author` instead of `x-by`.
-
-### For Sprite
-
-- Codec + validate.py for `card`, capabilities enum, layouts, consent status fields.
-- Consent store device-local; never write approvals into the folder.
-- Fetch module isolation when stage 5 lands.
-
-## 11. Worked example (normative kinds)
-
-```json
-{
-  "id": "w-anigeek",
-  "type": "card",
-  "requires": 4,
-  "page": "home", "x": 0, "y": 4, "w": 4, "h": 3,
-  "minSpan": { "w": 3, "h": 2 },
-  "title": "Anigeek LLC",
-  "author": "Claw",
-  "surface": "auto",
-  "capabilities": [
-    { "kind": "data.file", "path": "w-anigeek.json" },
-    { "kind": "ui.openUrl", "hosts": ["anigeek.com", "blog.anigeek.com"] }
-  ],
-  "data": { "staleAfter": "PT30M" },
-  "layouts": {
-    "2x1": [
-      { "type": "metric", "label": "Monitors", "value": "{data:monitors.summary}", "status": "{data:monitors.status}" }
-    ],
-    "4x3": [
-      { "type": "tile", "children": [
-        { "type": "text", "role": "caption", "text": "Latest on blog.anigeek.com" },
-        { "type": "text", "role": "body", "text": "{data:blog.title}", "maxLines": 2 }
-      ], "tap": { "kind": "ui.openUrl", "host": "blog.anigeek.com", "url": "{data:blog.url}" } },
-      { "type": "row", "children": [
-        { "type": "metric", "label": "PicSpin site", "value": "{data:picspin.value}", "status": "{data:picspin.status}" },
-        { "type": "metric", "label": "letmeaithatforyou", "value": "{data:lmaitfy.value}", "status": "{data:lmaitfy.status}", "priority": 4 },
-        { "type": "metric", "label": "Homelab monitors", "value": "{data:monitors.summary}", "status": "{data:monitors.status}" }
-      ] },
-      { "type": "list", "label": "Unhealthy monitors", "items": "{data:unhealthy}", "maxItems": "auto", "emptyText": "All monitors up" }
-    ]
-  }
-}
-```
-
-Data file: `.configlauncher/widgets-data/w-anigeek.json` (agent-written). First load on a phone shows the consent tile for `ui.openUrl` only if taps are present; Show-only cards with just `data.file` go live with no prompt (Pragma Show tier).
+- **Q-C7:** Should `net.fetch` ever allow `http://` or private IPs / self-signed certs for homelab monitors, or must LAN data always arrive via agent-written local JSON?
