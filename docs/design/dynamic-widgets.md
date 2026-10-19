@@ -56,7 +56,7 @@ Responsive: up to 3 `layouts` keyed by `"WxH"` with a **lowercase** `x` (e.g. `"
 ### Templating and binding
 
 - Reuse title-bar token grammar where useful (`{time:…}`, `{date:…}`, `{page}`, …).
-- **Relative time (cards):** `{relative:data.path}` or `{relative}` against the data file's `updatedAt` — renders like `5 min ago` / `as of 08:38` companion; closed formatter, no scripts. Title bar may stay absolute-only in v1.
+- **Relative time (cards):** token name `{relative}` (optional path `{relative:data.updatedAt}`; default = data file root `updatedAt`). Renders **`5 min ago` / `just now`** only — **no pattern** argument. Closed formatter, no scripts. Title bar stays absolute-only in v1.
 - Data: `{data:path}` with a **strict JSON-path subset** (dot keys + `[index]`). Nothing is evaluated.
 - Missing path → `—` (never throw). Lists require arrays.
 
@@ -152,7 +152,7 @@ Entries are either:
 - Fingerprint = canonical sorted **capabilities + targets only** (not layout/style/`author`/span).
 - File load **never** opens a dialog (Pragma §17.2). Broadened → dashed consent tile `Needs your OK` / `Needs your OK again`, content not rendered, cells kept.
 - See **Approval ceiling** below (union set; never shrinks).
-- Same-tier cosmetic / data-shape change with capabilities unchanged → info dot + `Changed` if useful; stays live.
+- Cosmetic / layout / data-shape changes with capabilities unchanged → **stay live, no prompt, no info dot**. A quiet history entry only (Pragma §17 / Claw #3).
 
 ### Approval ceiling (Claw #3 / Q-A9) — one set per widget, never shrinks
 
@@ -162,7 +162,7 @@ The device stores one **approved capability set** per element id: a union of eve
 - The stored set **never shrinks** on file edits (narrowing does not delete lines).
 - **File is live with no prompt** iff every declared `(kind, target)` in the file is ∈ the stored set (file ⊆ ceiling).
 - **Anything outside the ceiling** → prompt only for the **new** lines (`needsApproval` / `needsApprovalAgain`); on approve, union them into the ceiling.
-- **Turn off** (Pragma §17.6) stops rendering without necessarily wiping the ceiling until the user clears it in Widget permissions (product choice: prefer keep ceiling on Turn off, clear only on explicit revoke — match Pragma).
+- **Turn off** is a sticky device-local switch: the widget stays off and **keeps** the approval ceiling. **Allow** turns it back on with the same set (no re-prompt if the file is still ⊆ ceiling). Explicit revoke in Widget permissions is what clears the set.
 
 **Exception — Phone data + Internet combo:** even if `phone.*` and `net.fetch` were each approved alone earlier, the first time a widget declares **both**, show the combination prompt once (Pragma §17.1). After that combo approval, the pair is in the ceiling.
 
@@ -267,7 +267,7 @@ We still recommend **against** a built-in HA API client with broad rights. Claw 
 - **Q-C3:** *(direction from Christopher via Claw)* Users own what they knowingly approve — explicit per-origin allow including private/`http://`, with clear prompt labelling. Confirm or tighten.
 - **Q-C4:** Is `author` useful enough to keep, knowing it is only a quote?
 - **Q-C5:** (revised HA) Confirm companion widgets + agent JSON is enough for v1 of (b).
-- **Q-C6:** *(decided for parity)* Add Show-tier `ui.reload` (re-read data file) and a `{relative:…}` / `updatedAt` relative-time token. Confirm naming with Pragma.
+- **Q-C6:** *(decided)* Show-tier `ui.reload`; token `{relative}` → `5 min ago` / `just now`, no pattern. Pragma OK.
 - **Q-C7:** *(adopted Q-A9)* `http://` via scheme-qualified `hosts` / `origins` when approved by name; TOFU for self-signed; no silent downgrade. Still confirm TOFU UX copy.
 
 ### For Pragma
