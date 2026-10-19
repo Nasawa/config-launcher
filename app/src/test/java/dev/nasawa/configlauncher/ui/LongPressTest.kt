@@ -63,7 +63,7 @@ class ItemSheetModelTest {
 
 class HomeMenuTest {
     @Test fun emptySpaceMenuMatchesUx() {
-        assertEquals(listOf(HomeAction.EDIT_LAYOUT, HomeAction.RELOAD, HomeAction.SETTINGS), HomeMenu.actions)
+        assertEquals(listOf(HomeAction.EDIT_LAYOUT, HomeAction.RELOAD, HomeAction.SETTINGS, HomeAction.WALLPAPER), HomeMenu.actions)
     }
 }
 
