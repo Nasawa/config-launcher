@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +35,9 @@ import dev.nasawa.configlauncher.model.ResolvedPage
 data class PageRow(val number: Int, val title: String?, val current: Boolean)
 
 object PageList {
+    /** The sheet is fully open: settled at Expanded and not heading anywhere else. */
+    fun focusWhen(currentExpanded: Boolean, targetExpanded: Boolean) = currentExpanded && targetExpanded
+
     fun rows(pages: List<ResolvedPage>, current: Int): List<PageRow> =
         pages.mapIndexed { i, p -> PageRow(i + 1, title(p), i == current) }
 
@@ -90,7 +95,9 @@ fun PageListSheet(rows: List<PageRow>, onPick: (Int) -> Unit, onDismiss: () -> U
     val current = rows.indexOfFirst { it.current }.coerceAtLeast(0)
     val state = rememberLazyListState(initialFirstVisibleItemIndex = current)
     val focus = remember { FocusRequester() }
-    ModalBottomSheet(onDismiss) {
+    // Fully open only (no half-height stop), so "open" is one well-defined state for the focus request.
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismiss, sheetState = sheet) {
         Text(stringResource(R.string.pages_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         LazyColumn(Modifier.padding(bottom = 24.dp).semantics { collectionInfo = CollectionInfo(rows.size, 1) }, state = state) {
             itemsIndexed(rows, key = { i, _ -> i }) { i, r ->
@@ -114,5 +121,7 @@ fun PageListSheet(rows: List<PageRow>, onPick: (Int) -> Unit, onDismiss: () -> U
             }
         }
     }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    // §1.3 / #99: focus the current row once the sheet has finished opening, not mid-animation.
+    val ready = PageList.focusWhen(sheet.currentValue == SheetValue.Expanded, sheet.targetValue == SheetValue.Expanded)
+    LaunchedEffect(ready) { if (ready) { state.scrollToItem(current); runCatching { focus.requestFocus() } } }
 }

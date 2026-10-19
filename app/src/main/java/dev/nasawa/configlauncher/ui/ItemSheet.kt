@@ -73,22 +73,24 @@ fun ItemSheet(r: ResolvedItem, onAction: (ItemAction) -> Unit, onDismiss: () -> 
     }
 }
 
-enum class HomeAction { EDIT_LAYOUT, RELOAD, SETTINGS, WALLPAPER }
+enum class HomeAction { EDIT_LAYOUT, PAGES, RELOAD, SETTINGS, WALLPAPER }
 
-/** ux.md §1.1: long-press empty space → `Edit layout`, `Reload layout`, `Settings`. */
+/** ux.md §1.1: long-press empty space → `Edit layout`, `Pages` (≥ 2 pages, #99), `Reload layout`, `Settings`. */
 object HomeMenu {
-    val actions = listOf(HomeAction.EDIT_LAYOUT, HomeAction.RELOAD, HomeAction.SETTINGS, HomeAction.WALLPAPER)
+    fun actions(pageCount: Int) = listOfNotNull(HomeAction.EDIT_LAYOUT, HomeAction.PAGES.takeIf { pageCount >= 2 },
+        HomeAction.RELOAD, HomeAction.SETTINGS, HomeAction.WALLPAPER)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeMenuSheet(onAction: (HomeAction) -> Unit, onDismiss: () -> Unit) {
+fun HomeMenuSheet(pageCount: Int, onAction: (HomeAction) -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
-            HomeMenu.actions.forEach { a ->
+            HomeMenu.actions(pageCount).forEach { a ->
                 TextButton({ onAction(a) }, Modifier.fillMaxWidth()) {
                     Text(stringResource(when (a) {
                         HomeAction.EDIT_LAYOUT -> R.string.action_edit_layout
+                        HomeAction.PAGES -> R.string.action_pages
                         HomeAction.RELOAD -> R.string.action_reload_layout
                         HomeAction.SETTINGS -> R.string.action_settings
                         HomeAction.WALLPAPER -> R.string.action_wallpaper

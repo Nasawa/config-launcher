@@ -134,6 +134,7 @@
 
     <!-- Long-press (ux.md §1.1, §4.1) -->
     <string name="action_edit_layout">Edit layout</string>
+    <string name="action_pages">Pages</string>
     <string name="action_app_info">App info</string>
     <string name="action_remove_home">Remove from home</string>
     <string name="sheet_not_installed">Not installed · %1$s</string>

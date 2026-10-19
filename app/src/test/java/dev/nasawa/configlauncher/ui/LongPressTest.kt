@@ -63,7 +63,10 @@ class ItemSheetModelTest {
 
 class HomeMenuTest {
     @Test fun emptySpaceMenuMatchesUx() {
-        assertEquals(listOf(HomeAction.EDIT_LAYOUT, HomeAction.RELOAD, HomeAction.SETTINGS, HomeAction.WALLPAPER), HomeMenu.actions)
+        assertEquals(listOf(HomeAction.EDIT_LAYOUT, HomeAction.RELOAD, HomeAction.SETTINGS, HomeAction.WALLPAPER), HomeMenu.actions(1))
+        // #99: `Pages` right after `Edit layout`, only with 2 or more pages.
+        assertEquals(listOf(HomeAction.EDIT_LAYOUT, HomeAction.PAGES, HomeAction.RELOAD, HomeAction.SETTINGS, HomeAction.WALLPAPER), HomeMenu.actions(2))
+        assertEquals(HomeMenu.actions(1), HomeMenu.actions(0))
     }
 }
 

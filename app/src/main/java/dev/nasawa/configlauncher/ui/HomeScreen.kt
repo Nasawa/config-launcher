@@ -336,10 +336,11 @@ fun HomeScreen(vm: HomeViewModel) {
             }, onDismiss = { drawerSheet = null })
         }
 
-        if (homeMenu) HomeMenuSheet(onAction = { a ->
+        if (homeMenu) HomeMenuSheet(ui.layout.pages.size, onAction = { a ->
             homeMenu = false
             when (a) {
                 HomeAction.EDIT_LAYOUT -> editing = true
+                HomeAction.PAGES -> pageList = true
                 HomeAction.RELOAD -> vm.store.pollNow()
                 // No Settings screen yet: the settings live in the ⋮ menu, so open that (gap, noted).
                 HomeAction.SETTINGS -> menuOpen = true

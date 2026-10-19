@@ -2,6 +2,8 @@ package dev.nasawa.configlauncher.ui
 
 import dev.nasawa.configlauncher.model.ResolvedPage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** #78: page list rows. */
@@ -22,5 +24,12 @@ class PageListTest {
         assertEquals(false, PageList.tappable(listOf(page("Home"))))
         assertEquals(true, PageList.showLabel(listOf(page(null), page(null))))
         assertEquals(true, PageList.tappable(listOf(page(null), page(null))))
+    }
+
+    @Test fun focusOnlyOnceTheSheetIsFullyOpen() {   // #99
+        assertTrue(PageList.focusWhen(currentExpanded = true, targetExpanded = true))
+        assertFalse("still opening", PageList.focusWhen(currentExpanded = false, targetExpanded = true))
+        assertFalse("closing", PageList.focusWhen(currentExpanded = true, targetExpanded = false))
+        assertFalse(PageList.focusWhen(currentExpanded = false, targetExpanded = false))
     }
 }
