@@ -16,6 +16,15 @@ PARSER_TEXT = re.compile(r"not valid JSON: (Unexpected JSON token|Cannot read Js
 GOLDEN = json.loads((ROOT / "test-fixtures" / "phone-output.json").read_text())
 
 
+class RuleOrder(unittest.TestCase):
+    def test_drawer_rule_keys_canonical(self):
+        tree, errs = V.validate((FIX / "valid" / "drawer-rules-key-order.json").read_bytes(), use_schema=False)
+        self.assertEqual([], errs)
+        r = json.loads(V.canonical(tree))["drawer"]["rules"][0]
+        self.assertEqual(["id", "group", "match"], list(r))
+        self.assertEqual(["packages", "packagePrefix", "tag", "category"], list(r["match"]))
+
+
 class MatchesPhone(unittest.TestCase):
     def test_every_fixture_same_errors_and_canonical_bytes(self):
         problems = []

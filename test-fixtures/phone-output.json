@@ -359,6 +359,9 @@
   "valid/bom.json": {
     "canonicalSha256": "d0391dfa528a863a6fcefc53211172a82bb00c7dbc9ff37cae48bf3a91bfb800"
   },
+  "valid/drawer-rules-key-order.json": {
+    "canonicalSha256": "44d8f9807adf1cea56c04b3ff8f311e9e6fd6f385007f40558ad1603f753f07e"
+  },
   "valid/emoji-label.json": {
     "canonicalSha256": "fcac82e04484d15eeb74f7a05f4c7091bbf1596280af32e036ccc9fcc866955e"
   },

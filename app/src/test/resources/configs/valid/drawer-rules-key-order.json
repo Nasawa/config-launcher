@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "pages": [{ "id": "home", "items": [] }],
+  "drawer": {
+    "rules": [
+      { "match": { "category": "game", "tag": "fun", "packagePrefix": "com.games.", "packages": ["com.example.chess"] }, "group": "Games", "id": "r-games" },
+      { "group": "Work", "id": "r-work", "match": { "tag": "work" } }
+    ]
+  }
+}
