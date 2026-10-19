@@ -67,7 +67,7 @@ class TitleBarEditsTest {
         val add = TitleBarEdits.toggle(ok(empty), true)!!
         assertFalse(Edits.apply(c0, add).applied)
         // A bar this version skips (requires too high) is left alone.
-        val newer = ok(withBar("""{"id":"t-new","type":"titleBar","requires":3}"""))
+        val newer = ok(withBar("""{"id":"t-new","type":"titleBar","requires":5}"""))
         assertEquals(TitleBarEdits.State.Unavailable, TitleBarEdits.state(newer))
         assertNull(TitleBarEdits.toggle(newer, true))
     }

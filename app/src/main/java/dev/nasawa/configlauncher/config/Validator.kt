@@ -9,7 +9,7 @@ import kotlinx.serialization.json.*
  */
 object Validator {
     private val ID = Regex("^[a-z0-9][a-z0-9_-]{0,63}$")
-    private val PKG = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$")
+    internal val PKG = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$")
     private val CLS = Regex("^[A-Za-z0-9_.$]+$")
     private val CATEGORIES = setOf("game", "audio", "video", "image", "social", "news", "maps", "productivity", "accessibility", "undefined")
 
@@ -38,6 +38,7 @@ object Validator {
         fun str(o: JsonObject, k: String, path: String, max: Int? = null, min: Int = 0, re: Regex? = null): String?
         fun int(o: JsonObject, k: String, path: String, min: Long, max: Long? = null): Long?
         fun bool(o: JsonObject, k: String, path: String): Boolean?
+        fun arr(o: JsonObject, k: String, path: String, max: Int? = null, min: Int = 0): JsonArray?
     }
 
     private class Run : Checks {
@@ -92,7 +93,7 @@ object Validator {
             return p.content == "true"
         }
 
-        fun arr(o: JsonObject, k: String, path: String, max: Int? = null, min: Int = 0): JsonArray? {
+        override fun arr(o: JsonObject, k: String, path: String, max: Int?, min: Int): JsonArray? {
             val v = o[k] ?: return null
             val a = v as? JsonArray ?: run { err("$path.$k", "must be an array"); return null }
             if (max != null && a.size > max) err("$path.$k", "has ${a.size} entries, at most $max allowed")

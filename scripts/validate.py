@@ -7,7 +7,7 @@
 
 Mirrors the app (ARCHITECTURE.md §2, §17 AQ-3; app/.../config/{JsonPreScan,Validator,ConfigCodec}.kt):
   1. byte cap (2 MiB), strict UTF-8, BOM stripped, git conflict markers;
-  2. pre-scan: nesting depth <= 8, no duplicate keys, no NUL, no lone surrogates;
+  2. pre-scan: nesting depth <= 16, no duplicate keys, no NUL, no lone surrogates;
   3. JSON syntax, schemaVersion (only 1);
   4. JSON Schema (schema/launcher-config.v1.schema.json) when `jsonschema` is installed;
   5. the phone's semantic rules: unique IDs across the file, no two page items in one cell, cells inside
@@ -22,7 +22,7 @@ Stdlib only, plus optional `jsonschema`.
 import argparse, decimal, json, math, pathlib, re, sys
 
 MAX_BYTES = 2 * 1024 * 1024
-MAX_DEPTH = 8
+MAX_DEPTH = 16
 MAX_ITEMS = 2000
 MAX_STRING = 256
 MAX_TAGS = 16
@@ -33,7 +33,7 @@ CLS = re.compile(r"^[A-Za-z0-9_.$]+$")
 CATEGORIES = {"game", "audio", "video", "image", "social", "news", "maps", "productivity", "accessibility", "undefined"}
 MAX_ELEMENTS = 32
 MAX_OVERRIDES = 32
-FEATURE_LEVEL = 2          # Elements.kt: 1 = #79 container release, 2 = title bar
+FEATURE_LEVEL = 4          # Elements.kt: 1 = #79 container release, 2 = title bar, 3 = appWidget (reserved), 4 = card
 ELEMENT_TYPES = {}         # known element types, name -> class (Elements.types); filled below the classes
 PLACEMENT = ("page", "x", "y", "w", "h")
 TYPE = re.compile(r"^[a-zA-Z][a-zA-Z0-9]{0,31}$")
@@ -853,6 +853,246 @@ class TitleBar:
 ELEMENT_TYPES["titleBar"] = TitleBar
 
 
+class Card:
+    """Card.kt (#137 S3-A, feature level 4): dashboard card schema only (docs/design/dynamic-widgets.md §1-§4, §11)."""
+    LEVEL, SINGLE = 4, False
+    KEYS = ("id", "type", "requires", "page", "x", "y", "w", "h", "minSpan", "title", "author", "source", "surface", "capabilities", "data", "layouts")
+    KINDS = {"data.file": (), "ui.reload": (), "ui.openApp": ("packages",), "ui.openUrl": ()}
+    TAP_KINDS = {"ui.openUrl": ("url",), "ui.openApp": ("package",), "ui.reload": ()}
+    NODES = {"column": ("children",), "row": ("children",), "tile": ("children",),
+             "text": ("text", "role", "maxLines"), "metric": ("label", "value", "unit", "status"),
+             "list": ("label", "items", "maxItems", "emptyText"), "icon": ("name", "package"),
+             "progress": ("label", "value"), "button": ("label",)}
+    NODE_REQUIRED = {"column": ("children",), "row": ("children",), "tile": ("children",), "text": ("text",),
+                     "metric": ("value",), "list": ("items",), "progress": ("value",), "button": ("label", "tap")}
+    COMMON = ("type", "priority", "weight", "tap")
+    ROLES = ("caption", "body", "title")
+    LAYOUT = re.compile(r"^([1-9][0-9]?)x([1-9][0-9]?)$")
+    HOST = re.compile(r"^(https?://)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$")
+    DURATION = re.compile(r"^P(?=[0-9]|T[0-9])([0-9]+D)?(T(?=[0-9])([0-9]+H)?([0-9]+M)?([0-9]+S)?)?$")
+    URL = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*)://([^/?#]*)")
+    MIN_REQUIRES, MAX_CAPABILITIES, MAX_TARGETS, MAX_LAYOUTS = 4, 8, 8, 3
+    MAX_CHILDREN, MAX_DEPTH, MAX_NODES, MAX_TEXT, MAX_URL = 12, 4, 48, 200, 2048
+
+    @staticmethod
+    def unknown_capability(o):
+        caps = o.get("capabilities")
+        if not isinstance(caps, list):
+            return None
+        for c in caps:
+            k = c.get("kind") if isinstance(c, dict) else None
+            if _is_str(k) and k not in Card.KINDS:
+                return k
+        return None
+
+    @staticmethod
+    def _full(rx, s):
+        return _is_str(s) and rx.fullmatch(s) is not None
+
+    @staticmethod
+    def validate(r, o, path):
+        r.keys(o, path, set(Card.KEYS), ["requires", "page", "layouts"])
+        q = o.get("requires")
+        if isinstance(q, Num) and q.is_int() and int(q) < Card.MIN_REQUIRES:
+            r.err(f"{path}.requires", f"a card needs feature level {Card.MIN_REQUIRES} or higher")
+        if "minSpan" in o:
+            m = r.obj(o["minSpan"], f"{path}.minSpan")
+            if m is not None:
+                r.keys(m, f"{path}.minSpan", {"w", "h"}, ["w", "h"], x_keys=False)
+                r.int(m, "w", f"{path}.minSpan", 1, 12)
+                r.int(m, "h", f"{path}.minSpan", 1, 12)
+        r.str(o, "title", path, mx=40)
+        r.str(o, "author", path, mx=40, mn=1)
+        src = r.str(o, "source", path)   # Q-D5: the site taps open silently
+        if src is not None and (len(src) > 253 + 8 or not Card._full(Card.HOST, src)):
+            r.err("", f"{path}.source must be a lowercase hostname, optionally with http:// or https://.")
+        sf = r.str(o, "surface", path)
+        if sf is not None and sf != "auto":
+            r.err("", f'{path}.surface must be "auto".')
+        caps = Card.capabilities(r, o, path)
+        if "data" in o:
+            d = r.obj(o["data"], f"{path}.data")
+            if d is not None:
+                r.keys(d, f"{path}.data", {"staleAfter"}, [], x_keys=False)
+                r.str(d, "staleAfter", f"{path}.data", mx=32, rx=Card.DURATION)
+        if "layouts" in o:
+            ls = r.obj(o["layouts"], f"{path}.layouts")
+            if ls is not None:
+                Card.layouts(r, ls, f"{path}.layouts", caps)
+
+    @staticmethod
+    def capabilities(r, o, path):
+        kinds, packages = set(), set()
+        for i, e in enumerate(r.arr(o, "capabilities", path, mx=Card.MAX_CAPABILITIES) or []):
+            cp = f"{path}.capabilities[{i}]"
+            co = r.obj(e, cp)
+            if co is None:
+                continue
+            kind = r.str(co, "kind", cp)
+            if kind is None:
+                if "kind" not in co:
+                    r.err(cp, 'missing required "kind"')
+                continue
+            if kind not in Card.KINDS:
+                continue
+            fields = Card.KINDS[kind]
+            r.keys(co, cp, {"kind", *fields}, list(fields), x_keys=False)
+            if kind in kinds:
+                r.err(f"{cp}.kind", f'"{kind}" is listed twice')
+            kinds.add(kind)
+            for j, pk in enumerate(r.arr(co, "packages", cp, mx=Card.MAX_TARGETS, mn=1) or []):
+                if not Card._full(PKG, pk):
+                    r.err(f"{cp}.packages[{j}]", "must be a package name")
+                elif pk in packages:
+                    r.err(f"{cp}.packages[{j}]", f'"{pk}" is listed twice')
+                else:
+                    packages.add(pk)
+        return kinds, packages
+
+    @staticmethod
+    def layouts(r, ls, path, caps):
+        if not ls:
+            r.err(path, "needs at least 1 entries")
+        if len(ls) > Card.MAX_LAYOUTS:
+            r.err(path, f"has {len(ls)} entries, at most {Card.MAX_LAYOUTS} allowed")
+        for k in ls:
+            m = Card.LAYOUT.fullmatch(k)
+            if m is None or int(m.group(1)) > 12 or int(m.group(2)) > 12:
+                r.err(path, f'"{k}" is not a size like "4x3" (lowercase x, 1 to 12)')
+                continue
+            count = [0]
+            for i, n in enumerate(r.arr(ls, k, path, mx=Card.MAX_CHILDREN, mn=1) or []):
+                Card.node(r, n, f"{path}.{k}[{i}]", 1, count, f"{path}.{k}", caps)
+
+    @staticmethod
+    def node(r, e, np, depth, count, lp, caps):
+        count[0] += 1
+        if count[0] == Card.MAX_NODES + 1:
+            r.err(lp, f"has more than {Card.MAX_NODES} nodes")
+        o = r.obj(e, np)
+        if o is None:
+            return
+        t = r.str(o, "type", np)
+        if t is None:
+            if "type" not in o:
+                r.err(np, 'missing required "type"')
+            return
+        if t not in Card.NODES:
+            r.err(f"{np}.type", f'unknown node type "{t}". Use ' + ", ".join(Card.NODES) + ".")
+            return
+        fields = Card.NODES[t]
+        r.keys(o, np, {*Card.COMMON, *fields}, list(Card.NODE_REQUIRED.get(t, ())), x_keys=False)
+        r.int(o, "priority", np, 0, 9)
+        r.int(o, "weight", np, 1, 12)
+        has = lambda k: k in fields
+        if has("text"):
+            r.str(o, "text", np, mx=Card.MAX_TEXT)
+        if has("role"):
+            ro = r.str(o, "role", np)
+            if ro is not None and ro not in Card.ROLES:
+                r.err(f"{np}.role", "must be caption, body or title")
+        if has("maxLines"):
+            r.int(o, "maxLines", np, 1, 6)
+        if has("label"):
+            r.str(o, "label", np, mx=40)
+        if t == "progress":
+            if "value" in o:
+                v = o["value"]
+                if _is_str(v):
+                    r.str(o, "value", np, mx=Card.MAX_TEXT)
+                elif not (isinstance(v, Num) and 0 <= float(v) <= 1):
+                    r.err(f"{np}.value", "must be a template or a number from 0 to 1")
+        elif has("value"):
+            r.str(o, "value", np, mx=Card.MAX_TEXT)
+        if has("unit"):
+            r.str(o, "unit", np, mx=16)
+        if has("status"):
+            r.str(o, "status", np, mx=Card.MAX_TEXT)
+        if has("items"):
+            r.str(o, "items", np, mx=Card.MAX_TEXT)
+        if has("maxItems") and "maxItems" in o and o["maxItems"] != "auto":
+            r.int(o, "maxItems", np, 1, 20)
+        if has("emptyText"):
+            r.str(o, "emptyText", np, mx=80)
+        if t == "icon":
+            r.str(o, "name", np, mx=64)
+            r.str(o, "package", np, rx=PKG)
+            if ("name" in o) == ("package" in o):
+                r.err(np, 'needs exactly one of "name" or "package"')
+        if "tap" in o:
+            Card.tap(r, o["tap"], f"{np}.tap", caps)
+        if has("children") and "children" in o:
+            if depth >= Card.MAX_DEPTH:
+                r.err(np, f"is nested too deep (at most {Card.MAX_DEPTH} levels)")
+            else:
+                for i, n in enumerate(r.arr(o, "children", np, mx=Card.MAX_CHILDREN, mn=1) or []):
+                    Card.node(r, n, f"{np}.children[{i}]", depth + 1, count, lp, caps)
+
+    @staticmethod
+    def tap(r, e, tp, caps):
+        kinds, packages = caps
+        o = r.obj(e, tp)
+        if o is None:
+            return
+        kind = r.str(o, "kind", tp)
+        if kind is None:
+            if "kind" not in o:
+                r.err(tp, 'missing required "kind"')
+            return
+        if kind not in Card.TAP_KINDS:
+            r.err(f"{tp}.kind", "must be ui.openUrl, ui.openApp or ui.reload")
+            return
+        fields = Card.TAP_KINDS[kind]
+        r.keys(o, tp, {"kind", *fields}, list(fields), x_keys=False)
+        if kind not in kinds:
+            r.err(tp, f"{kind} isn't in this card's capabilities")
+            return
+        pk = r.str(o, "package", tp, rx=PKG)
+        if pk is not None and pk not in packages:
+            r.err(f"{tp}.package", f'"{pk}" isn\'t in the ui.openApp packages')
+        url = r.str(o, "url", tp, mx=Card.MAX_URL, mn=1)
+        if url is not None and "{" not in url:
+            p = Card.url_problem(url)
+            if p:
+                r.err(f"{tp}.url", p)
+
+    @staticmethod
+    def url_problem(url):
+        """Card.urlProblem: http or https, no user info; the host is decided at tap time (Q-D5)."""
+        m = Card.URL.match(url)
+        if m is None or m.group(1).lower() not in ("http", "https"):
+            return "must be an http or https URL"
+        if "@" in m.group(2):
+            return "must not contain user info"
+        return None
+
+    @staticmethod
+    def override(r, o, path):
+        pass
+
+    @staticmethod
+    def warnings(o, path):
+        return []
+
+    @staticmethod
+    def canonical(o):
+        out = {}
+        for k in Card.KEYS:
+            if k not in o:
+                continue
+            v = o[k]
+            if k == "minSpan":
+                v = {kk: v[kk] for kk in ("w", "h") if kk in v}
+            elif k == "capabilities":
+                v = [{kk: c[kk] for kk in ("kind", *Card.KINDS[c["kind"]]) if kk in c} for c in v]
+            out[k] = v
+        out.update(_x(o))
+        return out
+
+
+ELEMENT_TYPES["card"] = Card
+
+
 def _requires(o):
     v = o.get("requires")
     return int(v) if isinstance(v, Num) and v.is_int() else None
@@ -866,7 +1106,10 @@ def skip(o):
     t = o.get("type")
     if not _is_str(t):
         return None
-    return None if t in ELEMENT_TYPES else ("type", t)
+    if t not in ELEMENT_TYPES:
+        return ("type", t)
+    k = getattr(ELEMENT_TYPES[t], "unknown_capability", lambda o: None)(o)
+    return ("kind", k) if k is not None else None
 
 
 def warnings(tree):
@@ -877,6 +1120,9 @@ def warnings(tree):
         if s and s[0] == "level":
             out.append(f"elements[{i}] needs feature level {s[1]}, but this Config Launcher supports up to {FEATURE_LEVEL}, "
                        "so it was skipped. It stays in the file. Update the app to show it.")
+        elif s and s[0] == "kind":
+            out.append(f'elements[{i}]: capability kind "{s[1]}" isn\'t supported by this Config Launcher, so the widget was skipped. '
+                       "It stays in the file. Update the app, or check the kind for a typo.")
         elif s:
             out.append(f'elements[{i}]: type "{s[1]}" isn\'t supported by this Config Launcher, so it was skipped. It stays in the file.')
         elif e.get("type") in ELEMENT_TYPES:
@@ -899,8 +1145,22 @@ def infos(tree):
     return [THEME_INFO] if any(TitleBar.uses_theme(e) for e in shown) else []
 
 
-def validate(raw, use_schema=True):
-    """Returns (tree or None, errors). Semantic (phone) errors first, then schema-only findings."""
+def ci_errors(tree):
+    """#137: the phone skips a card whose capability kind it doesn't know (a warning); CI calls it an error so agents
+    catch typos. Writers of a new kind bump the feature level and set requires instead."""
+    out = []
+    for i, e in enumerate(tree.get("elements") or []):
+        s = skip(e) if isinstance(e, dict) else None
+        if s and s[0] == "kind":
+            j = next(j for j, c in enumerate(e["capabilities"]) if isinstance(c, dict) and c.get("kind") == s[1])
+            out.append(f'elements[{i}].capabilities[{j}].kind: unknown capability "{s[1]}". '
+                       "Use " + ", ".join(Card.KINDS) + ".")
+    return out
+
+
+def validate(raw, use_schema=True, ci=None):
+    """Returns (tree or None, errors). Semantic (phone) errors first, then schema-only findings. [ci] (default: with
+    the schema) adds the checks that are stricter than the phone (ci_errors)."""
     tree, errors = parse(raw)
     if errors:
         return tree, errors
@@ -908,6 +1168,8 @@ def validate(raw, use_schema=True):
     r.root(tree)
     errors = r.errors
     _too_large(tree, "", errors)
+    if (use_schema if ci is None else ci) and not errors:
+        errors = ci_errors(tree)
     if use_schema and not errors:
         s = schema_errors(tree)
         errors = s or []
@@ -1128,7 +1390,7 @@ def main(argv=None):
     status = 0
     for f in a.files:
         raw = f.read_bytes()
-        tree, errors = validate(raw, use_schema=not a.no_schema)
+        tree, errors = validate(raw, use_schema=not a.no_schema, ci=True)
         if errors:
             status = 1
             print(f"{f}: invalid ({len(errors)} problem{'s' if len(errors) != 1 else ''})")

@@ -138,11 +138,14 @@ Shape in brief:
   git diffs small (encouraged, not required). A reload never triggers a write.
 - **Unknown keys.** Keys starting with `x-` are allowed at the root, on pages and on items, and are kept verbatim (use
   `x-note` for notes). Any other unknown key makes the file invalid, so typos fail loudly instead of being silently dropped.
-- **Elements and the title bar.** Root `elements[]` holds non-app elements. This launcher (feature level 2) knows
+- **Elements and the title bar.** Root `elements[]` holds non-app elements. This launcher (feature level 4) knows
   `titleBar`: one per file, `anchor: "top"`, slots `start` / `center` / `end` with templates such as `{page}`,
   `{time:HH:mm}` or `{date:EEE d MMM}`, and an optional `style`. `pages[].overrides["<id>"]` can change `enabled`,
-  `content` or `style` on one page. Unknown element types and elements whose `requires` is above 2 are skipped with a
+  `content` or `style` on one page. Unknown element types and elements whose `requires` is above 4 are skipped with a
   warning and kept in the file. See [docs/design/title-bar.md](docs/design/title-bar.md).
+- **Dashboard cards (schema only).** `type: "card"` (`requires: 4`, grid-placed) is validated but not shown yet: see
+  [docs/design/dynamic-widgets.md](docs/design/dynamic-widgets.md). A card whose capability kind this launcher doesn't
+  know is skipped with a warning (its cells stay reserved); `scripts/validate.py` reports that kind as an error.
 - **`revision`.** The launcher sets it to max seen + 1 on every write. Agents should bump it too, but nothing depends on
   it, and a missing `revision` is valid.
 - **Conflicts.** The **content hash** decides what's new, not `revision`. Any file with different content from what the
@@ -162,7 +165,7 @@ Shape in brief:
   (the phone keeps the last working layout).
 - **What makes the file invalid:**
   - parse errors (bad syntax, duplicate keys in one object, non-UTF-8, NUL or lone surrogates)
-  - a file over 2 MiB, or nested more than 8 levels
+  - a file over 2 MiB, or nested more than 16 levels
   - a missing or unsupported `schemaVersion` (a newer version is refused, never downgraded)
   - schema violations, including unsupported types such as `widget` or `text`
   - unknown non-`x-` keys

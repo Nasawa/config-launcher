@@ -19,6 +19,36 @@
       "pages[0].items[0].activity: \"com.x/.Main;S.extra=1\" is not valid"
     ]
   },
+  "invalid/card-layout-key.json": {
+    "errors": [
+      "elements[0].layouts: \"4X3\" is not a size like \"4x3\" (lowercase x, 1 to 12)"
+    ]
+  },
+  "invalid/card-no-requires.json": {
+    "errors": [
+      "elements[0]: missing required \"requires\""
+    ]
+  },
+  "invalid/card-node-type.json": {
+    "errors": [
+      "elements[0].layouts.1x1[0].type: unknown node type \"chart\". Use column, row, tile, text, metric, list, icon, progress, button."
+    ]
+  },
+  "invalid/card-openurl-hosts.json": {
+    "errors": [
+      "elements[0].capabilities[0]: unknown key \"hosts\""
+    ]
+  },
+  "invalid/card-requires-3.json": {
+    "errors": [
+      "elements[0].requires: a card needs feature level 4 or higher"
+    ]
+  },
+  "invalid/card-tap-undeclared.json": {
+    "errors": [
+      "elements[0].layouts.1x1[0].tap: ui.openApp isn't in this card's capabilities"
+    ]
+  },
   "invalid/cell-outside-grid.json": {
     "errors": [
       "pages[0].items[0].x: 4 is outside the grid (4 columns)"
@@ -31,12 +61,12 @@
   },
   "invalid/deep-nesting.json": {
     "errors": [
-      "not valid JSON: nested deeper than 8 levels (line 1)"
+      "not valid JSON: nested deeper than 16 levels (line 1)"
     ]
   },
-  "invalid/depth-9.json": {
+  "invalid/depth-17.json": {
     "errors": [
-      "not valid JSON: nested deeper than 8 levels (line 84)"
+      "not valid JSON: nested deeper than 16 levels (line 92)"
     ]
   },
   "invalid/dock-8-items.json": {
@@ -480,6 +510,12 @@
   "valid/bom.json": {
     "canonicalSha256": "d0391dfa528a863a6fcefc53211172a82bb00c7dbc9ff37cae48bf3a91bfb800"
   },
+  "valid/card-example.json": {
+    "canonicalSha256": "86e9eadac3f3f9651840d98eb155d4ece2ce47680727d1e470b7029873a4b05d"
+  },
+  "valid/card-key-order.json": {
+    "canonicalSha256": "7f85bfb1eebaf97eeb590b20ac727dd786706faaa1ee016bc3954d0da3c12a44"
+  },
   "valid/drawer-rules-key-order.json": {
     "canonicalSha256": "44d8f9807adf1cea56c04b3ff8f311e9e6fd6f385007f40558ad1603f753f07e"
   },
@@ -488,7 +524,7 @@
     "warnings": [
       "elements[0]: type \"banner\" isn't supported by this Config Launcher, so it was skipped. It stays in the file.",
       "elements[1]: type \"appWidget\" isn't supported by this Config Launcher, so it was skipped. It stays in the file.",
-      "elements[2] needs feature level 9, but this Config Launcher supports up to 2, so it was skipped. It stays in the file. Update the app to show it.",
+      "elements[2] needs feature level 9, but this Config Launcher supports up to 4, so it was skipped. It stays in the file. Update the app to show it.",
       "pages[0].overrides: \"t-gone\" doesn't match any element, so it was ignored."
     ]
   },
@@ -537,10 +573,10 @@
   "valid/titlebar-preset.json": {
     "canonicalSha256": "07eca8cf0c0448a111655e7df997974a1ff0b4b2875f4d586f9fd264ae579af8"
   },
-  "valid/titlebar-requires-3.json": {
-    "canonicalSha256": "523ef129f3c923173d7988c22495bf2ae1b8d2790285093e69d616310319601a",
+  "valid/titlebar-requires-5.json": {
+    "canonicalSha256": "c33de4ea26a4290f0a20cb8c79d32db90d04317a50d4c951885e1bd678aa0310",
     "warnings": [
-      "elements[0] needs feature level 3, but this Config Launcher supports up to 2, so it was skipped. It stays in the file. Update the app to show it."
+      "elements[0] needs feature level 5, but this Config Launcher supports up to 4, so it was skipped. It stays in the file. Update the app to show it."
     ]
   },
   "valid/titlebar-shorthands.json": {
