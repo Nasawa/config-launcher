@@ -79,27 +79,39 @@ fun ItemSheet(r: ResolvedItem, onAction: (ItemAction) -> Unit, onDismiss: () -> 
     }
 }
 
-enum class HomeAction { EDIT_LAYOUT, PAGES, RELOAD, SETTINGS, WALLPAPER }
+enum class HomeAction { EDIT_LAYOUT, PAGES, WIDGETS_REVIEW, RELOAD, SETTINGS, WALLPAPER }
 
 /** ux.md §1.1: long-press empty space → `Edit layout`, `Pages` (≥ 2 pages, #99), `Reload layout`, `Settings`. */
 object HomeMenu {
-    fun actions(pageCount: Int) = listOfNotNull(HomeAction.EDIT_LAYOUT, HomeAction.PAGES.takeIf { pageCount >= 2 },
+    /**
+     * #142 (§17.4): the `Widgets` item (after `Pages`) carries `Widgets · N to review`. The widget picker it belongs to
+     * (§16) doesn't exist yet, so for now the item shows only while N > 0 and opens the review list. Pending Pragma's
+     * confirmation: flip [WIDGETS_ONLY_WHEN_REVIEWING] to show it always.
+     */
+    const val WIDGETS_ONLY_WHEN_REVIEWING = true
+
+    fun actions(pageCount: Int, reviewCount: Int = 0) = listOfNotNull(HomeAction.EDIT_LAYOUT, HomeAction.PAGES.takeIf { pageCount >= 2 },
+        HomeAction.WIDGETS_REVIEW.takeIf { reviewCount > 0 || !WIDGETS_ONLY_WHEN_REVIEWING },
         HomeAction.RELOAD, HomeAction.SETTINGS, HomeAction.WALLPAPER)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeMenuSheet(pageCount: Int, onAction: (HomeAction) -> Unit, onDismiss: () -> Unit) {
+fun HomeMenuSheet(pageCount: Int, reviewCount: Int, onAction: (HomeAction) -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
-            HomeMenu.actions(pageCount).forEach { a ->
+            HomeMenu.actions(pageCount, reviewCount).forEach { a ->
                 TextButton({ onAction(a) }, Modifier.fillMaxWidth()) {
-                    Text(stringResource(when (a) {
+                    if (a == HomeAction.WIDGETS_REVIEW) Text(
+                        if (reviewCount > 0) androidx.compose.ui.res.pluralStringResource(R.plurals.menu_widgets_review, reviewCount, reviewCount) else stringResource(R.string.review_title),
+                        Modifier.fillMaxWidth())
+                    else Text(stringResource(when (a) {
                         HomeAction.EDIT_LAYOUT -> R.string.action_edit_layout
                         HomeAction.PAGES -> R.string.action_pages
                         HomeAction.RELOAD -> R.string.action_reload_layout
                         HomeAction.SETTINGS -> R.string.action_settings
                         HomeAction.WALLPAPER -> R.string.action_wallpaper
+                        HomeAction.WIDGETS_REVIEW -> R.string.review_title
                     }), Modifier.fillMaxWidth())
                 }
             }
