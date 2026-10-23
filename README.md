@@ -1,5 +1,7 @@
 # Config Launcher
 
+<a href="https://ko-fi.com/anigeekapps"><img src="https://img.shields.io/badge/Ko--fi-Support-FF5E5B.svg?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
+
 An Android home screen whose whole layout lives in one file, `launcher.json`, in a folder you choose. Rearrange apps
 on your phone and the file updates. Edit the file on your computer (or let an agent edit it) and the phone updates.
 
