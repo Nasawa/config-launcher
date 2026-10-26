@@ -1058,12 +1058,75 @@ Warnings section and `status.json` carry the path message (same style as §15.1)
 | Phone action | File write | Agent sees |
 |---|---|---|
 | Add from picker | One write: new element with `provider`, `profile`, `page`, `x`, `y`, `w`, `h` | Bound on this phone only; other phones show `Tap to set up` until tapped |
-| Move / resize | One write of `x`/`y`/`w`/`h` | Same |
-| Remove | One write removing the element; binding deleted privately | Gone |
+| Move / resize | One write of `page`/`x`/`y` (move, §16.7.2) or `w`/`h` (resize, §16.4). Same `id` | Same element, new cells |
+| Remove | One write removing the element (§16.7.1); device-local state released after the Undo window | Gone |
 | Bind / configure / reconfigure | **No file write** (device-local) | Unchanged; `status.json` may list warnings |
 | Unbound / missing provider | No write | Element stays; `status.json` warning e.g. `elements[3]: widget not set up on this phone` or `… provider not installed` |
 
 `apps.json` / `AGENTS.md` are unrelated. Bindings never appear in the synced folder.
+
+These rules apply to every **grid-placed** element (`page`, `x`, `y`, `w`, `h`): `appWidget`, `card`, and later
+`text` / `clock`. They don't apply to the title bar (§16.7.3).
+
+#### 16.7.1 `Remove from home` (elements)
+- **What it writes.** One write that deletes the element from root `elements[]` by `id` (two-way binding, §4.3). A
+  grid-placed element lives on exactly one page (`page` is a page ID), so removal is never per-page: the element is
+  gone from the file. The same write drops any `pages[].overrides["<id>"]` entry, so no dangling-override warning
+  follows. Its cells are free at once (the next layout pass, no reflow, §4.2). Nothing else in the file changes.
+- **No confirm dialog.** Same as a folder (§14 R3): the write happens, then the snackbar
+  `Removed "<Name>" from home.` [`Undo`] (10 s). `<Name>` is the widget's name (§17.2: the title, or the `id`).
+  TalkBack announces the same text.
+- **Undo** is a second write that puts the **same element object back verbatim** (same `id`, same keys, including
+  ones this phone can't edit) at its old index in `elements[]` and its old cells. It's refused, with no write, when
+  the `id` is in the file again (the agent re-added it) or any of its cells is taken: snackbar
+  `Couldn't restore "<Name>": its space is taken.` (TalkBack: the same text). The phone never moves a restored widget
+  to other cells.
+- **Device-local state is held until the Undo window ends.** On Remove, the phone sets aside everything it keeps for
+  that `id`: the consent record (approval ceiling, `Always allow` sites, `Turn off`, history; §17.2, §17.6) and, for
+  an `appWidget`, the binding in `bindings.json` and its `appWidgetId`. A successful Undo puts it all back, so a
+  restored card is live with no prompt and a restored `appWidget` needs no rebind. When the snackbar ends without
+  Undo (timeout, dismissed, the app closes, or Undo is refused), it's released: the consent record is deleted (the
+  normal GC for an element that left the file, dynamic-widgets.md), and the binding is deleted with
+  `deleteAppWidgetId`. Load-time GC never sees a set-aside record, and a held record never applies to an element the
+  agent adds with the same `id`; only Undo restores it.
+- **The widget's data file is left alone.** `.configlauncher/widgets-data/<id>.json` belongs to the agent; the phone
+  never writes or deletes anything in `widgets-data/`. After a remove it's simply unused. If the agent later adds a
+  card with that `id`, it's a new widget and goes through consent from scratch (§17.2).
+- **What the agent sees:** the element is gone from `launcher.json`, its `consent` entry and warnings leave
+  `status.json` on the next write, and its data file is still where the agent left it.
+
+#### 16.7.2 `Move to…` (elements)
+- **Same picker as items** (§12): `Move <Name>`, `Page n of N`, `Row`, `Column`, `Move`. Row and column pick the
+  **top-left** cell; `w`/`h` never change (that's `Resize…`, §16.4). Positions where the `w`×`h` rectangle would
+  leave the grid or cover a taken cell can't be picked. A page with no room shows `No room for <w> × <h> on this page.`
+  under the page row and keeps `Move` disabled. No reflow and no swapping: unlike a 1×1 item, an element never pushes
+  anything aside.
+- **What it writes.** One write of the element's `page` / `x` / `y`. Same `id`, so the approval ceiling, `Always allow`
+  sites, `Turn off`, the `appWidget` binding and the data file all carry over. Placement isn't part of the consent
+  fingerprint (dynamic-widgets.md), so a move never re-prompts. Moving to another page doesn't change that.
+- **Collisions at write time.** The write is replayed against the current file (§4.4). If the target cells are taken,
+  outside the grid, or the page is gone by then, nothing is written and the snackbar says
+  `Couldn't move "<Name>": that space is taken.` The widget stays where it was.
+- **Drag** in edit mode follows the same rules: a widget lands only on a fully free rectangle (§16.4), one write.
+- **Never offered for elements:** `Move to dock`, `Add to folder…`, `Hide` (those are for 1×1 app items).
+
+#### 16.7.3 Which elements offer each action
+| Element | Long-press sheet | TalkBack custom actions |
+|---|---|---|
+| `card`, live | `Permissions`, `Edit layout`, `Remove from home` | `Permissions`, `Resize…`, `Move to…`, `Remove from home` (§17.7) |
+| `card`, consent tile (any §17.3 state, incl. `Turned off` and `Update Config Launcher to show this`) | `Review`, `Edit layout`, `Remove from home` | `Review`, `Move to…`, `Remove from home` (§17.7) |
+| `appWidget`, live or any §16.2 placeholder | `Edit layout`, `Reconfigure` (when reconfigurable), `App info` (when installed), `Remove from home` | `Resize…`, `Move to…`, `Remove from home` (§16.4) |
+| `text` / `clock` (Stage 4) | `Edit layout`, `Remove from home` | `Resize…`, `Move to…`, `Remove from home` |
+| `titleBar` | None (anchored, not on the grid) | None |
+| `enabled: false`, or a grid element whose `type` this version skips | None (nothing is drawn; cells stay reserved) | None |
+
+The title bar is turned off with `Show title bar` (§15.2), which writes `enabled: false` and never deletes it. A
+disabled or skipped grid element is changed in the file only. The phone never removes what it can't show.
+
+Strings (new): `Removed "%1$s" from home.` (`removed_element`), `Couldn't restore "%1$s": its space is taken.`
+(`undo_element_no_room`), `Couldn't move "%1$s": that space is taken.` (`move_element_taken`),
+`No room for %1$d × %2$d on this page.` (`move_element_no_room`). The `Undo` button and the 10 s duration are as in
+§17.6.
 
 
 ## 17. Dashboard widgets: consent and components (later, after §16)
@@ -1154,7 +1217,7 @@ stored **approved set** on this phone, a **cumulative union** that approvals at 
 (each kind with each of its `packages` / `origins` entries, plus the approved `source`; `data.file` and `ui.reload`
 are a line each) the user has allowed for it, plus the silent lines (no OK needed) recorded while it was live. `Allow`
 adds the lines the prompt showed. The set **never shrinks** when
-the file narrows. Only `Forget approval` (§17.6), `Remove from home` or the element leaving the file (GC) clears it.
+the file narrows. Only `Forget approval` (§17.6), `Remove from home` (once its Undo window ends, §16.7.1) or the element leaving the file (GC) clears it.
 Sites the user ticked `Always allow` for on the tap confirm sheet live in a **separate device-local list** per element
 id ([#146](https://github.com/Nasawa/config-launcher/pull/146)): not ceiling lines, not in the fingerprint, never synced or written to the folder or `status.json`. The
 user can `Remove` one (§17.6); `Forget approval` and GC clear the list too. On every load:
