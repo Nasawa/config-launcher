@@ -16,6 +16,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -82,25 +86,99 @@ class ConsentFollowupsTest {
         val s = allowed()
         val d = ConsentUi.detail(cfg, s.report(cfg).single(), s.entry("w-1"))!!
         var undone = 0
-        var open by mutableStateOf(true)
-        var snack by mutableStateOf<ConsentSnack?>(null)
-        val undo = { snack?.let { x -> snack = null; x.undo?.invoke() }; Unit }
-        // The HomeScreen wiring in small: the caller holds the snack; the page sets and shows it, home shows it after.
+        var detailFor by mutableStateOf<String?>("w-1")
+        var reviewOpen by mutableStateOf(true)
+        lateinit var host: ConsentSnackHost
+        // HomeScreen's own pieces (ConsentSnackHost and its timer, forDetail / forReview / forHome) over the real
+        // detail page and review list; the screen itself needs the whole app graph.
         rule.setContent {
             MaterialTheme {
-                if (open) DetailScreen(d, { it }, onTurnOff = { { undone++ } }, onAllow = {}, onForget = {}, onRemoveSite = { null },
-                    onDismiss = { open = false }, snack = snack, onSnack = { snack = it }, onUndo = undo)
-                else snack?.let { ConsentSnackbar(it, undo) }
+                host = rememberConsentSnackHost()
+                if (reviewOpen) ReviewScreen(ConsentUi.review(cfg, s.report(cfg), s.entries()), {}, { detailFor = it }, { reviewOpen = false },
+                    snack = host.forReview(detailFor), onUndo = host::undo)
+                detailFor?.let { id ->
+                    DetailScreen(d, { it }, onTurnOff = { { undone++ } }, onAllow = {}, onForget = {}, onRemoveSite = { null },
+                        onDismiss = { detailFor = null }, snack = host.forDetail(id), onSnack = host::show, onUndo = host::undo)
+                }
+                host.forHome(detailFor, reviewOpen)?.let { ConsentSnackbar(it, host::undo) }
             }
         }
         rule.onNodeWithText(ctx.getString(R.string.detail_turn_off)).performClick()
         val said = ctx.getString(R.string.turned_off_snack, "Weather")
         rule.onNodeWithText(said).fetchSemanticsNode()
-        rule.runOnIdle { open = false }
-        // Page gone: the Undo is still there and still works.
-        rule.onNode(hasText(said)).fetchSemanticsNode()
+        rule.runOnIdle { assertEquals("w-1", host.snack!!.widgetId) }
+        // Detail closed: over the review list. List closed: at home. Undo still works there.
+        rule.runOnIdle { detailFor = null }
+        rule.onNodeWithText(said).fetchSemanticsNode()
+        rule.runOnIdle { reviewOpen = false }
+        rule.onNodeWithText(said).fetchSemanticsNode()
         rule.onNodeWithText(ctx.getString(R.string.merge_undo)).performClick()
         assertEquals(1, undone)
-        rule.runOnIdle { assertNull(snack) }
+        rule.runOnIdle { assertNull(host.snack) }
+    }
+
+    @Test fun undoSnackTimesOutAfterTenSeconds() {
+        lateinit var host: ConsentSnackHost
+        rule.setContent { host = rememberConsentSnackHost(); host.snack?.let { ConsentSnackbar(it, host::undo) } }
+        val snack = ConsentSnack("x removed", {}, UndoSnack.DURATION_MS, "w-1")
+        rule.mainClock.autoAdvance = false
+        rule.runOnIdle { host.show(snack) }
+        rule.mainClock.advanceTimeByFrame()
+        rule.waitForIdle() // the timer starts
+        rule.mainClock.advanceTimeBy(UndoSnack.DURATION_MS - 1_000)
+        rule.runOnIdle { assertEquals(snack, host.snack) }
+        rule.mainClock.advanceTimeBy(2_000)
+        rule.runOnIdle { assertNull(host.snack) }
+    }
+
+    @Test fun aWidgetsSnackIsNeverShownOnAnotherWidgetsDetailPage() {
+        // #173 nit: "example.org removed · Undo" doesn't name its widget, so it stays off other widgets' pages.
+        val h = ConsentSnackHost()
+        h.show(ConsentSnack("example.org removed", {}, UndoSnack.DURATION_MS, "w-1"))
+        assertNotNull(h.forDetail("w-1"))
+        assertNull(h.forDetail("w-2"))
+        assertNotNull(h.forReview(detailFor = null))
+        assertNull(h.forReview(detailFor = "w-2"))
+        assertNull(h.forHome(detailFor = null, reviewOpen = true))
+        assertNotNull(h.forHome(detailFor = null, reviewOpen = false))
+    }
+
+    @Test fun focusedLiveCardTakesEnterAndCentreWithoutTalkBack() {
+        val s = allowed()
+        val live = ConsentUi.live(cfg, s.report(cfg), "home").single()
+        var taps = 0; var longs = 0
+        rule.setContent { MaterialTheme { Box(Modifier.size(160.dp)) { LiveCardTarget(live, { longs++ }, {}, onTap = { taps++ }) } } }
+        val n = rule.onNodeWithContentDescription(ctx.getString(R.string.card_a11y, "Weather"))
+        rule.runOnIdle { n.fetchSemanticsNode().config[SemanticsActions.RequestFocus].action!!.invoke() }
+        n.assertIsFocused()
+        n.performKeyInput { pressKey(Key.DirectionCenter) }
+        n.performKeyInput { pressKey(Key.Enter) }
+        rule.runOnIdle { assertEquals(2, taps); assertEquals(0, longs) }
+        // Held past the key-repeat delay: the long-press sheet, once, and no tap on release.
+        n.performKeyInput { keyDown(Key.DirectionCenter); advanceEventTime(1_000); keyUp(Key.DirectionCenter) }
+        rule.runOnIdle { assertEquals(2, taps); assertEquals(1, longs) }
+        // Arrows aren't taken.
+        n.performKeyInput { pressKey(Key.DirectionDown) }
+        rule.runOnIdle { assertEquals(2, taps); assertEquals(1, longs) }
+    }
+
+    @Test fun centreKeyFollowsTheSystemsRepeatAndLongPressFlag() {
+        var taps = 0; var longs = 0
+        val k = CenterKey({ taps++ }, { longs++ })
+        fun ev(action: Int, repeat: Int, flags: Int = 0) = androidx.compose.ui.input.key.KeyEvent(
+            android.view.KeyEvent(0, 0, action, android.view.KeyEvent.KEYCODE_DPAD_CENTER, repeat, 0, 0, 0, flags))
+        assertTrue(k.onKey(ev(android.view.KeyEvent.ACTION_DOWN, 0))); k.onKey(ev(android.view.KeyEvent.ACTION_UP, 0))
+        assertEquals(1, taps)
+        k.onKey(ev(android.view.KeyEvent.ACTION_DOWN, 0))
+        k.onKey(ev(android.view.KeyEvent.ACTION_DOWN, 1, android.view.KeyEvent.FLAG_LONG_PRESS))
+        k.onKey(ev(android.view.KeyEvent.ACTION_DOWN, 2)); k.onKey(ev(android.view.KeyEvent.ACTION_DOWN, 3))
+        k.onKey(ev(android.view.KeyEvent.ACTION_UP, 0))
+        assertEquals(1, taps); assertEquals(1, longs)
+        assertFalse(k.onKey(androidx.compose.ui.input.key.KeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DPAD_LEFT))))
+    }
+
+    @Test fun focusRingIsTwoTone() {
+        assertNotEquals(FocusRing.RING, FocusRing.OUTLINE)
+        assertTrue(FocusRing.RING.luminance() > 0.9f && FocusRing.OUTLINE.luminance() < 0.1f)
     }
 }

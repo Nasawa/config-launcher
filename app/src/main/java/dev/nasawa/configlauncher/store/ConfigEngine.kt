@@ -190,6 +190,7 @@ class ConfigEngine(
             catch (e: Exception) { _state.update { it.copy(notice = Msg(dev.nasawa.configlauncher.R.string.folder_backup_failed, e.reason())) }; return false }
         }
         val oldSource = source; val oldState = _state.value; val oldStamp = lastStamp
+        val oldStatus = Triple(statusResult, lastStatusKey, conflictFiles); val oldWarnings = _warnings.value
         if (adopted != null) runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
         // #171 (Grace #168 L1): the old folder's Warnings list goes with its status; the new one's comes with its own.
         source = target; lastStamp = null; lastStatusKey = null; statusResult = null; conflictFiles = emptyList(); _warnings.value = emptyList()
@@ -206,6 +207,8 @@ class ConfigEngine(
         } catch (e: Exception) {
             // Roll back: the old source stays in charge and nothing is reported as moved.
             source = oldSource; lastStamp = oldStamp
+            // #173 L3: the old folder's status and Warnings list come straight back, not on the next poll.
+            statusResult = oldStatus.first; lastStatusKey = oldStatus.second; conflictFiles = oldStatus.third; _warnings.value = oldWarnings
             _state.value = oldState.copy(notice = Msg(dev.nasawa.configlauncher.R.string.move_failed, e.reason()))
             false
         }
