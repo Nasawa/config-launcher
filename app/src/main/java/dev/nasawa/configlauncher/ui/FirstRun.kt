@@ -5,7 +5,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -14,22 +13,23 @@ import dev.nasawa.configlauncher.store.ConfigEngine.Inspection
 
 /** docs/ux.md §7 step 2 with the §18.2 "Skip for now" secondary button and its confirm sheet. */
 @Composable
-fun FirstRunScreen(onChooseFolder: () -> Unit, onSkip: () -> Unit, cancelled: Boolean = false) {
+fun FirstRunScreen(onChooseFolder: () -> Unit, onSkip: () -> Unit, cancelled: Boolean = false, dark: Boolean = currentHomeDark()) {
     var confirmSkip by remember { mutableStateOf(false) }
-    MaterialTheme(colorScheme = darkColorScheme()) {
-        Surface(Modifier.fillMaxSize(), color = Color(0xFF101418)) {
+    // #180 (§12.1): first run follows the home theme too, on the theme's surface.
+    HomeThemed(dark) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxSize().systemBarsPadding().padding(24.dp), verticalArrangement = Arrangement.Center) {
-                Text(stringResource(R.string.first_run_title), style = MaterialTheme.typography.headlineSmall, color = Color.White)
+                Text(stringResource(R.string.first_run_title), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(12.dp))
                 Text(
                     stringResource(R.string.first_run_body),
-                    color = Color.LightGray,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.first_run_agent_docs), color = Color.LightGray, style = MaterialTheme.typography.bodySmall)   // §20.1
+                Text(stringResource(R.string.first_run_agent_docs), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)   // §20.1
                 Spacer(Modifier.height(24.dp))
                 if (cancelled) Text(stringResource(R.string.first_run_cancelled),
-                    color = Color(0xFFFFCDD2), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+                    color = HomeTheme.errorBanner(dark).detail, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
                 Button(onChooseFolder, Modifier.fillMaxWidth()) { Text(stringResource(R.string.choose_folder)) }
                 TextButton({ confirmSkip = true }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.skip_for_now)) }
             }

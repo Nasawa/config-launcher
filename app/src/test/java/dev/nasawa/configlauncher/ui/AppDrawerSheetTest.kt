@@ -37,7 +37,7 @@ class AppDrawerSheetTest {
 
     @Test fun opensFullyExpandedWithNoPartialState() {
         var state: SheetState? = null
-        val top = open { content -> AppDrawerSheet({}, rememberAppDrawerState().also { state = it }, content) }
+        val top = open { content -> AppDrawerSheet({}, rememberAppDrawerState().also { state = it }, content = content) }
         val s = state!!
         assertFalse("no half-height stop", s.hasPartiallyExpandedState)
         assertEquals(SheetValue.Expanded, s.currentValue)

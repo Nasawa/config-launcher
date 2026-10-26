@@ -3,7 +3,6 @@ package dev.nasawa.configlauncher.ui
 import android.text.format.DateFormat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -373,7 +372,8 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
     val spoken = shown.copy(date = { p -> if (p == null) fmt(null, dateSpoken) else fmt(p, dateDefault) })
 
     val st = bar.style
-    val dark = isSystemInDarkTheme()
+    // #180: the light/dark variant follows the home theme (the system setting today, #156's `theme` key later).
+    val dark = currentHomeDark()
     val scheme = MaterialTheme.colorScheme
     val theme: (String) -> Color? = { TitleBarLayout.themeColor(scheme, it) }
     val textColor = TitleBarLayout.color(if (dark) st.color.dark else st.color.light, theme)

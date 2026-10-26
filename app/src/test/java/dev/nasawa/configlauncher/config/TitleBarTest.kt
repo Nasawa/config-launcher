@@ -256,12 +256,17 @@ class TitleBarTest {
 
     @Test fun themeCheckMeasuresTheSchemeHomeDraws() {
         // #150 (Grace): the check measured the default light scheme while the bar draws home's dark one.
-        val scheme = dev.nasawa.configlauncher.ui.HomeTheme.scheme()
-        val hex = TitleBarLayout.themeHex(scheme)
-        for (t in TitleBarLayout.THEME_TOKENS) {
-            val drawn = TitleBarLayout.color(t) { TitleBarLayout.themeColor(scheme, it) }
-            assertEquals(t, String.format(java.util.Locale.ROOT, "#%06X", drawn.toArgb() and 0xFFFFFF), hex[t])
+        // #180: in both home themes.
+        for (dark in listOf(true, false)) {
+            val s = dev.nasawa.configlauncher.ui.HomeTheme.scheme(dark)
+            val h = TitleBarLayout.themeHex(s)
+            for (t in TitleBarLayout.THEME_TOKENS) {
+                val drawn = TitleBarLayout.color(t) { TitleBarLayout.themeColor(s, it) }
+                assertEquals("$t dark=$dark", String.format(java.util.Locale.ROOT, "#%06X", drawn.toArgb() and 0xFFFFFF), h[t])
+            }
         }
+        assertEquals("#FEF7FF", TitleBarLayout.themeHex(dev.nasawa.configlauncher.ui.HomeTheme.scheme(false))["surface"])
+        val hex = TitleBarLayout.themeHex(dev.nasawa.configlauncher.ui.HomeTheme.scheme(dark = true))
         assertEquals("#141218", hex["surface"])  // the colour Grace sampled on screen
         val bar = { bg: String -> ok(doc("""{"id":"t-main","type":"titleBar","style":{"color":"surface","backdrop":{"color":"$bg","opacity":100}}}""")) }
         // Repro 1: dark surface text on white is readable, so no warning.

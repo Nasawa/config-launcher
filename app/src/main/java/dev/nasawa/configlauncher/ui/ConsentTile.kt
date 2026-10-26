@@ -200,7 +200,7 @@ fun WidgetItemSheet(name: String, live: Boolean, reason: ConsentUi.Reason? = nul
     ModalBottomSheet(onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text(name, style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.widget_sheet_source_file), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            Text(stringResource(R.string.widget_sheet_source_file), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             reason?.let { Text(reasonText(it), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp)) }
             Spacer(Modifier.height(12.dp))
             ConsentUi.sheetActions(live).forEach { a ->
