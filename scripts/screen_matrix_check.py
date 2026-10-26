@@ -61,6 +61,50 @@ def contains(outer, inner, slack=0):
             and outer[2] + slack >= inner[2] and outer[3] + slack >= inner[3])
 
 
+def _lum(c):
+    def ch(v):
+        v /= 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    return 0.2126 * ch(c[0]) + 0.7152 * ch(c[1]) + 0.0722 * ch(c[2])
+
+
+def contrast_ratio(a, b):
+    """WCAG 2.x contrast ratio of two sRGB colours (data: (L1 + 0.05) / (L2 + 0.05))."""
+    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def label_contrast(im, b):
+    """Text contrast inside a label's bounds on a screenshot (evidence/pr182/device/contrast2.py): background = the
+    most common colour on the bounds' border, text = whichever of the lightest/darkest pixel inside contrasts more
+    (white text with a dark shadow reads as its light fill). None when the box is tiny or off the image."""
+    from collections import Counter
+    x1, y1, x2, y2 = max(b[0], 0), max(b[1], 0), min(b[2], im.width), min(b[3], im.height)
+    if x2 - x1 < 3 or y2 - y1 < 3:
+        return None
+    px = im.crop((x1, y1, x2, y2)).load()
+    w, h = x2 - x1, y2 - y1
+    border = [px[x, y] for x in range(w) for y in (0, h - 1)] + [px[x, y] for y in range(h) for x in (0, w - 1)]
+    bg = Counter(border).most_common(1)[0][0]
+    inside = [px[x, y] for x in range(w) for y in range(h)]
+    lt, dk = max(inside, key=_lum), min(inside, key=_lum)
+    r = max(contrast_ratio(lt, bg), contrast_ratio(dk, bg))
+    fg = lt if contrast_ratio(lt, bg) >= contrast_ratio(dk, bg) else dk
+    return r, fg, bg
+
+
+def hexc(c):
+    return '#%02X%02X%02X' % tuple(c[:3])
+
+
+def open_png(path):
+    try:
+        from PIL import Image
+        return Image.open(path).convert('RGB') if os.path.exists(path) else None
+    except Exception:   # no Pillow, or an empty/corrupt screenshot
+        return None
+
+
 def find(nodes, attr, rx):
     r = re.compile(rx)
     for n in nodes or []:
@@ -201,8 +245,8 @@ def severity(cid, m):
         cid = cid[:-2]
     fs = float(m.get('font_scale', '1.0'))
     tier = m.get('tier', 'phone')
-    pending = {'G5b', 'G5c'}
-    advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D1', 'D3', 'X1'}
+    pending = set()     # G5b/G5c blocked from #178 (the #175 implementation) on; add an id here for a merged spec not built yet
+    advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'X1', 'X2'}
     if cid in pending:
         return 'pending'
     if cid == 'F1':
@@ -244,9 +288,13 @@ def run_checks(d):
     add('X0', 'Requested display size applied (harness)', (got == want) if got and want else None,
         f'requested {want or "?"}, applied {got or "?"}' + ('' if not got or got == want else ' (clamped: the AVD panel is too small, results describe the applied size)'),
         'test plan §5 (AVD panel sizes)')
+    rt = [ln for ln in read(os.path.join(d, 'retries.txt')).splitlines() if ln.strip()]
+    add('X2', 'Gestures registered first time (harness)', not rt, f"retried: {', '.join(rt) or 'none'}",
+        'test plan §5 (cold-start first gesture, emulator long-press timing)')
     night_got = m.get('night_applied') or next(iter(re.findall(r'Night mode: (\w+)', run)), '')
     add('X1', 'Requested night mode applied (harness)', (night_got == m.get('night')) if night_got and m.get('night') else None,
-        f"requested {m.get('night', '?')}, applied {night_got or '?'}", 'test plan §1 variants (API 29: #150)')
+        f"requested {m.get('night', '?')}, applied {night_got or '?'}"
+        + (f" via {m['night_via']}" if m.get('night_via') else ''), 'test plan §1 variants, §5 (API 29: #150)')
 
     # F1 cold start, crash and ANR
     crash = read(os.path.join(d, 'crash.txt'))
@@ -316,7 +364,24 @@ def run_checks(d):
         if sf is not None:
             # ux.md §2.1: the drawer opens full height, so the search field sits near the top (#179: half sheet)
             add('D1', 'Drawer opens full height', sf.b[1] <= H * 0.25,
-                f'search field top y {sf.b[1]} of {H} ({sf.b[1] * 100 // max(H, 1)}%)', 'ux.md §2.1; #179')
+                f'search field top y {sf.b[1]} of {H} ({sf.b[1] * 100 // max(H, 1)}%)', 'ux.md §2.1; #179 (fixed by #181)')
+        # D4 drawer label contrast against the sheet, from drawer.png (#182 drew white labels on #FEF7FF, 1.05:1)
+        im = open_png(os.path.join(d, 'drawer.png'))
+        if im is None:
+            add('D4', 'Drawer label contrast ≥ 3:1', None, 'no drawer.png or Pillow', 'WCAG 2.x contrast ratio (data); ux.md §12 Contrast')
+        else:
+            got = [(n.text, label_contrast(im, n.b)) for n in sb if n.b[3] < H - 2]
+            got = [(t, c) for t, c in got if c]
+            low = sorted((c[0], t, c) for t, c in got if c[0] < 3)
+            under45 = sum(1 for _, c in got if c[0] < 4.5)
+            worst = min(got, key=lambda tc: tc[1][0]) if got else None
+            add('D4', 'Drawer label contrast ≥ 3:1', bool(got) and not low,
+                f"{len(got)} labels, min {worst[1][0]:.2f}:1 ('{worst[0]}' {hexc(worst[1][1])} on {hexc(worst[1][2])}), "
+                f"{under45} under 4.5:1; under 3:1: {[(t, round(r, 2)) for r, t, _ in low[:4]]}" if got else 'no labels measured',
+                'WCAG 2.x contrast ratio as data: 3:1 is its large-text minimum, 4.5:1 its normal-text AA level; ux.md §12 Contrast, §12.1')
+            if got:
+                add('D4a', 'Drawer label contrast ≥ 4.5:1', under45 == 0, f'{under45} of {len(got)} labels under 4.5:1 (min {worst[1][0]:.2f}:1)',
+                    'ux.md §12 Contrast (app UI text ≥ 4.5:1); WCAG 2.x ratio. Advisory: anti-aliased small text reads low')
 
     # F6 Pages switch
     pg = load(os.path.join(d, 'pages.xml')); h2 = home['home2']
@@ -411,7 +476,7 @@ def run_checks(d):
         cid = 'G5c' if chip_fixture else 'G1'
         add(cid + sfx, 'Grid labels whole or hidden, never cut' + (' (chip/notice row showing)' if chip_fixture else ''),
             not clipped, f'{len(labels)} labels; cut (text, dp tall, need ≥ {min_h:.1f}): {clipped[:6]}',
-            'ux.md §1.1 Cell ("the layout is never clipped"), §12 Font scaling' + ('; #175 whole-or-hidden (advisory until implemented)' if chip_fixture else ''))
+            'ux.md §1.1 Cell ("the layout is never clipped"), §12 Font scaling' + ('; #175 whole-or-hidden (built in #178)' if chip_fixture else ''))
         ov = [(a.text, b.text) for i, a in enumerate(labels) for b in labels[i + 1:] if inter(a.b, b.b) > 0]
         tov = [(a.b, b.b) for i, a in enumerate(tiles) for b in tiles[i + 1:]
                if inter(a.b, b.b) > 0 and not contains(a.b, b.b) and not contains(b.b, a.b)]
@@ -423,11 +488,23 @@ def run_checks(d):
         add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar', not small and not off and not intobar,
             f'{len(tiles)} tiles, {len(dock)} dock; under 48 dp {small[:4]}; off-screen {off[:3]}; into bar {intobar[:3]}',
             'ux.md §12 Touch targets, §1.1 Cell, §15 "Never overlaps icons"')
+        # G6 grid label contrast against the wallpaper under it (advisory: photo wallpapers make the sample noisy)
+        im = open_png(os.path.join(d, k + '.png'))
+        if im is not None and labels:
+            got = [(n.text, label_contrast(im, n.b)) for n in labels]
+            got = [(t, c) for t, c in got if c]
+            if got:
+                low = [(t, round(c[0], 2)) for t, c in got if c[0] < 3]
+                worst = min(got, key=lambda tc: tc[1][0])
+                add('G6' + sfx, 'Grid label contrast ≥ 3:1 on the wallpaper', not low,
+                    f"{len(got)} labels, min {worst[1][0]:.2f}:1 ('{worst[0]}' {hexc(worst[1][1])} on {hexc(worst[1][2])}); under 3:1: {low[:4]}",
+                    'WCAG 2.x contrast ratio as data (3:1 large-text minimum); ux.md §1.1 Cell (white + soft shadow), §12 Contrast')
         if chip_fixture and k == 'home1':
             # §17.4: the first load shows the B9 banner; the driver taps × and dumps home-chip with the count chip
             hc = load(os.path.join(d, 'home-chip.xml'))
             if hc is not None:
                 nodes = hc; tb = title_bar(hc, s)
+                labels, tiles, dock, cards, _ = grid_parts(nodes, tb, (W or 1, H or 1))
             chip = find(nodes, 'desc', r'^Widget permissions')
             if chip is None:
                 banner = any('needs your OK.' in t or 'need your OK.' in t for t in texts(nodes))
@@ -437,10 +514,25 @@ def run_checks(d):
             else:
                 add('G5a', 'Count chip present with ≥ 48 dp hit area', chip.w / s >= 47.5 and chip.h / s >= 47.5,
                     f'chip {chip.w / s:.1f}×{chip.h / s:.1f} dp at {chip.b}', 'ux.md §17.4 Count chip, §12 Touch targets')
-                same_row = tb is not None and chip.b[1] < tb['rect'][3] and chip.b[3] > tb['rect'][1]
-                add('G5b', 'Collapsed chip shares one row with the page label (no extra strip)', same_row,
-                    f"chip y {chip.b[1]}-{chip.b[3]}, title bar y {tb['rect'][1] if tb else '?'}-{tb['rect'][3] if tb else '?'}",
-                    'ux.md notice row (#175, decides #173); advisory until the #175 implementation lands')
+                over = [n.desc or n.text for n in tiles + labels
+                        if n.b != chip.b and not n.desc.startswith('Widget permissions') and inter(n.b, chip.b) > 0]
+                if tb is not None:
+                    # ux.md §6.1 notice row with a §15 title bar (#183): its own 48 dp row above the bar, never in it
+                    r = tb['rect']
+                    ok5 = chip.b[3] <= r[1] + 2 and not over
+                    det = f'title bar: chip y {chip.b[1]}-{chip.b[3]} above bar y {r[1]}-{r[3]}: {chip.b[3] <= r[1] + 2}'
+                else:
+                    # no title bar: the §1.3 page label moves into the chip's row (label centred, chips at the end)
+                    pl = next((n for n in nodes if re.search(r', page \d+ of \d+$', n.desc) or n.desc.endswith(', Pages')), None)
+                    if pl is None:
+                        ok5 = not over
+                        det = f'no page label (one untitled page): chip y {chip.b[1]}-{chip.b[3]} in its own row'
+                    else:
+                        same = chip.b[1] < pl.b[3] and chip.b[3] > pl.b[1]
+                        ok5 = same and not over
+                        det = f'no title bar: chip y {chip.b[1]}-{chip.b[3]}, page label y {pl.b[1]}-{pl.b[3]}, same row {same}'
+                add('G5b', 'Collapsed chip in the notice row (no overlay on the grid)', ok5, f'{det}; over grid {over[:3]}',
+                    'ux.md §6.1 Notice row (#173 L1; title bar: #183), §17.4 Count chip')
 
     # TH1 theme: drawer surface colour
     th = None; detail = 'no drawer.png or Pillow'

@@ -95,7 +95,8 @@ is `SKIP`. On a real run, a SKIP of a blocking check makes the point `INCOMPLETE
 | ID | Check | Pass |
 |---|---|---|
 | X0 | Requested display size applied | The `wm size` override in `run.txt` equals the point's `size_px`. Android clamps an override to a multiple of the AVD panel, so CI sets a panel per shard (§5). A FAIL means the point ran at another size, so its other results describe that size, not the point |
-| X1 | Requested night mode applied | advisory. `cmd uimode night` reads back the variant's theme. The API 29 image ignored `cmd uimode night yes` in run 1 (as in #150), so the driver retries with `settings put secure ui_night_mode`, and TH1 is judged against the theme that really applied. The retry didn't help in run 2 either (all four API 29 v2 points stayed light), so the API 29 v2 points effectively test font 1.3 in light; dark is covered by the eight API 35/36 v2 points. Switching it on API 29 likely needs a reboot or the Settings UI, which isn't worth the time per point |
+| X1 | Requested night mode applied | advisory. `cmd uimode night` reads back the variant's theme, and `meta.txt` records `night_via`. The API 29 image locks night mode (`mNightModeLocked=true`, pr182), so `cmd uimode night yes` and `settings put secure ui_night_mode` are both ignored there (runs 1–3, as in #150). The driver tries, in order: `cmd`, the secure setting, `cmd` after `adb root` (a locked mode still accepts a caller with `MODIFY_DAY_NIGHT_MODE`), then the Settings › Display › Dark theme switch (what pr182 did by hand). `via none` means nothing stuck; TH1 is judged against the theme that really applied, and dark is still covered by the eight API 35/36 v2 points. Stays advisory: it describes the harness, not the app |
+| X2 | Gestures registered first time | advisory. Lists the flows the driver had to repeat (`retries.txt`, §5): F3/F4 when the menu didn't open, F5 when the swipe didn't open the drawer, F5b when the app menu didn't open. A retried flow is still judged on its second dump, so a flake shows here instead of failing the point; a flow that fails twice fails its own check |
 
 **Title bar** (both pages; ux.md §15 "Overflow ladder (narrow phones, #149)"):
 
@@ -117,21 +118,25 @@ is `SKIP`. On a real run, a SKIP of a blocking check makes the point `INCOMPLETE
 | G2 | No overlaps | No two grid labels intersect, and no two tiles partially overlap |
 | G3 | Targets and bounds | Tiles and dock slots are ≥ 48 dp (§12 Touch targets), fully on screen, and no label is under the title bar (§15 "never overlaps icons") |
 | G5a | Count chip (c1 only) | The first load shows the B9 banner, so the driver taps its `×` (ux.md §17.4: "`×` collapses it into the count chip") and dumps `home-chip`. The chip is present there with a ≥ 48×48 dp hit area (§17.4, §12) |
-| G5b | Chip shares the page-label row (c1, `home-chip`) | **pending** #175 (merged spec, decides #173): collapsed chips share one row with the page label. Advisory until the #175 implementation lands (Sprite, #178 at the time of writing), then blocking |
-| G5c | Labels whole or hidden with the banner/chip showing (c1) | **pending** #175: grid labels are whole or hidden, never cut. Advisory until the #175 implementation lands, then blocking. Expected to fail until then (pr174 item e; run 1: 4.5 dp labels at s320-a51-c1) |
-| D1 | Drawer opens full height | advisory (ux.md §2.1). The `Search apps` field's top is in the top 25 % of the screen. Added after run 2 for #179 (the drawer opens as a half sheet, field at 55–61 %) |
+| G5b | Collapsed chip in the notice row (c1, `home-chip`) | Blocking since #178 (the #175 implementation). ux.md §6.1 Notice row: the chips never float over the grid, and no grid tile or label intersects the chip. **With a §15 title bar** (every matrix fixture has one): the notice row is its own 48 dp row above the bar (#183), so the chip's bottom is at or above the bar's top. **With no title bar:** the chip shares the row with the §1.3 page label (`…, page N of M`) when one shows; with no page label it only has to stay off the grid. Dry-run on pr178's `nobar320-chip`/`bar320-chip` dumps (both pass) and a shifted copy (fails) |
+| G5c | Labels whole or hidden with the banner/chip showing (c1) | Blocking since #178. ux.md §12 Font scaling: grid labels are whole or hidden, never cut (run 1 had 4.5 dp labels at s320-a51-c1) |
+| D1 | Drawer opens full height | Blocking since #181 (fixed #179). ux.md §2.1: the `Search apps` field's top is in the top 25 % of the screen (runs 1–3: 55–61 % with the half sheet) |
 | D3 | Drawer labels not clipped | advisory (§2.1, §12: the drawer always shows labels). Rows cut by the real screen bottom (the list scrolls) don't count |
+| D4 | Drawer label contrast ≥ 3:1 | Blocking. For each drawer label above the screen bottom, the background is the most common colour on the label's bounds' edge in `drawer.png`, the text colour is the inside pixel furthest from it, and the ratio is the WCAG 2.x contrast ratio, (L1 + 0.05) / (L2 + 0.05). As data: WCAG's large-text minimum is 3:1 and its normal-text AA level is 4.5:1. The bar is 3:1 because a screenshot of 12 sp anti-aliased text can read lower than the real colours; ux.md §12 Contrast sets 4.5:1 for app UI text, which is D4a. Added after pr182, where light-mode labels were white on `#FEF7FF` (1.05:1) and D3 passed. Needs Pillow |
+| D4a | Drawer label contrast ≥ 4.5:1 | advisory. Same measurement as D4, ux.md §12 Contrast's target for app UI text; reports how many labels are under it |
+| G6 | Grid label contrast on the wallpaper (both pages) | advisory. The same measurement on the home-grid labels in `home1.png`/`home2.png`, ≥ 3:1. The background is the wallpaper behind the label, so the result depends on the AVD's wallpaper: the default one is light blue/pink at the top, and white labels with the 1 dp shadow (ux.md §1.1 Cell, §12 Contrast) read ~1.4–2.9:1 there in run 2's dumps. ux.md §12 sets no ratio for labels on wallpaper without `Label backdrop`, so this is data for a human look, not a bug by itself |
 | TH1 | Theme | advisory. The drawer surface pixel is within 16/255 of `#141218` (dark) or `#FEF7FF` (light), per ux.md §12.1 Palettes. Needs Pillow |
 | P1 | `TotalTime` recorded | advisory. Emulator timing is not PF-2, which is device-only (test-plan §15.3) |
 
 Page-2 variants (`T1p2`, `G1p2`, `G5cp2`, …) have the same severity as their check. Every point directory also keeps `home1/home-chip/home2/lp-item/lp-empty/drawer/drawer-lp/pages/config-folder/warnings` `.xml` and
-`.png`, plus `start.txt`, `crash.txt`, `anr.txt`, `focus.txt`, `meta.txt`, `result.json` and `result.md`. The
+`.png`, plus `start.txt`, `crash.txt`, `anr.txt`, `retries.txt` (when a gesture was retried), `focus.txt`, `meta.txt`, `result.json` and `result.md`. The
 summary is `summary.md`, which CI also posts to the job summary.
 
 ## 4. dev7 gate
 
 A point is **blocking** when a FAIL there fails the run, so dev7 isn't tagged. **Advisory** results are listed in the
-summary and need a human look. **Pending** results are reported, never block, and switch to blocking when the cited implementation lands.
+summary and need a human look. **Pending** results are reported, never block, and switch to blocking when the cited implementation lands
+(none are pending now: G5b/G5c block since #178, D1 since #181).
 The policy is coded in `severity()` in `screen_matrix_check.py`.
 
 **Blocks dev7:**
@@ -148,10 +153,10 @@ The policy is coded in `severity()` in `screen_matrix_check.py`.
   screenshots.
 - Everything at font 2.0 except F1 (crashes always block). Decided: ux.md §12 allows hidden labels at ≥ 150 % and
   Q-S5 (fitting cells at 200 %) is open, so at 2.0 only a crash or ANR is a dev7 blocker; the rest needs a human look.
-- T5, T6, A1, D1, D3, TH1, X1 and P1.
+- T5, T6, A1, D3, D4a, G6, TH1, X1, X2 and P1.
 
-**Pending:** G5b and G5c: advisory until the #175 implementation lands (#178 at the time of writing), then blocking.
-The policy is approved as written (Christopher, #177).
+G5b and G5c were pending until the #175 implementation landed, and block since #178 (merged); D1 blocks since #181.
+D4 (drawer contrast ≥ 3:1) blocks. The policy is approved as written (Christopher, #177).
 
 **Minimum on-box gate** (when CI isn't available, see §5): `--gate` runs `s320-a51-v1`, `s320-a51-v2`, `s320-mdpi-v1`,
 `p411-a51-v1`, `p411-a51-v2` and `t7-land-v1`.
@@ -207,6 +212,14 @@ scripts/screen-matrix.sh --shard phones --out screen-matrix-out          # one s
 scripts/screen-matrix.sh --points '^p411-a51-v1$' --out screen-matrix-out # one point
 python3 scripts/screen_matrix_check.py check screen-matrix-out/p411-a51-v1   # re-judge a point from its dumps
 ```
+**Gestures** (both CI and on-box):
+- Long-presses are a zero-length `input swipe` held `LP_MS` (default 1600 ms). 800 ms sometimes registered as a tap
+  on the software-only emulator (pr178); 1.6 s held 3/3.
+- The first touch after a cold start is often dropped (pr181: the first swipe never reached the launcher; main does
+  the same). After F2 the driver spends it on a tap on empty grid space, which does nothing.
+- F3, F4, F5 and F5b retry once when the expected menu or drawer isn't in the dump, and log it for X2 (§3).
+- On API 29, night mode may need `adb root` or the Settings UI (X1, §3). `adb root` stays on for the rest of the run.
+
 The script changes the display size, density, font scale, night mode and rotation, and resets them at the end
 (`wm size reset`, `wm density reset`, font 1.0, night no, rotation 0). Don't point it at a phone you're using:
 `pm clear` wipes the launcher's app data.
@@ -243,13 +256,19 @@ The script changes the display size, density, font scale, night mode and rotatio
     at both c1 points (pending #175); TH1 at the 24 light points (#180); the half-sheet drawer at every point (#179,
     now D1). G5c passed at both c1 points once they ran at the real size.
   - X1: the API 29 night retry still didn't apply dark (see X1 above).
+- **Run 3** (CI run 40381106973, c47c6f8, small-b and phones, the two c1 points): 2 PASS. F3 and F4 pass at both
+  c1 points with the latest home dump; D1 (57 %/59 %), G5b and TH1 were the known advisory FAILs then.
+- **Checker changes after run 3, dry-run on old dumps:** D4 on pr182's light drawer (white on `#FEF7FF`) fails at
+  1.05:1 for all 8 labels, and passes on main's dark drawer (17.1:1, white on `#1D1B20`) at every run-2 point. G5b
+  passes on pr178's title-bar and no-title-bar chip dumps and fails on a copy with the page label moved out of the
+  chip's row.
 
 ## 7. Open questions
 
 **Decided** (Christopher, on #177):
 - dev7 gates on T1–T4 (§4).
 - The blocking/advisory split in §4 is approved as written.
-- G5b/G5c stay advisory until the #175 implementation lands, then block.
+- G5b/G5c stay advisory until the #175 implementation lands, then block. Done: they block since #178.
 - The generic 7" and 10" tablet profiles stay and remain the gate.
 - Q1, resolved by Christopher (2026-10-26): his onn. 10.1" Tablet (model 100135925, MediaTek, Android 15) is only an
   optional real-device spot check on Android 15, not a matrix target or a design driver (§1).
