@@ -812,6 +812,12 @@ that has warnings, it's reachable from Settings (interim: the ⋮ menu) → `Con
 list** dialog:
 - Header `1 warning` / `N warnings` (`warnings_header`), then one `▲ <path>: <message>` line per warning, the same text
   as `status.json` (phone-only theme warnings included). The list scrolls, and ▲ is a glyph, not colour alone.
+- **Same lines as `status.json`, all of them (#159).** That includes the widget consent warnings (`warn_consent_pending`,
+  `warn_consent_again`, `warn_consent_off`) and the widget data warnings (`warn_data_missing`, later
+  `warn_cert_changed`), in the same order as `status.json` `warnings`, and `N` in `Layout loaded · N warnings` counts
+  them. The phone and the agent must never see different lists. A consent line is plain text here, with no `Review`
+  action: approving stays on the tile, B9 and the review list (§17). Both lists should come from one function, so a
+  new warning source can't reach one and miss the other.
 - Buttons `Copy` and `Close`. `Copy` puts the file name, header and every line on the clipboard and **keeps the dialog
   open**. No snackbar. For about 2 s the button changes to a check icon + `Copied` (`warnings_copy_done`, same width,
   so nothing shifts), then goes back to `Copy`. TalkBack announces `Warnings copied.` (`warnings_copied`, a polite
