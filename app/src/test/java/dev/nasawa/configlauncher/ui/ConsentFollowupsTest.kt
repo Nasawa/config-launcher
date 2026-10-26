@@ -19,6 +19,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
@@ -175,6 +176,75 @@ class ConsentFollowupsTest {
         k.onKey(ev(android.view.KeyEvent.ACTION_UP, 0))
         assertEquals(1, taps); assertEquals(1, longs)
         assertFalse(k.onKey(androidx.compose.ui.input.key.KeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DPAD_LEFT))))
+    }
+
+    @Test fun aSingleLongPressFlagOpensTheSheetOnceWithNoRepeats() {
+        // #173 (Grace's #174 device check): a remote that doesn't repeat held keys sends a down with FLAG_LONG_PRESS
+        // and no repeats. All three keys open the sheet once from it, and never twice in one hold.
+        val flag = android.view.KeyEvent.FLAG_LONG_PRESS
+        val down = android.view.KeyEvent.ACTION_DOWN; val up = android.view.KeyEvent.ACTION_UP
+        for (code in listOf(android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER, android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+            var taps = 0; var longs = 0
+            val k = CenterKey({ taps++ }, { longs++ })
+            fun ev(action: Int, repeat: Int, flags: Int = 0) = androidx.compose.ui.input.key.KeyEvent(
+                android.view.KeyEvent(0, 0, action, code, repeat, 0, 0, 0, flags))
+            // Plain down, then one flagged down with repeatCount 0, then up.
+            assertTrue(k.onKey(ev(down, 0))); assertTrue(k.onKey(ev(down, 0, flag))); assertTrue(k.onKey(ev(up, 0)))
+            assertEquals("$code: flagged down after a down", 1, longs); assertEquals(0, taps)
+            // A lone flagged down (no plain down first), then up.
+            k.onKey(ev(down, 0, flag)); k.onKey(ev(up, 0))
+            assertEquals("$code: lone flagged down", 2, longs); assertEquals(0, taps)
+            // Flag and repeats in the same hold: still once.
+            k.onKey(ev(down, 0)); k.onKey(ev(down, 0, flag)); k.onKey(ev(down, 1, flag)); k.onKey(ev(down, 2)); k.onKey(ev(up, 0))
+            assertEquals("$code: flag then repeats", 3, longs)
+            k.onKey(ev(down, 0)); k.onKey(ev(down, 1)); k.onKey(ev(down, 2, flag)); k.onKey(ev(up, 0))
+            assertEquals("$code: repeats then flag", 4, longs)
+            // A bare repeat with no down before it (focus arrived mid-hold) opens nothing.
+            k.onKey(ev(down, 3)); k.onKey(ev(up, 0))
+            assertEquals("$code: mid-hold repeat", 4, longs); assertEquals(0, taps)
+            // And a short press afterwards is still a tap.
+            k.onKey(ev(down, 0)); k.onKey(ev(up, 0))
+            assertEquals(1, taps); assertEquals(4, longs)
+        }
+    }
+
+    @Test fun liveCardAsHomeScreenWiresItTakesLongEnterNumpadEnterAndTheFlag() {
+        // Grace's #174 missing tests: the card exactly as HomeScreen passes it (no onTap). A short Enter or centre
+        // does nothing and is consumed (Grace's L1, unchanged); holding Enter, numpad Enter or centre opens the sheet.
+        val s = allowed()
+        val live = ConsentUi.live(cfg, s.report(cfg), "home").single()
+        var longs = 0; var parent = 0
+        lateinit var view: android.view.View
+        rule.setContent {
+            view = androidx.compose.ui.platform.LocalView.current
+            MaterialTheme {
+                Box(Modifier.size(160.dp).onKeyEvent { parent++; false }) {
+                    LiveCardTarget(live, onLongPress = { longs++ }, onPermissions = {})
+                }
+            }
+        }
+        val n = rule.onNodeWithContentDescription(ctx.getString(R.string.card_a11y, "Weather"))
+        rule.runOnIdle { n.fetchSemanticsNode().config[SemanticsActions.RequestFocus].action!!.invoke() }
+        n.assertIsFocused()
+        n.performKeyInput { pressKey(Key.Enter) }
+        n.performKeyInput { pressKey(Key.NumPadEnter) }
+        n.performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.runOnIdle { assertEquals(0, longs); assertEquals("short presses are consumed (L1)", 0, parent) }
+        n.performKeyInput { keyDown(Key.Enter); advanceEventTime(1_000); keyUp(Key.Enter) }
+        rule.runOnIdle { assertEquals(1, longs) }
+        n.performKeyInput { keyDown(Key.NumPadEnter); advanceEventTime(1_000); keyUp(Key.NumPadEnter) }
+        rule.runOnIdle { assertEquals(2, longs) }
+        // A remote with no key repeat: one down, one flagged down, up, through the real view.
+        val t = android.os.SystemClock.uptimeMillis()
+        rule.runOnIdle {
+            view.dispatchKeyEvent(android.view.KeyEvent(t, t, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DPAD_CENTER, 0))
+            view.dispatchKeyEvent(android.view.KeyEvent(t, t + 500, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DPAD_CENTER, 0, 0, 0, 0, android.view.KeyEvent.FLAG_LONG_PRESS))
+            view.dispatchKeyEvent(android.view.KeyEvent(t, t + 900, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_DPAD_CENTER, 0))
+        }
+        rule.runOnIdle { assertEquals(3, longs); assertEquals(0, parent) }
+        // Arrows still reach the parent.
+        n.performKeyInput { pressKey(Key.DirectionDown) }
+        rule.runOnIdle { assertTrue(parent > 0); assertEquals(3, longs) }
     }
 
     @Test fun focusRingIsTwoTone() {

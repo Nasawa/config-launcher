@@ -42,18 +42,27 @@ private fun withAuthor(source: String, author: String?) = consentText(author)?.l
 
 // ---- B9, count chip (§17.4) ----
 
+/**
+ * B9's colours are fixed, not themed: a #263238 banner with white text. `Review` is the dark-scheme primary #D0BCFF
+ * in both themes (7.7:1), since the light primary #6750A4 is only 2.0:1 on it (#182, Grace).
+ */
+object B9Colors {
+    val background = Color(0xFF263238)
+    val review = Color(0xFFD0BCFF)
+}
+
 /** B9: lowest-priority notice, `Review` · `×` (collapses to the chip). Polite live region, announced once. */
 @Composable
 fun B9Banner(count: Int, onReview: () -> Unit, onDismiss: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(8.dp).background(Color(0xFF263238), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp)
+        Modifier.fillMaxWidth().padding(8.dp).background(B9Colors.background, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp)
             .semantics { liveRegion = LiveRegionMode.Polite },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Shield(Color.White, 18.dp)
         Spacer(Modifier.width(8.dp))
         Text(pluralStringResource(R.plurals.b9_widgets_review, count, count), color = Color.White, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-        TextButton(onReview) { Text(stringResource(R.string.b9_review)) }
+        TextButton(onReview, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = B9Colors.review)) { Text(stringResource(R.string.b9_review)) }
         val dismiss = stringResource(R.string.b9_dismiss_a11y)
         TextButton(onDismiss, Modifier.semantics { contentDescription = dismiss }) { Text("×", color = Color.White) }
     }
@@ -194,7 +203,7 @@ fun rememberConsentSnackHost(): ConsentSnackHost {
 @Composable
 fun ConsentSnackbar(s: ConsentSnack, onUndo: () -> Unit, modifier: Modifier = Modifier) =
     Snackbar(modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        action = s.undo?.let { { TextButton(onUndo) { Text(stringResource(R.string.merge_undo)) } } },
+        action = s.undo?.let { { TextButton(onUndo, colors = snackbarActionColors()) { Text(stringResource(R.string.merge_undo)) } } },
     ) { Text(s.text) }
 
 /**

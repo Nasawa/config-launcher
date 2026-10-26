@@ -3,7 +3,6 @@ package dev.nasawa.configlauncher.ui
 import android.text.format.DateFormat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -274,9 +273,14 @@ object TitleBarLayout {
         if (step < 2) return null
         // warn_titlebar_fit_size (no date in the bar: step 2 is skipped, nothing is said about a date).
         if (!hasDate) {
-            // Step 4 with no date to cut has no copy yet (open question in #167): only the size step is reported.
-            if (size == null) return null
-            return "$path: the title bar doesn't fit in its $widthDp dp on this phone, so fit step $step of 4 was used: the text size went down to $size. Checked on this phone. Use fewer or shorter slots."
+            // #175: step 4 for a bar with no date is side text (not the clock) cut off with …: fit_step_size_cut when
+            // step 3 ran ([size] is the size it went down to), fit_step_cut_only when it was skipped (numeric or small).
+            val what = when {
+                step < 4 -> size?.let { "the text size went down to $it" } ?: return null
+                size != null -> "the text size went down to $size and slot text was cut off with …"
+                else -> "slot text was cut off with …"
+            }
+            return "$path: the title bar doesn't fit in its $widthDp dp on this phone, so fit step $step of 4 was used: $what. Checked on this phone. Use fewer or shorter slots."
         }
         val what = when {
             step == 2 -> "the date was shortened"
@@ -368,7 +372,8 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
     val spoken = shown.copy(date = { p -> if (p == null) fmt(null, dateSpoken) else fmt(p, dateDefault) })
 
     val st = bar.style
-    val dark = isSystemInDarkTheme()
+    // #180: the light/dark variant follows the home theme (the system setting today, #156's `theme` key later).
+    val dark = currentHomeDark()
     val scheme = MaterialTheme.colorScheme
     val theme: (String) -> Color? = { TitleBarLayout.themeColor(scheme, it) }
     val textColor = TitleBarLayout.color(if (dark) st.color.dark else st.color.light, theme)

@@ -159,9 +159,14 @@ internal object FocusRing {
 }
 
 /**
- * #173 L2: Enter, numpad Enter and DPAD_CENTER on a focused card. A press runs [onTap] on key up. Held until the
- * system's key repeat (its long-press timeout, which also sets FLAG_LONG_PRESS), it runs [onLong] once, and that
- * key up does nothing more. Other keys pass through, so arrows still move focus.
+ * #173 L2: Enter, numpad Enter and DPAD_CENTER on a focused card. A press runs [onTap] on key up. Held, it runs
+ * [onLong] once, on whichever comes first: the first key repeat, or a key down carrying FLAG_LONG_PRESS. The flag
+ * matters for remotes and keyboards that don't repeat held keys: they send one extra down with the flag (or a single
+ * down with it) and no repeats (#173, Grace's #174 device check). Later repeats or flags in the same hold, and that
+ * key up, do nothing more. Other keys pass through, so arrows still move focus.
+ *
+ * A short press is consumed even when there is no tap action (Grace's #174 L1, left as is): nothing above the card
+ * listens for Enter or centre today, and #140 gives cards their tap actions.
  */
 internal class CenterKey(private val onTap: () -> Unit, private val onLong: () -> Unit) {
     private var down = false
@@ -172,9 +177,13 @@ internal class CenterKey(private val onTap: () -> Unit, private val onLong: () -
         if (n.keyCode != android.view.KeyEvent.KEYCODE_ENTER && n.keyCode != android.view.KeyEvent.KEYCODE_DPAD_CENTER &&
             n.keyCode != android.view.KeyEvent.KEYCODE_NUMPAD_ENTER) return false
         when (n.action) {
-            android.view.KeyEvent.ACTION_DOWN ->
-                if (n.repeatCount == 0) { down = true; longDone = false }
-                else if (down && !longDone) { longDone = true; onLong() }
+            android.view.KeyEvent.ACTION_DOWN -> {
+                val long = n.repeatCount > 0 || n.isLongPress
+                if (!long) { down = true; longDone = false }
+                // A flagged first down (no earlier down seen) still counts; a bare repeat with no down before it
+                // (focus arrived mid-hold) doesn't.
+                else if (!longDone && (down || n.repeatCount == 0)) { down = true; longDone = true; onLong() }
+            }
             android.view.KeyEvent.ACTION_UP -> { if (down && !longDone) onTap(); down = false; longDone = false }
         }
         return true
@@ -191,7 +200,7 @@ fun WidgetItemSheet(name: String, live: Boolean, reason: ConsentUi.Reason? = nul
     ModalBottomSheet(onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text(name, style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.widget_sheet_source_file), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            Text(stringResource(R.string.widget_sheet_source_file), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             reason?.let { Text(reasonText(it), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp)) }
             Spacer(Modifier.height(12.dp))
             ConsentUi.sheetActions(live).forEach { a ->
