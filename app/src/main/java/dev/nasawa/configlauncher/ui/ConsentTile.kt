@@ -2,7 +2,6 @@ package dev.nasawa.configlauncher.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
@@ -14,6 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -110,25 +111,83 @@ fun ConsentTile(tile: ConsentUi.Tile, onReview: () -> Unit, modifier: Modifier =
 /**
  * A live card's cells (#142 S3-C.2). The #140 renderer draws its content here; until then it's an empty target that
  * keeps the cells from opening the home menu, with the long-press sheet and the `Permissions` TalkBack action (§17.7).
- * No tap action, so TalkBack doesn't offer a "double-tap to activate" that does nothing (Grace #164 review).
+ * No tap action unless [onTap] is given, so TalkBack doesn't offer a "double-tap to activate" that does nothing
+ * (Grace #164 review).
  */
 @Composable
-fun LiveCardTarget(live: ConsentUi.Live, onLongPress: () -> Unit, onPermissions: () -> Unit, modifier: Modifier = Modifier) {
+fun LiveCardTarget(live: ConsentUi.Live, onLongPress: () -> Unit, onPermissions: () -> Unit, modifier: Modifier = Modifier,
+                   onTap: (() -> Unit)? = null) {
     val name = consentText(live.title) ?: live.id
     val said = stringResource(R.string.card_a11y, name)
     val permissions = stringResource(R.string.widget_action_permissions)
-    // #171 (Grace #164 R2): focusable, so D-pad, keyboard and Switch Access can reach it; no click action, since a tap
-    // on a live card does nothing yet. Long-press and Permissions stay as accessibility actions. Arrow focus shows the
-    // 2 dp focus ring (§2).
+    // #171 (Grace #164 R2): focusable, so D-pad, keyboard and Switch Access can reach it. Long-press and Permissions
+    // stay as accessibility actions. Arrow focus shows the 2 dp focus ring (§2), two-tone so it reads on any wallpaper.
     val focus = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val focused by focus.collectIsFocusedAsState()
+    // #173 L2: Enter / centre work without TalkBack: a press is the tap, a long press opens the long-press sheet.
+    val tap by androidx.compose.runtime.rememberUpdatedState(onTap)
+    val long by androidx.compose.runtime.rememberUpdatedState(onLongPress)
+    val keys = remember { CenterKey(onTap = { tap?.invoke() }, onLong = { long() }) }
     Box(modifier.fillMaxSize().pointerInput(onLongPress) { detectTapGestures(onLongPress = { onLongPress() }) }
-        .then(if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp)) else Modifier)
+        .then(if (focused) Modifier.focusRing() else Modifier)
+        .onKeyEvent(keys::onKey)
         .focusable(interactionSource = focus).clearAndSetSemantics {
         contentDescription = said
+        onTap?.let { t -> onClick { t(); true } }
         onLongClick { onLongPress(); true }
         customActions = listOf(CustomAccessibilityAction(permissions) { onPermissions(); true })
     })
+}
+
+/** The 2 dp arrow-focus ring: white over a 1 dp dark outline, so it shows on light and dark wallpapers (#173). */
+internal fun Modifier.focusRing(): Modifier = drawWithContent {
+    drawContent()
+    val r = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx())
+    val outline = 1.dp.toPx(); val ring = 2.dp.toPx()
+    drawRoundRect(FocusRing.OUTLINE, topLeft = androidx.compose.ui.geometry.Offset(outline / 2, outline / 2),
+        size = androidx.compose.ui.geometry.Size(size.width - outline, size.height - outline), cornerRadius = r,
+        style = androidx.compose.ui.graphics.drawscope.Stroke(outline))
+    val inset = outline + ring / 2
+    drawRoundRect(FocusRing.RING, topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+        size = androidx.compose.ui.geometry.Size(size.width - 2 * inset, size.height - 2 * inset), cornerRadius = r,
+        style = androidx.compose.ui.graphics.drawscope.Stroke(ring))
+}
+
+internal object FocusRing {
+    val RING = Color.White
+    val OUTLINE = Color(0xCC000000)
+}
+
+/**
+ * #173 L2: Enter, numpad Enter and DPAD_CENTER on a focused card. A press runs [onTap] on key up. Held, it runs
+ * [onLong] once, on whichever comes first: the first key repeat, or a key down carrying FLAG_LONG_PRESS. The flag
+ * matters for remotes and keyboards that don't repeat held keys: they send one extra down with the flag (or a single
+ * down with it) and no repeats (#173, Grace's #174 device check). Later repeats or flags in the same hold, and that
+ * key up, do nothing more. Other keys pass through, so arrows still move focus.
+ *
+ * A short press is consumed even when there is no tap action (Grace's #174 L1, left as is): nothing above the card
+ * listens for Enter or centre today, and #140 gives cards their tap actions.
+ */
+internal class CenterKey(private val onTap: () -> Unit, private val onLong: () -> Unit) {
+    private var down = false
+    private var longDone = false
+
+    fun onKey(e: androidx.compose.ui.input.key.KeyEvent): Boolean {
+        val n = e.nativeKeyEvent
+        if (n.keyCode != android.view.KeyEvent.KEYCODE_ENTER && n.keyCode != android.view.KeyEvent.KEYCODE_DPAD_CENTER &&
+            n.keyCode != android.view.KeyEvent.KEYCODE_NUMPAD_ENTER) return false
+        when (n.action) {
+            android.view.KeyEvent.ACTION_DOWN -> {
+                val long = n.repeatCount > 0 || n.isLongPress
+                if (!long) { down = true; longDone = false }
+                // A flagged first down (no earlier down seen) still counts; a bare repeat with no down before it
+                // (focus arrived mid-hold) doesn't.
+                else if (!longDone && (down || n.repeatCount == 0)) { down = true; longDone = true; onLong() }
+            }
+            android.view.KeyEvent.ACTION_UP -> { if (down && !longDone) onTap(); down = false; longDone = false }
+        }
+        return true
+    }
 }
 
 /**

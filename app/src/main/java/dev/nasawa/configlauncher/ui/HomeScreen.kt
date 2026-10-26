@@ -110,9 +110,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var detailFor by remember { mutableStateOf<String?>(null) }
     // §17.6 Undo snackbars from the detail page. Held and timed here, not on the page, so leaving the page doesn't drop
     // the Undo (Grace #164 recheck (5)): it's shown over the review list or home until it times out or is used.
-    var consentSnack by remember { mutableStateOf<ConsentSnack?>(null) }
-    consentSnack?.let { s -> LaunchedEffect(s) { kotlinx.coroutines.delay(s.ms); if (consentSnack == s) consentSnack = null } }
-    val undoConsent: () -> Unit = { consentSnack?.let { s -> consentSnack = null; s.undo?.invoke() } }
+    val consentSnacks = rememberConsentSnackHost()
     // Persisted (Grace #164 review): a rotation, theme change or process death doesn't bring a dismissed B9 back.
     var b9DismissedAt by remember { mutableIntStateOf(vm.store.prefs.b9DismissedAt) }
     LaunchedEffect(b9DismissedAt) { if (vm.store.prefs.b9DismissedAt != b9DismissedAt) vm.store.prefs.b9DismissedAt = b9DismissedAt }
@@ -316,12 +314,10 @@ fun HomeScreen(vm: HomeViewModel) {
                     }
                 }
                 }
-                // The banner slot. §17.4: the count chip sits at its top end (and to the start of the B-banner ▲ chip
-                // when that's built), in a strip above the banners, so the banners keep the full width (Grace #164 (7)).
+                // The banner slot. The collapsed count chip isn't here: it goes in the §6.1 notice row with the page label
+                // (#173 L1, #175), so the banners keep the full width and the chip costs no grid height.
                 val b9 = ConsentUi.B9.visible(reviewCount, b9DismissedAt, otherBanner = ui.load.conflict || ui.load.issue != null)
-                if (!b9 && reviewCount > 0) Row(Modifier.fillMaxWidth().padding(end = 8.dp), horizontalArrangement = Arrangement.End) {
-                    ReviewCountChip(reviewCount, { reviewOpen = true })
-                }
+                val countChip = !b9 && reviewCount > 0
                 if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
                 // B9 is the lowest-priority notice: only when no other banner is up. `×` collapses it to the chip.
                 if (b9) B9Banner(reviewCount, onReview = { b9DismissedAt = reviewCount; reviewOpen = true }, onDismiss = { b9DismissedAt = reviewCount })
@@ -344,8 +340,17 @@ fun HomeScreen(vm: HomeViewModel) {
                 CompositionLocalProvider(LocalLabelBackdrop provides backdrop) {
                 // #79: a title bar in the file replaces the §1.3 page label on pages where it's enabled.
                 val titleBar = TitleBarModel.forPage(ui.load.config, pages.getOrNull(pager.settledPage)?.id)
-                if (titleBar != null) TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop, onFit = { titleFit = it }) { pageList = true }
-                else { LaunchedEffect(Unit) { titleFit = null }; PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true } }
+                // §6.1 notice row (#173 L1): the collapsed chips (the §17.4 count chip; the B-banner ▲ chip once built) at the
+                // end, the page label centred in the same row. A title bar keeps its own row, so the chips get one above it.
+                val chips: @Composable RowScope.() -> Unit = { ReviewCountChip(reviewCount, { reviewOpen = true }) }
+                if (titleBar != null) {
+                    if (countChip) NoticeRow(null, chips = chips)
+                    TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop, onFit = { titleFit = it }) { pageList = true }
+                } else {
+                    LaunchedEffect(Unit) { titleFit = null }
+                    if (countChip) NoticeRow(if (PageList.showLabel(pages)) { { PageLabelButton(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true } } } else null, chips = chips)
+                    else PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true }
+                }
                 val listPages = stringResource(R.string.pages_action)
                 val openAppList = stringResource(R.string.a11y_open_drawer)
                 HorizontalPager(
@@ -383,7 +388,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     // Over the review list or detail page when one is open (they're full-screen dialogs), else here.
                     if (!reviewOpen && detailFor == null) Snackbar(Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite }) { Text(t) }
                 }
-                if (!reviewOpen && detailFor == null) consentSnack?.let { ConsentSnackbar(it, undoConsent, Modifier.padding(8.dp)) }
+                consentSnacks.forHome(detailFor, reviewOpen)?.let { ConsentSnackbar(it, consentSnacks::undo, Modifier.padding(8.dp)) }
                 undoSnack?.let { u ->
                     UndoSnackbar(u, onUndo = {
                         undoSnack = null
@@ -498,7 +503,7 @@ fun HomeScreen(vm: HomeViewModel) {
         }
         if (reviewOpen && consent != null) ReviewScreen(ConsentUi.review(ui.load.config, consentReport, consent.entries()),
             onNeeds = { id -> openPrompt(id) }, onOpen = { id -> detailFor = id }, onDismiss = { reviewOpen = false },
-            notice = changedSnack.takeIf { detailFor == null }, snack = consentSnack.takeIf { detailFor == null }, onUndo = undoConsent)
+            notice = changedSnack.takeIf { detailFor == null }, snack = consentSnacks.forReview(detailFor), onUndo = consentSnacks::undo)
         detailFor?.let { id ->
             val st = consentReport.firstOrNull { it.id == id }
             val d = if (consent == null || st == null) null else ConsentUi.detail(ui.load.config, st, consent.entry(id))
@@ -519,7 +524,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     consent.removeAlways(id, o)
                     before?.let { b -> { consent.undo(id, b, dev.nasawa.configlauncher.consent.Consent.Event.Kind.SiteRemoved) } }
                 },
-                onDismiss = { detailFor = null }, snack = consentSnack, onSnack = { consentSnack = it }, onUndo = undoConsent,
+                onDismiss = { detailFor = null }, snack = consentSnacks.forDetail(id), onSnack = consentSnacks::show, onUndo = consentSnacks::undo,
                 notice = changedSnack)
         }
         if (titleBarSheet) TitleBarSheet(TitleBarEdits.state(ui.load.config),
@@ -588,7 +593,7 @@ fun HomeScreen(vm: HomeViewModel) {
         }
 
         if (drawerOpen) {
-            ModalBottomSheet({ drawerOpen = false }) {
+            AppDrawerSheet({ drawerOpen = false }) {
                 var query by remember { mutableStateOf("") }
                 val shown = remember(query, ui.layout.drawer) { DrawerSearch.filter(ui.layout.drawer, query) }
                 val focus = remember { androidx.compose.ui.focus.FocusRequester() }
@@ -621,7 +626,8 @@ fun HomeScreen(vm: HomeViewModel) {
                 }
                 }
                 if (shown.isEmpty()) Text(stringResource(R.string.search_no_match, query.trim()), Modifier.padding(16.dp), color = Color.Gray)
-                LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxHeight(0.85f).padding(8.dp), state = gridState) {
+                // #179: the grid takes the rest of the full-height sheet, so the drawer is full height with few apps too.
+                LazyVerticalGrid(GridCells.Fixed(4), Modifier.weight(1f).padding(8.dp), state = gridState) {
                     items(shown, key = { it.key }) { app ->
                         val ri = ResolvedItem(AppItem("drawer", app.packageName, app.activityName), app)
                         with(drag) { Tile(ri, vm.apps, Modifier.tile(ri, canDrag = false, onClick = { drawerOpen = false; launchApp(app) }, onLongClick = { drawerSheet = app })) }
@@ -697,7 +703,7 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
 }
 
 @Composable
-private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit,
+internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit,
                      tiles: List<ConsentUi.Tile> = emptyList(), onTile: (ConsentUi.Tile) -> Unit = {},
                      live: List<ConsentUi.Live> = emptyList(), onWidgetLong: (WidgetSheetFor) -> Unit = {}, onPermissions: (String) -> Unit = {}) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
@@ -746,7 +752,7 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
 }
 
 @Composable
-private fun PageDots(count: Int, current: Int) {
+internal fun PageDots(count: Int, current: Int) {
     // §1.3: not tappable. §12 "Page 2 of 3", announced politely after a jump.
     val desc = stringResource(R.string.page_of, current + 1, count)
     Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = desc; liveRegion = LiveRegionMode.Polite }.padding(4.dp),
@@ -758,7 +764,7 @@ private fun PageDots(count: Int, current: Int) {
 }
 
 @Composable
-private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragController, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>) {
+internal fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragController, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>) {
     val res = androidx.compose.ui.platform.LocalResources.current
     Row(
         Modifier.fillMaxWidth().padding(8.dp).heightIn(min = 64.dp).onGloballyPositioned { drag.dockRect = it.boundsInRoot() }.background(Color(0x22FFFFFF), RoundedCornerShape(20.dp)).padding(6.dp),
@@ -772,16 +778,46 @@ private fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragContr
 
 @Composable
 fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onClick: (() -> Unit)? = null) {
-    Column(
+    val label = Labels.clean(r.title)
+    val style = MaterialTheme.typography.labelSmall
+    val backdrop = LocalLabelBackdrop.current
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    BoxWithConstraints(
         modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(4.dp).alpha(if (r.missing || r.app?.paused == true) 0.4f else 1f),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        contentAlignment = Alignment.TopCenter,
     ) {
-        if (r.item is FolderItem) FolderIcon(r, apps) else AppIconImage(r.app, apps, 48)
-        if (showLabel) Text(
-            Labels.clean(r.title), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.labelSmall, color = Color.White,
-            modifier = Modifier.widthIn(max = 76.dp).then(LabelBackdrop.modifier(LocalLabelBackdrop.current)),
-        )
+        // ux.md §12 (#173, #175): a label is shown whole or not at all. When the cell is shorter than the icon plus one
+        // full label line (a banner, B9, the notice row, a small phone, a big font), it's hidden, never cut through the
+        // letters. A hidden label is still spoken by TalkBack.
+        val whole = showLabel && (!constraints.hasBoundedHeight || maxHeight >= TileLabel.ICON_DP.dp + TileLabel.height(measurer, label, style, backdrop))
+        Column(
+            if (showLabel && !whole) Modifier.semantics { contentDescription = label } else Modifier,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (r.item is FolderItem) FolderIcon(r, apps) else AppIconImage(r.app, apps, TileLabel.ICON_DP)
+            if (whole) Text(
+                label, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                style = style, color = Color.White,
+                modifier = Modifier.widthIn(max = TileLabel.MAX_WIDTH_DP.dp).then(LabelBackdrop.modifier(backdrop)),
+            )
+        }
+    }
+}
+
+/** The grid label's size rules (ux.md §12): one line, at most 76 dp wide, under a 48 dp icon. */
+object TileLabel {
+    const val ICON_DP = 48
+    const val MAX_WIDTH_DP = 76
+
+    /** The height one whole label line needs at this font scale, the Label backdrop's 2 dp top and bottom included. */
+    @Composable
+    fun height(measurer: androidx.compose.ui.text.TextMeasurer, label: String, style: androidx.compose.ui.text.TextStyle, backdrop: Boolean): androidx.compose.ui.unit.Dp {
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val px = remember(label, style, density, backdrop) {
+            measurer.measure(label, style, maxLines = 1, softWrap = false,
+                constraints = androidx.compose.ui.unit.Constraints(maxWidth = with(density) { MAX_WIDTH_DP.dp.roundToPx() })).size.height
+        }
+        return with(density) { px.toDp() } + if (backdrop) 4.dp else 0.dp
     }
 }
 

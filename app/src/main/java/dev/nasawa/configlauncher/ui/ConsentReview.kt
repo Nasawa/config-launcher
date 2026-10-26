@@ -163,7 +163,32 @@ private fun nounText(n: ConsentUi.Noun) = stringResource(when (n) {
  * A consent snackbar (§17.6): text, optional Undo, and how long it stays. HomeScreen holds and times it, so its Undo
  * outlives the detail page: it moves to the review list or home when the page closes (Grace #164 recheck (5)).
  */
-data class ConsentSnack(val text: String, val undo: (() -> Unit)?, val ms: Long)
+data class ConsentSnack(val text: String, val undo: (() -> Unit)?, val ms: Long, val widgetId: String? = null)
+
+/**
+ * HomeScreen's [ConsentSnack] state. It's held here, above the detail page and review list, so leaving them keeps
+ * the Undo. It shows on its own widget's detail page (#173: never on another widget's), else over the review list,
+ * else at home. [rememberConsentSnackHost] times it out.
+ */
+@Stable
+class ConsentSnackHost {
+    var snack by mutableStateOf<ConsentSnack?>(null)
+        private set
+    fun show(s: ConsentSnack) { snack = s }
+    /** `Undo`: clears the snack, then puts things back. */
+    fun undo() { snack?.let { s -> snack = null; s.undo?.invoke() } }
+    fun expire(s: ConsentSnack) { if (snack == s) snack = null }
+    fun forDetail(id: String) = snack?.takeIf { it.widgetId == null || it.widgetId == id }
+    fun forReview(detailFor: String?) = snack.takeIf { detailFor == null }
+    fun forHome(detailFor: String?, reviewOpen: Boolean) = snack.takeIf { detailFor == null && !reviewOpen }
+}
+
+@Composable
+fun rememberConsentSnackHost(): ConsentSnackHost {
+    val host = remember { ConsentSnackHost() }
+    host.snack?.let { s -> LaunchedEffect(s) { kotlinx.coroutines.delay(s.ms); host.expire(s) } }
+    return host
+}
 
 /** Shows a [ConsentSnack]; `Undo` calls [onUndo], which clears the snack and runs its undo. Polite live region. */
 @Composable
@@ -229,7 +254,7 @@ fun DetailScreen(d: ConsentUi.Detail, appLabel: (String) -> String, onTurnOff: (
                     Text(host, modifier = Modifier.weight(1f))
                     TextButton({
                         val undo = onRemoveSite(o)
-                        onSnack(ConsentSnack(res.getString(R.string.site_removed_snack, host), undo, UndoSnack.DURATION_MS))
+                        onSnack(ConsentSnack(res.getString(R.string.site_removed_snack, host), undo, UndoSnack.DURATION_MS, d.id))
                     }, Modifier.semantics { contentDescription = a11y }) { Text(stringResource(R.string.detail_site_remove)) }
                 }
             }
@@ -239,7 +264,7 @@ fun DetailScreen(d: ConsentUi.Detail, appLabel: (String) -> String, onTurnOff: (
         if (d.state == Consent.State.Off) Button(onAllow) { Text(stringResource(R.string.detail_allow)) }
         else if (d.state == Consent.State.Allowed) Button({
             val undo = onTurnOff()
-            onSnack(ConsentSnack(res.getString(R.string.turned_off_snack, title), undo, UndoSnack.DURATION_MS))
+            onSnack(ConsentSnack(res.getString(R.string.turned_off_snack, title), undo, UndoSnack.DURATION_MS, d.id))
         }) { Text(stringResource(R.string.detail_turn_off)) }
         if (d.canForget) {
             val a11y = stringResource(R.string.detail_forget_a11y, title)
@@ -253,7 +278,7 @@ fun DetailScreen(d: ConsentUi.Detail, appLabel: (String) -> String, onTurnOff: (
     if (confirmForget) ForgetDialog(title, onForget = {
         confirmForget = false
         onForget()
-        onSnack(ConsentSnack(res.getString(R.string.forget_snack), null, SHORT_SNACK_MS))
+        onSnack(ConsentSnack(res.getString(R.string.forget_snack), null, SHORT_SNACK_MS, d.id))
     }, onCancel = { confirmForget = false })
 }
 
