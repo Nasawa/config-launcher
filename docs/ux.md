@@ -340,6 +340,12 @@ apps in the drawer.
   grid: an overlay would cover the top-end cell's icon and steal its taps. With no chip, the row is gone (or is just the
   page label, as before). The row has a 12 dp end margin like the banner. Each chip keeps its 48 dp touch area inside
   the row, and the page label's touch area stops 8 dp short of the first chip.
+  - **Single titled page:** its label isn't tappable (§1.3), so it stays plain text, vertically centred in the 48 dp
+    row. The row is taller than the label alone while a chip shows; that's expected.
+  - **With a §15 title bar** (it replaces the page label): the notice row is its own 48 dp row **above** the title bar
+    and costs grid height while a chip is up. The chips never go inside the bar. If they did, the bar's width, and so its
+    fit steps and `warn_titlebar_fit` warnings in `status.json`, would change with consent state. A file's warnings
+    must depend only on the file and the phone.
 - When fixed (a valid version appears): the banner clears automatically and the snackbar `Layout loaded.` shows.
 - TalkBack: announced once when it appears (polite live region).
 
