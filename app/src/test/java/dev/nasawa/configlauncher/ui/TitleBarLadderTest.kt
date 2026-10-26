@@ -212,6 +212,14 @@ class TitleBarLadderTest {
         // Fits again: cleared. Step 1 alone: none.
         assertNull(TitleBarLayout.fitWarning(path, 400, 0, "medium", hasDate = false))
         assertNull(TitleBarLayout.fitWarning(path, 400, 1, "medium", hasDate = false))
+        // #175: still too wide after step 3 (or step 3 skipped): step 4, side text other than the clock ellipsizes.
+        assertEquals("elements[0].content.slots: the title bar doesn't fit in its 120 dp on this phone, so fit step 4 of 4 was used: the text size went down to medium and slot text was cut off with …. Checked on this phone. Use fewer or shorter slots.",
+            TitleBarLayout.fitWarning(path, 120, 4, "medium", hasDate = false))
+        assertEquals("elements[0].content.slots: the title bar doesn't fit in its 120 dp on this phone, so fit step 4 of 4 was used: slot text was cut off with …. Checked on this phone. Use fewer or shorter slots.",
+            TitleBarLayout.fitWarning(path, 120, 4, null, hasDate = false))
+        val tight = TitleBarLayout.ladder(100, gap, setOf(0, 2), emptySet(), 1, pageMin, touch,
+            TitleBarLayout.rungs(true, emptyList(), smaller = true), measure = m)
+        assertEquals("no rung fits: step 4", 4, tight.step)
         assertEquals("pages[1].overrides.t-main.content.slots", TitleBarLayout.slotsPath("pages[1].overrides.t-main.content.slots.end"))
     }
 
