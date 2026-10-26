@@ -3,8 +3,8 @@
 Status: **proposal**, 2026-10-26, revised the same day after Pragma's UX review (all blocking items, should-fix items
 and nits applied, except the AGENTS.md line, which is deferred to O1: §15). Author: Archimedes. Docs only: nothing changes in `schema/` or app code until this
 is accepted and dev8 has shipped the §1.5 defaults.
-**Stacked on [#185](https://github.com/Nasawa/config-launcher/pull/185)** (`ux/large-screen-layout` at 7dd5842, not
-merged yet). This branch (`docs/layout-overrides`) starts from it, so it should be rebased onto `main` once #185 merges.
+Builds on [#185](https://github.com/Nasawa/config-launcher/pull/185) (ux.md §1.5), which merged into `main` on
+2026-10-26. This doc was written against #185 at 7dd5842, which matches what merged in ux.md §1.5.
 
 **UI naming:** the base layout is called **main** in every string people see. An override layout shows its `label`,
 or its `id` when it has no label.
