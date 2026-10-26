@@ -8,7 +8,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -54,14 +53,14 @@ object HiddenApps {
 fun HiddenAppsSheet(rows: List<HiddenRow>, apps: InstalledApps, onUnhide: (String) -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismiss) {
         Text(stringResource(R.string.hidden_apps), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-        if (rows.isEmpty()) Text(stringResource(R.string.no_hidden_apps), Modifier.padding(16.dp), color = Color.Gray)
+        if (rows.isEmpty()) Text(stringResource(R.string.no_hidden_apps), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         LazyColumn(Modifier.padding(bottom = 24.dp)) {
             items(rows, key = { it.packageName }) { r ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     AppIconImage(r.app, apps, 40)
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                         Text(r.label)
-                        Text(r.packageName, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        Text(r.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     TextButton({ onUnhide(r.packageName) }) { Text(stringResource(R.string.action_unhide)) }
                 }

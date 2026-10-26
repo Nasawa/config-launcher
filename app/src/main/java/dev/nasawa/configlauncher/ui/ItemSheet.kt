@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -58,11 +57,11 @@ fun ItemSheet(r: ResolvedItem, onAction: (ItemAction) -> Unit, onDismiss: () -> 
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text(m.title, style = MaterialTheme.typography.titleMedium)
             when {
-                m.folderSize != null -> Text(pluralStringResource(R.plurals.sheet_folder_apps, m.folderSize, m.folderSize), color = Color.Gray)
-                m.realName == null -> Text(stringResource(R.string.sheet_not_installed, m.packageName.orEmpty()), color = Color.Gray)
+                m.folderSize != null -> Text(pluralStringResource(R.plurals.sheet_folder_apps, m.folderSize, m.folderSize), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                m.realName == null -> Text(stringResource(R.string.sheet_not_installed, m.packageName.orEmpty()), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else -> {
                     if (m.showRealName) Text(m.realName, style = MaterialTheme.typography.bodyMedium)
-                    Text(m.packageName.orEmpty(), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    Text(m.packageName.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -135,7 +134,7 @@ fun DrawerAppSheet(app: dev.nasawa.configlauncher.model.InstalledApp, includeWor
     ModalBottomSheet(onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text(Labels.clean(app.label), style = MaterialTheme.typography.titleMedium)
-            Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
             DrawerMenu.actions(app, includeWork).forEach { a ->
                 TextButton({ onAction(a) }, Modifier.fillMaxWidth()) {
