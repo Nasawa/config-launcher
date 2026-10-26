@@ -433,6 +433,39 @@ Report anything that differs, with a screenshot.
 
 Automation: R = Robolectric Compose UI test (`performTouchInput { longClick() }`), E = `scripts/longpress-smoke.sh` (seeds app-only mode with one tile via `run-as`, `input swipe x y x y 800`, then a `uiautomator dump` that must contain `App info` and the real package, and the launcher must still be on top).
 
+## 20. Tablets, landscape and foldables (ux.md §1.5, Archimedes' large-screen notes)
+
+Evidence so far: QA run 2 ([CI run 40377723279](https://github.com/Nasawa/config-launcher/actions/runs/40377723279) on bee4fe3; the #177 matrix), points t7-port, t7-land,
+t10-port, t10-land and fold-open at font 1.0 / 1.3 / 2.0. Until these checks exist, #177's Q2 interim stands: tablet,
+landscape and fold G1–G3 are advisory through dev7 and blocking at dev8.
+
+**Gaps in that evidence** (each needs a new point or fixture before its check can block):
+- The fold points are a **simulated** inner screen (`wm size` 841 × 701). No `FoldingFeature`, no hinge, no fold ↔ unfold
+  transition, and no folded cover-screen point.
+- No phone-landscape point, no RTL point, no width-class boundary points (599/600, 839/840 dp). The fold's 841 dp is 1 dp
+  above Expanded.
+- No cards on large screens, and no 6–7 item dock.
+
+| # | Check | Expected | How |
+|---|---|---|---|
+| L1 | **No write on a window change.** Rotate ×4, fold/unfold ×2, resize in multi-window | `launcher.json` hash and `revision` unchanged, no `status.json` write, history unchanged | File hash before/after; logcat for writes |
+| L2 | **Positions are exact** on every point | Every item and card is in column `x`, row `y` (span `w` × `h`) | From the xml: `floor((centre − blockLeft) / pitchW)` |
+| L3 | **Cap and centring** on Medium/Expanded | `pitchW` ≤ 144 dp, cell W/H ≤ 1.25 and H/W ≤ 1.5, left margin = right margin (±1 dp). Compact phone goldens unchanged (after the one-time 56 dp icon re-baseline) | xml bounds; `PhoneOutputGoldenTest` |
+| L4 | **Minimum and labels** | `pitchH` ≥ 80 dp at font 1.0 on t7-land and t10-land. On every point every label is full height or absent, no slivers (fixes today's G1 on t7-land) | xml label bounds ≥ 1 line |
+| L5 | **Dock placement** | Rail on t7-land and t10-land (end edge; left in RTL), with `Apps`/`⋮` at its head; bottom on t7-port, t10-port and fold-open. Rail inside `safeDrawing` (nav bar on the same side, cutout side) | xml + insets dump |
+| L6 | **Dock count.** Fixture `dock7` at t7-land, phone landscape and t7-port | All 7 fit, slots ≥ 48 dp, in file order (top → bottom on the rail); the rail scrolls rather than hides | New fixture `dock7` |
+| L7 | **Page continuity.** On page 2, rotate and fold/unfold | Still `Second`, `Page 2 of 2` (restored by page `id`); edit mode, drawer and open sheets kept | Screenshot + xml |
+| L8 | **Drag on a config change.** Start a drag, then rotate | Drag cancelled, nothing written, item in its old cell | Instrumented test |
+| L9 | **Hinge.** Real `FoldingFeature`: emulator posture HALF_OPENED, book and tabletop | No cell, card or dock slot intersects the hinge bounds; book uses the start half, tabletop puts the grid on top and the dock below. Flat: hinge ignored | New fold points (the current ones are simulated) |
+| L10 | **Placement is window-independent** | `Move to…` shows Column 1–4 / Row 1–5 everywhere; Undo's free spot, `Add to home` and the widget picker give the same answer on every point for the same file | Unit test on the pure placement functions + one UI check |
+| L11 | **Margins** | Long-press in a side margin opens the home menu, swipe-up there opens the drawer, a drop there is refused, and a tap at each column centre hits the right item | Instrumented |
+| L12 | **Class boundaries, phone landscape, RTL** | Points at 599/600 and 839/840 dp width, phone landscape (e.g. 800 × 360: rail, labels hidden whole, icons ≥ 48 dp) and one RTL point (grid mirrored, rail on the left) | New matrix rows |
+| L13 | **Cards.** Fixture with a 2×2 and a 4×1 card | `k` ≤ 1.5 on t10-land, no stretching, nothing crosses the hinge | New fixture `cards-large` |
+
+Manual (TalkBack and keyboard, one tablet in landscape and one RTL point): focus order is rail head → banner → notice row
+→ page label or title bar → grid in reading order → page dots → rail dock items top to bottom, whichever side the rail
+is on. D-pad from a grid cell next to the rail moves to the nearest rail slot and back. Side margins take no focus.
+
 ## Open questions (v3)
 
 All v3 questions are resolved in A§18.6 (Q-v3-1, -2, -3, -4, -6, -9); the rulings are folded into SK-8, DR-6, LB-2, OU-2, CM-6/CM-22–26 and §13. Remaining unknown: the Secure Folder detection heuristic (SF-A51, pending manual run).
