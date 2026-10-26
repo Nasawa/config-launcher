@@ -1088,7 +1088,7 @@ These rules apply to every **grid-placed** element (`page`, `x`, `y`, `w`, `h`):
      then on the following pages in order. Only `page` / `x` / `y` change, never `w` / `h`. If its page is gone,
      the scan starts on the first page. Undo never adds a page. Then a 4 s snackbar with no action,
      `Put "<name>" back on <page>.` (`undo_element_moved`; TalkBack announces it), where `<page>` is the page name
-     as the title bar's `{page}` shows it, or `page <n>` for an untitled page.
+     as the title bar's `{page}` shows it, or `Page <n>` for an untitled page (`Page %1$d`, as in §1.3).
   3. No room anywhere: nothing is written, the widget stays removed, and the snackbar says
      `Couldn't put "<name>" back. There's no free space.` (`undo_element_no_room`; TalkBack: the same text).
   If the `id` is in the file again (an agent re-added it during the window), Undo writes nothing and says so, as
@@ -1147,7 +1147,7 @@ Strings (new; `%1$s` placeholders as in §17.13):
 |---|---|---|---|
 | `removed_element` | `Removed "%1$s" from home.` | 1 = name (title, or the element id, §17.2) | Snackbar with `Undo` |
 | `removed_element_a11y` | `"%1$s" removed.` | 1 = name | TalkBack announcement of the remove |
-| `undo_element_moved` | `Put "%1$s" back on %2$s.` | 1 = name, 2 = page name as `{page}` shows it, else `page %d` | 4 s snackbar, no action; only when Undo lands off the old cells |
+| `undo_element_moved` | `Put "%1$s" back on %2$s.` | 1 = name, 2 = page name as `{page}` shows it, else `Page %1$d` (§1.3) | 4 s snackbar, no action; only when Undo lands off the old cells |
 | `undo_element_no_room` | `Couldn't put "%1$s" back. There's no free space.` | 1 = name | Snackbar; Undo found no room |
 | `undo_element_back` | `"%1$s" is already back on home.` | 1 = name | Snackbar; the id was re-added during the window (information) |
 | `move_element_taken` | `Couldn't move "%1$s": that space is taken.` | 1 = name | Snackbar; target taken at write time |
