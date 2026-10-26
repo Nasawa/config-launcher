@@ -59,7 +59,7 @@ class WarningsListTest {
         assertTrue("theme warnings come before consent ones: $themed", contrast < ok2)
         assertEquals(loaded.size + 1, themed.size)
 
-        // Allowing the card: the consent warning leaves both lists (any widget-data warning joins both).
+        // Allowing the card: the consent warning leaves both lists.
         consent.allow("w-anigeek", e.consentReport().first { it.id == "w-anigeek" }.lines, e.state.value.config); e.consentChanged()
         val allowed = assertSame(dir, e)
         assertTrue(allowed.none { "waiting for approval" in it })
@@ -84,6 +84,17 @@ class WarningsListTest {
         assertEquals(before.size + 1, with.size)
         e.setTitleBarFit(null)
         assertEquals(before, assertSame(dir, e))
+    }
+
+    @Test fun folderSwitchClearsTheList() = runBlocking {
+        // #171 (Grace #168 L1): switching to a folder with no launcher.json yet leaves no warnings from the old one.
+        val dir = tmp.newFolder()
+        val src = LocalFileSource(dir); src.file.writeText(launcher())
+        val e = ConfigEngine(src, LastGoodStore(tmp.newFolder()), 0, consent = ConsentStore(tmp.newFolder()))
+        e.poll(force = true)
+        assertTrue(e.warnings.value.isNotEmpty())
+        e.switchSource(LocalFileSource(tmp.newFolder()))
+        assertEquals(emptyList<String>(), e.warnings.value)
     }
 
     @Test fun rejectedFileHasNoWarningsOnEitherSide() = runBlocking {

@@ -191,7 +191,8 @@ class ConfigEngine(
         }
         val oldSource = source; val oldState = _state.value; val oldStamp = lastStamp
         if (adopted != null) runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
-        source = target; lastStamp = null; lastStatusKey = null; statusResult = null; conflictFiles = emptyList()
+        // #171 (Grace #168 L1): the old folder's Warnings list goes with its status; the new one's comes with its own.
+        source = target; lastStamp = null; lastStatusKey = null; statusResult = null; conflictFiles = emptyList(); _warnings.value = emptyList()
         try {
             if (adopted != null) {
                 val hash = ConfigCodec.sha256(existing!!)
@@ -214,7 +215,7 @@ class ConfigEngine(
         mutex.withLock {
             source = newSource
             lastStamp = null
-            lastStatusKey = null; statusResult = null; conflictFiles = emptyList()
+            lastStatusKey = null; statusResult = null; conflictFiles = emptyList(); _warnings.value = emptyList()
             _state.update { it.copy(sourceName = newSource.displayName, issue = null, reconnectable = newSource.reconnectable) }
         }
         poll(force = true)

@@ -2,9 +2,11 @@ package dev.nasawa.configlauncher.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -115,7 +117,14 @@ fun LiveCardTarget(live: ConsentUi.Live, onLongPress: () -> Unit, onPermissions:
     val name = consentText(live.title) ?: live.id
     val said = stringResource(R.string.card_a11y, name)
     val permissions = stringResource(R.string.widget_action_permissions)
-    Box(modifier.fillMaxSize().pointerInput(onLongPress) { detectTapGestures(onLongPress = { onLongPress() }) }.clearAndSetSemantics {
+    // #171 (Grace #164 R2): focusable, so D-pad, keyboard and Switch Access can reach it; no click action, since a tap
+    // on a live card does nothing yet. Long-press and Permissions stay as accessibility actions. Arrow focus shows the
+    // 2 dp focus ring (§2).
+    val focus = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val focused by focus.collectIsFocusedAsState()
+    Box(modifier.fillMaxSize().pointerInput(onLongPress) { detectTapGestures(onLongPress = { onLongPress() }) }
+        .then(if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp)) else Modifier)
+        .focusable(interactionSource = focus).clearAndSetSemantics {
         contentDescription = said
         onLongClick { onLongPress(); true }
         customActions = listOf(CustomAccessibilityAction(permissions) { onPermissions(); true })
