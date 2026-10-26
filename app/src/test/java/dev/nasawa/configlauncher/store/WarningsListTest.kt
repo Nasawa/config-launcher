@@ -117,6 +117,25 @@ class WarningsListTest {
         assertEquals(before.size + 1, assertSame(dir, e).size)
     }
 
+    @Test fun failedAdoptBringsTheListStraightBack() = runBlocking {
+        // Grace's #174 missing test: the adopt path (use the folder's own file) fails on the target's stamp(), the
+        // engine rolls back, and the old folder's list is back at once with no poll.
+        val dir = tmp.newFolder()
+        val src = LocalFileSource(dir); src.file.writeText(launcher())
+        val e = ConfigEngine(src, LastGoodStore(tmp.newFolder()), 0, consent = ConsentStore(tmp.newFolder()))
+        e.poll(force = true)
+        val before = assertSame(dir, e)
+        assertTrue(before.isNotEmpty())
+        val to = LocalFileSource(tmp.newFolder()); to.file.writeText(launcher())
+        val broken = object : ConfigSource by to {
+            override fun stamp(): Stamp? = throw java.io.IOException("gone")
+        }
+        assertFalse(e.moveTo(broken, useMine = false))
+        assertSame(src, e.source)
+        assertEquals(before, e.warnings.value)
+        assertEquals(before, assertSame(dir, e))
+    }
+
     @Test fun folderMoveListsTheNewFoldersWarnings() = runBlocking {
         val dir = tmp.newFolder()
         val src = LocalFileSource(dir); src.file.writeText(launcher())
@@ -124,7 +143,10 @@ class WarningsListTest {
         e.poll(force = true)
         val to = tmp.newFolder()
         assertTrue(e.moveTo(LocalFileSource(to), useMine = true))
-        // Same layout, new folder: the list matches the new folder's status.json.
+        // Grace's #174 missing test: right after the move, before any poll, the list already matches the new
+        // folder's status.json.
+        assertTrue(assertSame(to, e).isNotEmpty())
+        // Same layout, new folder: and still after a poll.
         e.poll(force = true)
         assertTrue(assertSame(to, e).isNotEmpty())
     }
