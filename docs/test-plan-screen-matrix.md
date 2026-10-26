@@ -49,7 +49,11 @@ In total there are 31 points across 5 shards (small-a 6, small-b 6, phones 7, ta
 - *Device-shaped* means the dp size and density bucket match a real device we own. It still runs AOSP fonts and
   system UI, not One UI, so it doesn't replace the A51 pass. In dev6-a51 the One UI font measured wider than the emulator's.
 - *Simulated* means a plausible class size with no claim about any specific model. The generic 7" and 10" profiles stay
-  (Christopher's decision); his exact tablet model is added as a device-shaped point later (Q1).
+  (Christopher's decision) and remain the tablet gate.
+- *Optional real-device spot check:* Christopher's onn. 10.1" Tablet (model 100135925, MediaTek, Android 15). Run the
+  local script on it when a build is ready for a tablet look (§5 "Local run on your own machine"). It is not a matrix
+  point or a gate, and the layout isn't designed around it ("we shouldn't conform to my personal hardware too much",
+  Christopher, Q1). Its results are notes for the §1.1 review; a failure there is triaged like any manual finding.
 - No point is a real foldable posture: `wm size` can't do hinge, fold state or multi-display. A foldable device image
   is a later add-on.
 
@@ -246,7 +250,9 @@ The script changes the display size, density, font scale, night mode and rotatio
 - dev7 gates on T1–T4 (§4).
 - The blocking/advisory split in §4 is approved as written.
 - G5b/G5c stay advisory until the #175 implementation lands, then block.
-- The generic 7" and 10" tablet profiles stay; his exact tablet model is added later.
+- The generic 7" and 10" tablet profiles stay and remain the gate.
+- Q1, resolved by Christopher (2026-10-26): his onn. 10.1" Tablet (model 100135925, MediaTek, Android 15) is only an
+  optional real-device spot check on Android 15, not a matrix target or a design driver (§3).
 
 **Resolved by QA** (reasons inline; say if you disagree):
 - Font 2.0: advisory except crashes (§4). ux.md §12 allows hidden labels at ≥ 150 % and Q-S5 is open.
@@ -262,8 +268,6 @@ The script changes the display size, density, font scale, night mode and rotatio
 - Minutes: free while the repo is public; run 1's measured numbers are in §5.
 
 **Needs Christopher:**
-- **Q1 (open, asked by Grok Bot; not blocking)** Christopher's tablet model, dp size and API, for a device-shaped
-  tablet point beside t7/t10.
 - **Q2 (needs Christopher)** Q-S2 / "Phones only in MVP" (ux.md §1.1): when do tablet, landscape and fold layout
   checks (G1–G3) become blocking, and is the ux.md §1.1 landscape layout (same grid, dock on the right edge) final?
   - **Interim (Grok Bot, 2026-10-26); pending Christopher's confirmation.** Christopher has been asked directly and
