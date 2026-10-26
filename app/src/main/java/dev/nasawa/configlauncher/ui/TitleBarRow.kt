@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
@@ -102,6 +103,8 @@ object TitleBarLayout {
 
     /** ux.md §15 step 1: the `{page}` slot keeps a 48 dp touch area, which may overlap the gaps next to it. */
     const val TOUCH_DP = 48
+    /** ux.md §15 step 1 (Pragma): the ▾-only `{page}` button may be this narrow when its touch area can use both sides. */
+    const val ARROW_MIN_DP = 24
 
     /**
      * One rung of the ux.md §15 overflow ladder (#149). [step] is 0 (as written) to 3; step 4 is [Fit.cut] on the last
@@ -122,7 +125,11 @@ object TitleBarLayout {
     }
 
     /** The rung that fits, the [widths] to lay out with, and the slot widths they were shared from. */
-    data class Fit(val rung: Rung, val cut: Boolean, val widths: Triple<Int, Int, Int>, val want: List<Int>) {
+    data class Fit(
+        val rung: Rung, val cut: Boolean, val widths: Triple<Int, Int, Int>, val want: List<Int>,
+        /** Step 1: how far the ▾-only button's touch area reaches past its slot, before and after it (px). */
+        val touch: Pair<Int, Int> = 0 to 0,
+    ) {
         /** The last ladder step used: 0 when the bar fits as written, 4 when the date is cut. */
         val step get() = if (cut) 4 else rung.step
     }
@@ -141,21 +148,24 @@ object TitleBarLayout {
      * ux.md §15 overflow ladder (#149): tries [rungs] in order and stops at the first that [fits]. [measure] gives the
      * start, center and end widths a rung's text needs, measured with the style it's drawn with (0 for an empty slot).
      * [fixed] slots hold only `{time}` / `{date}`; [dates] are the ones holding a date. At step 1 the [page] button is
-     * the ▾ alone, but it keeps [touch] (48 dp) of width including the gaps beside it, never more than [pageMin].
+     * the ▾ alone ([arrowOnlyMin]); its [touch] (48 dp) area reaches past the slot ([Fit.touch], [touchReach]).
      * If no rung fits, step 4 cuts the date (the widest date slot first) by what's missing; the clock is never cut.
      */
     fun ladder(
         w: Int, gap: Int, fixed: Set<Int>, dates: Set<Int>, page: Int?, pageMin: Int, touch: Int,
-        rungs: List<Rung>, measure: (Rung) -> List<Int>,
+        rungs: List<Rung>, arrowMin: Int = pageMin * ARROW_MIN_DP / PAGE_MIN_DP, tappable: Set<Int> = emptySet(),
+        measure: (Rung) -> List<Int>,
     ): Fit {
         var last: Pair<Rung, List<Int>>? = null
+        fun done(r: Rung, cut: Boolean, m: List<Int>): Fit {
+            val widths = widths(w, m[0], m[1], m[2], fixed, page, pageMin, gap)
+            val reach = if (r.arrowOnly && page != null && m[page] > 0) touchReach(page, m, widths, gap, touch, tappable) else 0 to 0
+            return Fit(r, cut, widths, m, reach)
+        }
         for (r in rungs) {
             val m = measure(r).toMutableList()
-            if (r.arrowOnly && page != null && m[page] > 0) {
-                val (a, b) = gaps(m[0], m[1], m[2], gap)
-                m[page] = minOf(pageMin, maxOf(m[page], touch - besideGaps(page, a, b, m[1] == 0)))
-            }
-            if (fits(w, m, fixed, page, pageMin, gap)) return Fit(r, false, widths(w, m[0], m[1], m[2], fixed, page, pageMin, gap), m)
+            if (r.arrowOnly && page != null && m[page] > 0) m[page] = arrowOnlyMin(page, m, m[page], pageMin, arrowMin, tappable)
+            if (fits(w, m, fixed, page, pageMin, gap)) return done(r, false, m)
             last = r to m
         }
         val (r, m) = last ?: return Fit(Rung(0), false, Triple(0, 0, 0), listOf(0, 0, 0))
@@ -167,12 +177,40 @@ object TitleBarLayout {
             val take = minOf(over, cut[k] - 1).coerceAtLeast(0)
             cut[k] -= take; over -= take
         }
-        return Fit(r, true, widths(w, cut[0], cut[1], cut[2], fixed, page, pageMin, gap), cut)
+        return done(r, true, cut)
     }
 
-    /** The gaps next to slot [k]: start has the one after it, center both, end the one before it. */
-    private fun besideGaps(k: Int, after0: Int, after1: Int, noCenter: Boolean) =
-        when (k) { 0 -> after0; 1 -> after0 + after1; else -> if (noCenter) after0 else after1 }
+    /** The nearest non-empty slot before (-1) or after (+1) slot [k], or null at the bar's edge. */
+    private fun neighbour(k: Int, dir: Int, m: List<Int>): Int? {
+        var i = k + dir
+        while (i in 0..2) { if (m[i] > 0) return i; i += dir }
+        return null
+    }
+
+    /**
+     * ux.md §15 step 1 (Pragma): the ▾-only button's visible width. Each side needs half of [arrowMin] (24 dp) when
+     * the touch area can reach over that side (a neighbour that isn't tappable), else half of [pageMin] (32 dp): next
+     * to a tappable neighbour (it never takes their touch area) or at the bar's edge. Never below the ▾ itself.
+     */
+    fun arrowOnlyMin(page: Int, m: List<Int>, arrow: Int, pageMin: Int, arrowMin: Int, tappable: Set<Int>): Int {
+        fun half(dir: Int) = neighbour(page, dir, m).let { n -> if (n != null && n !in tappable) arrowMin / 2 else pageMin - pageMin / 2 }
+        return minOf(pageMin, maxOf(arrow, half(-1) + half(1)))
+    }
+
+    /**
+     * How far the step-1 button's [touch] area reaches past its slot, before and after it. Over a neighbour that isn't
+     * tappable it may reach across the gap and onto that neighbour; next to a tappable one it stops at the gap's
+     * midpoint; at the bar's edge it doesn't reach out. What one side can't take, the other side takes if it can.
+     */
+    fun touchReach(page: Int, m: List<Int>, widths: Triple<Int, Int, Int>, gap: Int, touch: Int, tappable: Set<Int>): Pair<Int, Int> {
+        val ws = listOf(widths.first, widths.second, widths.third)
+        val need = (touch - ws[page]).coerceAtLeast(0)
+        fun cap(dir: Int) = neighbour(page, dir, m).let { n -> when { n == null -> 0; n in tappable -> gap / 2; else -> gap + ws[n] } }
+        val (cb, ca) = cap(-1) to cap(1)
+        var before = minOf(cb, need - need / 2); var after = minOf(ca, need - before)
+        before = minOf(cb, need - after)
+        return before to after
+    }
 
     /** ux.md §15 step 3: one named size down (`large` → `medium` → `small`); null for `small`, a numeric size or none. */
     fun smallerSize(name: String?): String? = when (name) { "large" -> "medium"; "medium" -> "small"; else -> null }
@@ -232,15 +270,24 @@ object TitleBarLayout {
      * ux.md §15.1 `warn_titlebar_fit` (status.json, so code, not strings.xml), only for step 2 and later. [path] is the
      * slot holding the date, [widthDp] the width the slots share, [size] the named size step 3 went down to.
      */
-    fun fitWarning(path: String, widthDp: Int, step: Int, size: String?): String? {
+    fun fitWarning(path: String, widthDp: Int, step: Int, size: String?, hasDate: Boolean = true): String? {
+        if (step < 2) return null
+        // warn_titlebar_fit_size (no date in the bar: step 2 is skipped, nothing is said about a date).
+        if (!hasDate) {
+            // Step 4 with no date to cut has no copy yet (open question in #167): only the size step is reported.
+            if (size == null) return null
+            return "$path: the title bar doesn't fit in its $widthDp dp on this phone, so fit step $step of 4 was used: the text size went down to $size. Checked on this phone. Use fewer or shorter slots."
+        }
         val what = when {
-            step < 2 -> return null
             step == 2 -> "the date was shortened"
             step == 3 -> "the date was shortened and the text size went down to $size"
             else -> "the date was shortened and cut off with …"
         }
-        return "$path: the title bar doesn't fit this phone's $widthDp dp width, so fit step $step of 4 was used: $what. Checked on this phone. Use a shorter date, like {date:d MMM}."
+        return "$path: the title bar doesn't fit in its $widthDp dp on this phone, so fit step $step of 4 was used: $what. Checked on this phone. Use a shorter date, like {date:d MMM}."
     }
+
+    /** The warn_titlebar_fit_size path: the bar's `content.slots` (the slot key dropped from any slot's path). */
+    fun slotsPath(anySlotPath: String?): String = anySlotPath?.substringBeforeLast('.') ?: "elements"
 
     fun textAlignOf(a: Align): TextAlign = when (a) { Align.START -> TextAlign.Start; Align.CENTER -> TextAlign.Center; Align.END -> TextAlign.End }
 
@@ -346,6 +393,8 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
     val datePatterns = bar.slots.values.flatten().filterIsInstance<Template.Tok>().filter { it.name == "date" }.map { it.pattern }
     val rungs = remember(bar, tappable) { TitleBarLayout.rungs(pageSlot != null, TitleBarLayout.dateLevels(datePatterns), smaller != null) }
     val reported = remember { arrayOfNulls<String>(1).also { it[0] = "\u0000" } }
+    // Step 1: the touch area's reach before/after the slot (set by the measure pass), so the ▾ stays centred on its slot.
+    val reach = remember { IntArray(2) }
 
     @Composable
     fun slot(s: Slot, r: TitleBarLayout.Rung) {
@@ -367,7 +416,11 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
             contentAlignment = if (hidden) androidx.compose.ui.Alignment.Center else androidx.compose.ui.Alignment.CenterStart,
         ) {
             if (!button) Text(text, style = style, textAlign = TitleBarLayout.textAlignOf(align), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth())
-            else if (hidden) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            else if (hidden) Row(Modifier.layout { m, c ->
+                val p = m.measure(c.copy(minWidth = 0))
+                val full = c.maxWidth
+                layout(full, p.height) { p.placeRelative(reach[0] + (full - reach[0] - reach[1] - p.width) / 2, 0) }
+            }, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Spacer(Modifier.width(4.dp))
                 Text("▾", style = style.copy(fontSize = 12.sp), maxLines = 1, softWrap = false)
             }
@@ -394,20 +447,24 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
             val slots = HashMap<TitleBarLayout.Rung, List<Measurable>>()
             fun content(r: TitleBarLayout.Rung) = slots.getOrPut(r) { subcompose(r) { slot(Slot.START, r); slot(Slot.CENTER, r); slot(Slot.END, r) } }
             // ux.md §15 overflow ladder, rerun on every layout: each rung is measured with the Text and style it's drawn with.
-            val fit = TitleBarLayout.ladder(w, gap, fixed, dates, page, TitleBarLayout.PAGE_MIN_DP.dp.roundToPx(), TitleBarLayout.TOUCH_DP.dp.roundToPx(), rungs) { r ->
+            // Pragma: the ▾ may drop to 24 dp; its touch area never takes another tappable target's (none in the bar today).
+            val fit = TitleBarLayout.ladder(w, gap, fixed, dates, page, TitleBarLayout.PAGE_MIN_DP.dp.roundToPx(), TitleBarLayout.TOUCH_DP.dp.roundToPx(), rungs,
+                arrowMin = TitleBarLayout.ARROW_MIN_DP.dp.roundToPx()) { r ->
                 content(r).mapIndexed { k, m -> if (bar.slots[Slot.entries[k]] == null) 0 else m.maxIntrinsicWidth(cs.maxHeight) }
             }
+            val hasDate = datePatterns.isNotEmpty()
             val warn = TitleBarLayout.fitWarning(
-                (dates.firstOrNull() ?: fixed.firstOrNull())?.let { bar.paths[Slot.entries[it]] } ?: "elements",
-                w.toDp().value.toInt(), fit.step, smaller)
+                if (hasDate) (dates.firstOrNull() ?: fixed.firstOrNull())?.let { bar.paths[Slot.entries[it]] } ?: "elements"
+                else TitleBarLayout.slotsPath(bar.paths.values.firstOrNull()),
+                w.toDp().value.toInt(), fit.step, smaller, hasDate)
             if (reported[0] != warn) { reported[0] = warn; onFit(warn) }
             val ms = content(fit.rung)
             val (g0, g1) = TitleBarLayout.gaps(fit.want[0], fit.want[1], fit.want[2], gap)
             val after = intArrayOf(g0, g1, 0)
             val (sw, cw, ew) = fit.widths
-            // Step 1: the ▾-only button spans the gaps beside it (its touch area), drawn centred over its own width.
-            val before = intArrayOf(0, g0, if (fit.want[1] > 0) g1 else g0)
-            val grow = { k: Int -> if (fit.rung.arrowOnly && k == page) before[k] to after[k] else 0 to 0 }
+            // Step 1: the ▾-only button's touch area reaches past its slot ([TitleBarLayout.touchReach]), the ▾ centred in it.
+            reach[0] = fit.touch.first; reach[1] = fit.touch.second
+            val grow = { k: Int -> if (k == page) fit.touch else 0 to 0 }
             val ps = listOf(sw, cw, ew).mapIndexed { k, width ->
                 val (l, rr) = grow(k)
                 ms[k].measure(Constraints.fixedWidth((width + l + rr).coerceAtLeast(0)).copy(minHeight = 0, maxHeight = cs.maxHeight))

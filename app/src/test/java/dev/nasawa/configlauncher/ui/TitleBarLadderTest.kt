@@ -41,7 +41,7 @@ class TitleBarLadderTest {
 
     private fun ladder(w: Int, pattern: String?, measure: (Rung) -> List<Int>, named: Boolean = true) =
         TitleBarLayout.ladder(w, gap, setOf(0, 2), setOf(0), 1, pageMin, touch,
-            TitleBarLayout.rungs(true, TitleBarLayout.dateLevels(listOf(pattern)), named), measure)
+            TitleBarLayout.rungs(true, TitleBarLayout.dateLevels(listOf(pattern)), named), measure = measure)
 
     /** The clock (end slot) gets at least the [clock] width it was measured at on the chosen rung: never truncated. */
     private fun assertClockWhole(fit: TitleBarLayout.Fit, clock: Int) {
@@ -70,7 +70,7 @@ class TitleBarLadderTest {
         assertEquals("19 Oct 2026", date(pattern, fit.rung.dateLevel))
         assertEquals(133, fit.widths.first)
         assertClockWhole(fit, 60)
-        assertTrue("the page keeps its touch area", fit.widths.second + 2 * gap >= touch)
+        assertTrue("the page keeps its 48 dp touch area", fit.touch.first + fit.widths.second + fit.touch.second >= touch)
         assertGaps(fit, 272)
     }
 
@@ -108,12 +108,67 @@ class TitleBarLadderTest {
         // One page: no ▾ and no action, so the {page} text is hidden (0 wide, no gap) and nothing else changes.
         val m = { r: Rung -> listOf(181, if (r.arrowOnly) 0 else 50, 60) }
         val rungs = TitleBarLayout.rungs(true, TitleBarLayout.dateLevels(listOf("EEE d MMM yyyy")), smaller = true)
-        val fit = TitleBarLayout.ladder(250, gap, setOf(0, 2), setOf(0), null, pageMin, touch, rungs, m)
+        val fit = TitleBarLayout.ladder(250, gap, setOf(0, 2), setOf(0), null, pageMin, touch, rungs, measure = m)
         assertEquals(1, fit.step); assertEquals(Triple(181, 0, 61), fit.widths)
         assertNull("step 1 alone writes no warning", TitleBarLayout.fitWarning("p", 250, fit.step, null))
-        // A page button on a side keeps the 48 dp touch area, counting the one gap beside it, and never more than 32 dp.
+        // A page button at the bar's edge: its touch area can't reach out there, so that side keeps 16 dp (half of 32),
+        // the side by the clock (not tappable) needs only 12 (half of 24): 28 dp.
         val side = TitleBarLayout.ladder(1000, gap, setOf(2), emptySet(), 0, pageMin, touch, listOf(Rung(1, arrowOnly = true))) { listOf(arrow, 0, 60) }
-        assertEquals(pageMin, side.want[0])
+        assertEquals(28, side.want[0])
+    }
+
+    private val arrowMin = TitleBarLayout.ARROW_MIN_DP
+
+    @Test fun step1ArrowDropsTo24WithA48dpTouchArea() {
+        // Pragma: between two neighbours that aren't tappable, the ▾ shows in 24 dp; the touch area reaches 12 dp each
+        // way, over the 8 dp gap and 4 dp onto the neighbour: 48 dp in all.
+        val m = listOf(133, arrow, 60)
+        assertEquals(arrowMin, TitleBarLayout.arrowOnlyMin(1, m, arrow, pageMin, arrowMin, emptySet()))
+        val (b, a) = TitleBarLayout.touchReach(1, m, Triple(133, 24, 60), gap, touch, emptySet())
+        assertEquals(12 to 12, b to a)
+        assertEquals(touch, b + 24 + a)
+        // Through the ladder: Grace's 272 dp bar now gives the button 24 dp at step 2.
+        val fit = TitleBarLayout.ladder(233, gap, setOf(0, 2), setOf(0), 1, pageMin, touch, listOf(Rung(1, arrowOnly = true))) { m }
+        assertEquals(1, fit.step); assertEquals(Triple(133, 24, 60), fit.widths); assertEquals(12 to 12, fit.touch)
+        assertGaps(fit, 233)
+        // Before step 1 the button keeps its text and gets no extra reach.
+        assertEquals(0 to 0, TitleBarLayout.ladder(400, gap, setOf(0, 2), setOf(0), 1, pageMin, touch, listOf(Rung(0))) { listOf(133, 50, 60) }.touch)
+    }
+
+    @Test fun step1NeverTakesATappableNeighboursTouchArea() {
+        val m = listOf(133, arrow, 60)
+        // Tappable start neighbour: that side keeps 16 dp (half of 32) and the reach stops at the gap's midpoint (4 dp);
+        // the other side makes up the rest, so it's still 48.
+        assertEquals(28, TitleBarLayout.arrowOnlyMin(1, m, arrow, pageMin, arrowMin, setOf(0)))
+        val (b, a) = TitleBarLayout.touchReach(1, m, Triple(133, 28, 60), gap, touch, setOf(0))
+        assertEquals(gap / 2, b); assertEquals(touch, b + 28 + a)
+        // Both neighbours tappable: 32 dp, reaching only to each gap's midpoint (40 dp touch; never over a target).
+        assertEquals(pageMin, TitleBarLayout.arrowOnlyMin(1, m, arrow, pageMin, arrowMin, setOf(0, 2)))
+        assertEquals(gap / 2 to gap / 2, TitleBarLayout.touchReach(1, m, Triple(133, 32, 60), gap, touch, setOf(0, 2)))
+        // At the bar's edge nothing reaches out: the clock side takes it all (over the gap and onto the clock text).
+        val edge = listOf(arrow, 0, 60)
+        assertEquals(0 to 20, TitleBarLayout.touchReach(0, edge, Triple(28, 0, 60), gap, touch, emptySet()))
+        // Never narrower than the ▾ itself.
+        assertEquals(30, TitleBarLayout.arrowOnlyMin(1, listOf(133, 30, 60), 30, pageMin, arrowMin, emptySet()))
+    }
+
+    @Test fun sizeOnlyWarningWhenTheBarHasNoDate() {
+        // No date: step 2 is skipped (no date levels), so the ladder goes 0, 1, 3.
+        assertEquals(listOf(0, 1, 3), TitleBarLayout.rungs(true, TitleBarLayout.dateLevels(emptyList()), smaller = true).map { it.step })
+        val m = { r: Rung -> if (r.smaller) listOf(90, if (r.arrowOnly) arrow else 50, 60) else listOf(120, if (r.arrowOnly) arrow else 50, 80) }
+        val fit = TitleBarLayout.ladder(220, gap, setOf(0, 2), emptySet(), 1, pageMin, touch,
+            TitleBarLayout.rungs(true, emptyList(), smaller = true), measure = m)
+        assertEquals(3, fit.step)
+        val path = TitleBarLayout.slotsPath("elements[0].content.slots.start")
+        assertEquals("elements[0].content.slots", path)
+        assertEquals("elements[0].content.slots: the title bar doesn't fit in its 220 dp on this phone, so fit step 3 of 4 was used: the text size went down to medium. Checked on this phone. Use fewer or shorter slots.",
+            TitleBarLayout.fitWarning(path, 220, fit.step, "medium", hasDate = false))
+        assertEquals("elements[0].content.slots: the title bar doesn't fit in its 220 dp on this phone, so fit step 3 of 4 was used: the text size went down to small. Checked on this phone. Use fewer or shorter slots.",
+            TitleBarLayout.fitWarning(path, 220, 3, "small", hasDate = false))
+        // Fits again: cleared. Step 1 alone: none.
+        assertNull(TitleBarLayout.fitWarning(path, 400, 0, "medium", hasDate = false))
+        assertNull(TitleBarLayout.fitWarning(path, 400, 1, "medium", hasDate = false))
+        assertEquals("pages[1].overrides.t-main.content.slots", TitleBarLayout.slotsPath("pages[1].overrides.t-main.content.slots.end"))
     }
 
     @Test fun step3StepsANamedSizeDown() {
@@ -139,8 +194,8 @@ class TitleBarLadderTest {
         val fit = ladder(130, pattern, measure(pattern, 12.0, clock = 60, pageText = 60))
         assertEquals(4, fit.step); assertTrue(fit.cut); assertTrue(fit.rung.smaller)
         assertClockWhole(fit, 45)
-        // The date gives up exactly what's missing: 130 − 45 − 32 − 16 = 37 of its 54.
-        assertEquals(Triple(37, 32, 45), fit.widths)
+        // The date gives up exactly what's missing: 130 − 45 − 24 (the ▾ alone) − 16 = 45 of its 54.
+        assertEquals(Triple(45, 24, 45), fit.widths)
         assertGaps(fit, 130)
     }
 
@@ -150,9 +205,9 @@ class TitleBarLadderTest {
         val path = "elements[0].content.slots.start"
         fun warn(w: Int) = ladder(w, pattern, m).let { TitleBarLayout.fitWarning(path, w, it.step, "medium") }
         assertNull(warn(400))
-        assertEquals("$path: the title bar doesn't fit this phone's 272 dp width, so fit step 2 of 4 was used: the date was shortened. Checked on this phone. Use a shorter date, like {date:d MMM}.", warn(272))
-        assertEquals("$path: the title bar doesn't fit this phone's 170 dp width, so fit step 3 of 4 was used: the date was shortened and the text size went down to medium. Checked on this phone. Use a shorter date, like {date:d MMM}.", warn(170))
-        assertEquals("$path: the title bar doesn't fit this phone's 130 dp width, so fit step 4 of 4 was used: the date was shortened and cut off with …. Checked on this phone. Use a shorter date, like {date:d MMM}.", warn(130))
+        assertEquals("$path: the title bar doesn't fit in its 272 dp on this phone, so fit step 2 of 4 was used: the date was shortened. Checked on this phone. Use a shorter date, like {date:d MMM}.", warn(272))
+        assertEquals("$path: the title bar doesn't fit in its 170 dp on this phone, so fit step 3 of 4 was used: the date was shortened and the text size went down to medium. Checked on this phone. Use a shorter date, like {date:d MMM}.", warn(170))
+        assertEquals("$path: the title bar doesn't fit in its 130 dp on this phone, so fit step 4 of 4 was used: the date was shortened and cut off with …. Checked on this phone. Use a shorter date, like {date:d MMM}.", warn(130))
         // The ladder reruns on every layout: back to a wide bar (rotation), the warning clears.
         assertNull(warn(500))
         assertNull(TitleBarLayout.fitWarning(path, 300, 0, null))
