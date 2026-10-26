@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,7 +42,7 @@ import dev.nasawa.configlauncher.consent.ConsentUi.Line
 fun consentText(s: String?): String? = s?.let { Labels.clean(it) }?.takeIf { it != "?" || s.trim() == "?" }
 
 @Composable
-private fun reasonText(r: ConsentUi.Reason) = stringResource(when (r) {
+internal fun reasonText(r: ConsentUi.Reason) = stringResource(when (r) {
     ConsentUi.Reason.NeedsOk -> R.string.tile_needs_ok
     ConsentUi.Reason.NeedsOkAgain -> R.string.tile_needs_ok_again
     ConsentUi.Reason.Off -> R.string.tile_off
@@ -106,26 +108,32 @@ fun ConsentTile(tile: ConsentUi.Tile, onReview: () -> Unit, modifier: Modifier =
 /**
  * A live card's cells (#142 S3-C.2). The #140 renderer draws its content here; until then it's an empty target that
  * keeps the cells from opening the home menu, with the long-press sheet and the `Permissions` TalkBack action (§17.7).
+ * No tap action, so TalkBack doesn't offer a "double-tap to activate" that does nothing (Grace #164 review).
  */
 @Composable
 fun LiveCardTarget(live: ConsentUi.Live, onLongPress: () -> Unit, onPermissions: () -> Unit, modifier: Modifier = Modifier) {
     val name = consentText(live.title) ?: live.id
     val said = stringResource(R.string.card_a11y, name)
     val permissions = stringResource(R.string.widget_action_permissions)
-    Box(modifier.fillMaxSize().combinedClickable(onClick = {}, onLongClick = onLongPress).clearAndSetSemantics {
+    Box(modifier.fillMaxSize().pointerInput(onLongPress) { detectTapGestures(onLongPress = { onLongPress() }) }.clearAndSetSemantics {
         contentDescription = said
+        onLongClick { onLongPress(); true }
         customActions = listOf(CustomAccessibilityAction(permissions) { onPermissions(); true })
     })
 }
 
-/** The widget long-press sheet (§17.3): name, `Widget · from launcher.json`, then `Review` or `Permissions`, `Edit layout`. */
+/**
+ * The widget long-press sheet (§17.3): name, `Widget · from launcher.json`, then `Review` or `Permissions`, `Edit layout`.
+ * [reason] is shown when the tile is too small to draw it (1×1): §17.3 "title and reason … on long-press".
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WidgetItemSheet(name: String, live: Boolean, onAction: (ConsentUi.SheetAction) -> Unit, onDismiss: () -> Unit) {
+fun WidgetItemSheet(name: String, live: Boolean, reason: ConsentUi.Reason? = null, onAction: (ConsentUi.SheetAction) -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text(name, style = MaterialTheme.typography.titleMedium)
             Text(stringResource(R.string.widget_sheet_source_file), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            reason?.let { Text(reasonText(it), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp)) }
             Spacer(Modifier.height(12.dp))
             ConsentUi.sheetActions(live).forEach { a ->
                 TextButton({ onAction(a) }, Modifier.fillMaxWidth()) {

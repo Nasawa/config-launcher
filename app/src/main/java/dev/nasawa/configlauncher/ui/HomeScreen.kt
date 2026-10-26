@@ -106,8 +106,12 @@ fun HomeScreen(vm: HomeViewModel) {
     val reviewCount = ConsentUi.count(consentReport)
     var reviewOpen by remember { mutableStateOf(false) }
     var detailFor by remember { mutableStateOf<String?>(null) }
-    var b9DismissedAt by remember { mutableIntStateOf(0) }
-    LaunchedEffect(reviewCount) { b9DismissedAt = ConsentUi.B9.follow(reviewCount, b9DismissedAt) }
+    // Persisted (Grace #164 review): a rotation, theme change or process death doesn't bring a dismissed B9 back.
+    var b9DismissedAt by remember { mutableIntStateOf(vm.store.prefs.b9DismissedAt) }
+    LaunchedEffect(b9DismissedAt) { if (vm.store.prefs.b9DismissedAt != b9DismissedAt) vm.store.prefs.b9DismissedAt = b9DismissedAt }
+    LaunchedEffect(reviewCount, ui.load.origin) {
+        b9DismissedAt = ConsentUi.B9.follow(reviewCount, b9DismissedAt, fromFile = ui.load.origin == dev.nasawa.configlauncher.store.Origin.FILE)
+    }
     fun openPrompt(id: String) { consentOpen = consent?.let { cs -> ConsentUi.open(ui.load.config, consentReport, cs::entry, id) } }
     var drawerSheet by remember { mutableStateOf<InstalledApp?>(null) }
     var hiddenSheet by remember { mutableStateOf(false) }
@@ -305,12 +309,17 @@ fun HomeScreen(vm: HomeViewModel) {
                     }
                 }
                 }
+                // The banner slot. §17.4: the count chip is a pill at its top end, beside the banners rather than a row of its own.
+                val b9 = ConsentUi.B9.visible(reviewCount, b9DismissedAt, otherBanner = ui.load.conflict || ui.load.issue != null)
+                Row(Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
                 if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
                 // B9 is the lowest-priority notice: only when no other banner is up. `×` collapses it to the chip.
-                val b9 = ConsentUi.B9.visible(reviewCount, b9DismissedAt, otherBanner = ui.load.conflict || ui.load.issue != null)
                 if (b9) B9Banner(reviewCount, onReview = { b9DismissedAt = reviewCount; reviewOpen = true }, onDismiss = { b9DismissedAt = reviewCount })
-                else if (reviewCount > 0) ReviewCountChip(reviewCount) { reviewOpen = true }
                 ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
+                }
+                if (!b9 && reviewCount > 0) ReviewCountChip(reviewCount) { reviewOpen = true }
+                }
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
                 // ux.md §1 / §14 R4: Home on home leaves edit mode (saving first), closes drawer and folder, goes to page 1.
@@ -365,7 +374,8 @@ fun HomeScreen(vm: HomeViewModel) {
                 changedSnack?.let { t ->
                     // #142: Allow was refused because the card changed while the sheet was open. Polite live region (TalkBack).
                     LaunchedEffect(t) { kotlinx.coroutines.delay(SHORT_SNACK_MS); if (changedSnack == t) changedSnack = null }
-                    Snackbar(Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite }) { Text(t) }
+                    // Over the review list or detail page when one is open (they're full-screen dialogs), else here.
+                    if (!reviewOpen && detailFor == null) Snackbar(Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite }) { Text(t) }
                 }
                 undoSnack?.let { u ->
                     UndoSnackbar(u, onUndo = {
@@ -470,7 +480,7 @@ fun HomeScreen(vm: HomeViewModel) {
         }
         if (updateHint) UpdateHintSheet { updateHint = false }
         widgetSheet?.let { w ->
-            WidgetItemSheet(w.name, w.live != null, onAction = { a ->
+            WidgetItemSheet(w.name, w.live != null, reason = w.tile?.takeIf { it.placement.w == 1 && it.placement.h == 1 }?.reason, onAction = { a ->
                 widgetSheet = null
                 when (a) {
                     ConsentUi.SheetAction.EDIT_LAYOUT -> editing = true
@@ -480,7 +490,8 @@ fun HomeScreen(vm: HomeViewModel) {
             }, onDismiss = { widgetSheet = null })
         }
         if (reviewOpen && consent != null) ReviewScreen(ConsentUi.review(ui.load.config, consentReport, consent.entries()),
-            onNeeds = { id -> openPrompt(id) }, onOpen = { id -> detailFor = id }, onDismiss = { reviewOpen = false })
+            onNeeds = { id -> openPrompt(id) }, onOpen = { id -> detailFor = id }, onDismiss = { reviewOpen = false },
+            notice = changedSnack.takeIf { detailFor == null })
         detailFor?.let { id ->
             val st = consentReport.firstOrNull { it.id == id }
             val d = if (consent == null || st == null) null else ConsentUi.detail(ui.load.config, st, consent.entry(id))
@@ -488,21 +499,20 @@ fun HomeScreen(vm: HomeViewModel) {
             val installed by vm.installedApps.collectAsStateWithLifecycle()
             fun changed() { scope.launch(kotlinx.coroutines.Dispatchers.IO) { vm.store.engine.consentChanged() } }
             DetailScreen(d, appLabel = { pkg -> installed.firstOrNull { it.packageName == pkg }?.label?.let(Labels::clean) ?: pkg },
+                // Undo puts back a snapshot; with none (no entry yet) there's nothing safe to put back, so no Undo is offered.
                 onTurnOff = {
-                    val before = consent.entry(id) ?: dev.nasawa.configlauncher.consent.Consent.Entry()
+                    val before = consent.entry(id)
                     consent.turnOff(id); changed()
-                    val undo: () -> Unit = { consent.undo(id, before, dev.nasawa.configlauncher.consent.Consent.Event.Kind.TurnedOff); changed() }
-                    undo
+                    before?.let { b -> { consent.undo(id, b, dev.nasawa.configlauncher.consent.Consent.Event.Kind.TurnedOff); changed() } }
                 },
                 onAllow = { if (d.allowNeedsNoPrompt) { consent.turnOn(id); changed() } else openPrompt(id) },
                 onForget = { consent.forget(id); changed() },
                 onRemoveSite = { o ->
-                    val before = consent.entry(id) ?: dev.nasawa.configlauncher.consent.Consent.Entry()
+                    val before = consent.entry(id)
                     consent.removeAlways(id, o)
-                    val undo: () -> Unit = { consent.undo(id, before, dev.nasawa.configlauncher.consent.Consent.Event.Kind.SiteRemoved) }
-                    undo
+                    before?.let { b -> { consent.undo(id, b, dev.nasawa.configlauncher.consent.Consent.Event.Kind.SiteRemoved) } }
                 },
-                onDismiss = { detailFor = null })
+                onDismiss = { detailFor = null }, notice = changedSnack)
         }
         if (titleBarSheet) TitleBarSheet(TitleBarEdits.state(ui.load.config),
             onToggle = { on -> TitleBarEdits.toggle(vm.store.engine.state.value.config, on)?.let(vm.store::edit) },

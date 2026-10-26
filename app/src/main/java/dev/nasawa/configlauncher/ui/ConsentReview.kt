@@ -59,15 +59,19 @@ fun B9Banner(count: Int, onReview: () -> Unit, onDismiss: () -> Unit) {
     }
 }
 
-/** Count chip: 20 dp pill at the top end of the banner slot, shield + number, tap → review list. */
+/**
+ * Count chip: 20 dp pill at the top end of the banner slot, shield + number, tap → review list. It sits beside the
+ * banners, not in a row of its own; the 48 dp touch target comes from Compose's minimum touch size around it.
+ */
 @Composable
 fun ReviewCountChip(count: Int, onClick: () -> Unit) {
     val said = pluralStringResource(R.plurals.chip_review_a11y, count, count)
-    Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp), contentAlignment = Alignment.CenterEnd) {
+    Box(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
         Row(
-            Modifier.heightIn(min = 48.dp).clickable(onClick = onClick).clearAndSetSemantics {
+            Modifier.widthIn(min = 48.dp).clickable(onClick = onClick).clearAndSetSemantics {
                 contentDescription = said; liveRegion = LiveRegionMode.Polite; onClick { onClick(); true }
             },
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(Modifier.height(20.dp).background(Color(0xCC263238), RoundedCornerShape(10.dp)).padding(horizontal = 8.dp),
@@ -83,15 +87,19 @@ fun ReviewCountChip(count: Int, onClick: () -> Unit) {
 // ---- Review list `Widget permissions` (§17.4) ----
 
 @Composable
-private fun FullScreen(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+private fun FullScreen(title: String, onDismiss: () -> Unit, snack: @Composable () -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
     Dialog(onDismiss, DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().systemBarsPadding()) {
+            Box(Modifier.fillMaxSize().systemBarsPadding()) {
+            Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onDismiss) { Text("←") }
                     Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading(); paneTitle = title })
                 }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp), content = content)
+            }
+            // Pinned to the bottom of the screen, outside the scroll, so it's on-screen at 320 dp, large font or a long page.
+            Box(Modifier.align(Alignment.BottomCenter).padding(8.dp)) { snack() }
             }
         }
     }
@@ -104,8 +112,9 @@ private fun Section(header: String) {
 
 /** No `Allow all` (Q-D2): each widget gets its own decision. Needs-OK rows open the prompt, the others the detail. */
 @Composable
-fun ReviewScreen(review: ConsentUi.Review, onNeeds: (String) -> Unit, onOpen: (String) -> Unit, onDismiss: () -> Unit) {
-    FullScreen(stringResource(R.string.review_title), onDismiss) {
+fun ReviewScreen(review: ConsentUi.Review, onNeeds: (String) -> Unit, onOpen: (String) -> Unit, onDismiss: () -> Unit,
+                 notice: String? = null) {
+    FullScreen(stringResource(R.string.review_title), onDismiss, snack = { notice?.let { NoticeSnack(it) } }) {
         if (review.empty) Text(stringResource(R.string.review_empty), color = secondary(), modifier = Modifier.padding(top = 24.dp))
         if (review.needs.isNotEmpty()) {
             Section(stringResource(R.string.review_section_needs, review.needs.size))
@@ -125,7 +134,7 @@ fun ReviewScreen(review: ConsentUi.Review, onNeeds: (String) -> Unit, onOpen: (S
 @Composable
 private fun ReviewRow(r: ConsentUi.Row, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onClick).padding(vertical = 8.dp).semantics(mergeDescendants = true) {}) {
-        Text(consentText(r.title) ?: r.id, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+        Text(consentText(r.title) ?: r.id, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         whereText(r.where)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = secondary()) }
         when (r.state) {
             Consent.State.NeedsApproval, Consent.State.NeedsApprovalAgain -> {
@@ -158,16 +167,23 @@ private data class DetailSnack(val text: String, val undo: (() -> Unit)?, val ms
 /**
  * Header, `This widget can:`, history, `Approved on this phone:`, `Always allowed sites`, then Turn off / Allow and
  * `Forget approval`. Nothing here writes launcher.json: consent is device-local. [onTurnOff] and [onRemoveSite]
- * return their Undo.
+ * return their Undo, or null when there's nothing to put back. [notice] is the home's changed-card snackbar.
  */
 @Composable
-fun DetailScreen(d: ConsentUi.Detail, appLabel: (String) -> String, onTurnOff: () -> (() -> Unit), onAllow: () -> Unit,
-                 onForget: () -> Unit, onRemoveSite: (String) -> (() -> Unit), onDismiss: () -> Unit) {
+fun DetailScreen(d: ConsentUi.Detail, appLabel: (String) -> String, onTurnOff: () -> (() -> Unit)?, onAllow: () -> Unit,
+                 onForget: () -> Unit, onRemoveSite: (String) -> (() -> Unit)?, onDismiss: () -> Unit, notice: String? = null) {
     val title = consentText(d.title) ?: d.id
     val res = androidx.compose.ui.platform.LocalResources.current
     var snack by remember { mutableStateOf<DetailSnack?>(null) }
     var confirmForget by remember { mutableStateOf(false) }
-    FullScreen(title, onDismiss) {
+    FullScreen(title, onDismiss, snack = {
+        snack?.let { s ->
+            LaunchedEffect(s) { kotlinx.coroutines.delay(s.ms); if (snack == s) snack = null }
+            Snackbar(Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                action = s.undo?.let { u -> { TextButton({ snack = null; u() }) { Text(stringResource(R.string.merge_undo)) } } },
+            ) { Text(s.text) }
+        } ?: notice?.let { NoticeSnack(it) }
+    }) {
         whereText(d.where)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = secondary()) }
         d.changed?.let { Text(withAuthor(stringResource(R.string.detail_changed_file, consentTime(it)), d.author), style = MaterialTheme.typography.bodySmall, color = secondary()) }
 
@@ -227,12 +243,8 @@ fun DetailScreen(d: ConsentUi.Detail, appLabel: (String) -> String, onTurnOff: (
                 Text(stringResource(R.string.detail_forget), color = MaterialTheme.colorScheme.error)
             }
         }
-        snack?.let { s ->
-            LaunchedEffect(s) { kotlinx.coroutines.delay(s.ms); if (snack == s) snack = null }
-            Snackbar(Modifier.padding(top = 16.dp).semantics { liveRegion = LiveRegionMode.Polite },
-                action = s.undo?.let { u -> { TextButton({ snack = null; u() }) { Text(stringResource(R.string.merge_undo)) } } },
-            ) { Text(s.text) }
-        }
+        // Room to scroll the last button clear of a snackbar pinned over the bottom.
+        if (snack != null || notice != null) Spacer(Modifier.height(72.dp))
     }
     if (confirmForget) ForgetDialog(title, onForget = {
         confirmForget = false
@@ -240,6 +252,10 @@ fun DetailScreen(d: ConsentUi.Detail, appLabel: (String) -> String, onTurnOff: (
         snack = DetailSnack(res.getString(R.string.forget_snack), null, SHORT_SNACK_MS)
     }, onCancel = { confirmForget = false })
 }
+
+/** The changed-card notice (consent_changed_snack) shown over a consent screen; HomeScreen times it out. */
+@Composable
+private fun NoticeSnack(text: String) = Snackbar(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) { Text(text) }
 
 /** 4 s snackbars with no Undo: `Approval forgotten.` (§17.6) and the changed-card notice. */
 const val SHORT_SNACK_MS = 4_000L

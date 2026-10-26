@@ -203,6 +203,10 @@ object ConsentUi {
      */
     object B9 {
         fun visible(count: Int, dismissedAt: Int, otherBanner: Boolean) = !otherBanner && count > 0 && count > dismissedAt
-        fun follow(count: Int, dismissedAt: Int) = minOf(count, dismissedAt)
+        /**
+         * The dismissed-at count follows the count down, so the next rise shows B9 again. Only a count read from the
+         * file ([fromFile]) lowers it: the default or last-good layout at a cold start mustn't reset a dismissal.
+         */
+        fun follow(count: Int, dismissedAt: Int, fromFile: Boolean = true) = if (fromFile) minOf(count, dismissedAt) else dismissedAt
     }
 }

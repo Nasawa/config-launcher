@@ -55,10 +55,18 @@ object Consent {
     const val HISTORY_MAX = 5
 
     /**
-     * What the card looks like apart from where it sits: everything but `page`/`x`/`y`/`w`/`h` and the capabilities.
-     * A change here with the same lines is a quiet `Layout changed in launcher.json` history row.
+     * What the card looks like apart from where it sits: everything but `page`/`x`/`y` and the capabilities. The span
+     * (`w`/`h`) counts (§17.2: a span change is cosmetic, a quiet `Layout changed in launcher.json` row). Hashed in a
+     * key-sorted form, so the same card re-serialised with its keys in another order isn't a change (Grace #164 review).
      */
-    fun look(card: JsonObject): Int = JsonObject(card.filterKeys { it !in setOf("page", "x", "y", "w", "h", "capabilities") }).toString().hashCode()
+    fun look(card: JsonObject): Int = sorted(JsonObject(card.filterKeys { it !in setOf("page", "x", "y", "capabilities") })).toString().hashCode()
+
+    /** [e] with every object's keys sorted (arrays keep their order: it's meaningful). */
+    private fun sorted(e: kotlinx.serialization.json.JsonElement): kotlinx.serialization.json.JsonElement = when (e) {
+        is JsonObject -> JsonObject(e.toSortedMap().mapValues { (_, v) -> sorted(v) })
+        is JsonArray -> JsonArray(e.map(::sorted))
+        else -> e
+    }
 
     /**
      * `source` as scheme + host: a bare host means https (dynamic-widgets.md §4 "Normalising source"). Scheme and host
