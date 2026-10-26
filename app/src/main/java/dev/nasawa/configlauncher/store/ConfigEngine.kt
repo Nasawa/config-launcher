@@ -551,10 +551,18 @@ class ConfigEngine(
         widgetReader.reload(source, t).also { _widgetData.value = widgetReader.snapshots(); emitStatus() }
     }
 
+    private val _warnings = MutableStateFlow<List<String>>(emptyList())
+    /**
+     * #159 (ux.md §15): the status.json `warnings` lines, in the same order and text. The on-phone Warnings list
+     * reads this, so the phone and the agent always see the same thing (consent and widget-data warnings included).
+     */
+    val warnings: StateFlow<List<String>> = _warnings.asStateFlow()
+
     private fun emitStatus() {
         val (result, errors, hash) = statusResult ?: return
         val report = if (result == "ok") consentReport() else emptyList()
         val warnings = if (result == "ok") statusWarnings + phoneWarnings() + report.mapNotNull { it.warning } + widgetReader.warnings(dataTargets()) else statusWarnings
+        _warnings.value = warnings
         val consentMap = if (consent == null) null else report.associate { it.id to (it.state.key to it.warning) }
         val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${warnings.hashCode()}|$backupError|$conflictFiles|$consentMap"
         if (key == lastStatusKey) return

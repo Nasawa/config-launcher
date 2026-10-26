@@ -66,12 +66,10 @@ fun HomeScreen(vm: HomeViewModel) {
     val homeScheme = HomeTheme.scheme()
     val themeHex = remember(homeScheme) { TitleBarLayout.themeHex(homeScheme) }
     LaunchedEffect(themeDark, themeHex) { vm.store.engine.setPhoneTheme(themeDark, themeHex) }
-    // #79: load warnings for the file that's showing (none while a problem banner is up: that's the last-good layout),
-    // then the phone-only theme-colour ones (#125), the same lines as status.json.
-    val warnings = remember(ui.load.config, ui.load.issue, themeDark, themeHex) {
-        if (ui.load.issue != null) emptyList()
-        else dev.nasawa.configlauncher.config.Elements.let { it.warnings(ui.load.config) + it.phoneWarnings(ui.load.config, themeDark) { t -> themeHex[t] } }
-    }
+    // #79/#159 (ux.md §15): the status.json `warnings` lines, taken from the engine so the list is the same
+    // (count, order, text; phone-only and consent warnings included). None while a problem banner is up: that's the last-good layout.
+    val statusWarnings by vm.store.engine.warnings.collectAsStateWithLifecycle()
+    val warnings = if (ui.load.issue != null) emptyList() else statusWarnings
     val ctx = LocalContext.current
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }
