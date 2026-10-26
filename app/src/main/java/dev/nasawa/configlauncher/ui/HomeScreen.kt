@@ -104,6 +104,11 @@ fun HomeScreen(vm: HomeViewModel) {
     val reviewCount = ConsentUi.count(consentReport)
     var reviewOpen by remember { mutableStateOf(false) }
     var detailFor by remember { mutableStateOf<String?>(null) }
+    // §17.6 Undo snackbars from the detail page. Held and timed here, not on the page, so leaving the page doesn't drop
+    // the Undo (Grace #164 recheck (5)): it's shown over the review list or home until it times out or is used.
+    var consentSnack by remember { mutableStateOf<ConsentSnack?>(null) }
+    consentSnack?.let { s -> LaunchedEffect(s) { kotlinx.coroutines.delay(s.ms); if (consentSnack == s) consentSnack = null } }
+    val undoConsent: () -> Unit = { consentSnack?.let { s -> consentSnack = null; s.undo?.invoke() } }
     // Persisted (Grace #164 review): a rotation, theme change or process death doesn't bring a dismissed B9 back.
     var b9DismissedAt by remember { mutableIntStateOf(vm.store.prefs.b9DismissedAt) }
     LaunchedEffect(b9DismissedAt) { if (vm.store.prefs.b9DismissedAt != b9DismissedAt) vm.store.prefs.b9DismissedAt = b9DismissedAt }
@@ -307,17 +312,16 @@ fun HomeScreen(vm: HomeViewModel) {
                     }
                 }
                 }
-                // The banner slot. §17.4: the count chip is a pill at its top end, beside the banners rather than a row of its own.
+                // The banner slot. §17.4: the count chip sits at its top end (and to the start of the B-banner ▲ chip
+                // when that's built), in a strip above the banners, so the banners keep the full width (Grace #164 (7)).
                 val b9 = ConsentUi.B9.visible(reviewCount, b9DismissedAt, otherBanner = ui.load.conflict || ui.load.issue != null)
-                Row(Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f)) {
+                if (!b9 && reviewCount > 0) Row(Modifier.fillMaxWidth().padding(end = 8.dp), horizontalArrangement = Arrangement.End) {
+                    ReviewCountChip(reviewCount, { reviewOpen = true })
+                }
                 if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
                 // B9 is the lowest-priority notice: only when no other banner is up. `×` collapses it to the chip.
                 if (b9) B9Banner(reviewCount, onReview = { b9DismissedAt = reviewCount; reviewOpen = true }, onDismiss = { b9DismissedAt = reviewCount })
                 ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
-                }
-                if (!b9 && reviewCount > 0) ReviewCountChip(reviewCount) { reviewOpen = true }
-                }
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
                 // ux.md §1 / §14 R4: Home on home leaves edit mode (saving first), closes drawer and folder, goes to page 1.
@@ -375,6 +379,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     // Over the review list or detail page when one is open (they're full-screen dialogs), else here.
                     if (!reviewOpen && detailFor == null) Snackbar(Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite }) { Text(t) }
                 }
+                if (!reviewOpen && detailFor == null) consentSnack?.let { ConsentSnackbar(it, undoConsent, Modifier.padding(8.dp)) }
                 undoSnack?.let { u ->
                     UndoSnackbar(u, onUndo = {
                         undoSnack = null
@@ -489,7 +494,7 @@ fun HomeScreen(vm: HomeViewModel) {
         }
         if (reviewOpen && consent != null) ReviewScreen(ConsentUi.review(ui.load.config, consentReport, consent.entries()),
             onNeeds = { id -> openPrompt(id) }, onOpen = { id -> detailFor = id }, onDismiss = { reviewOpen = false },
-            notice = changedSnack.takeIf { detailFor == null })
+            notice = changedSnack.takeIf { detailFor == null }, snack = consentSnack.takeIf { detailFor == null }, onUndo = undoConsent)
         detailFor?.let { id ->
             val st = consentReport.firstOrNull { it.id == id }
             val d = if (consent == null || st == null) null else ConsentUi.detail(ui.load.config, st, consent.entry(id))
@@ -510,7 +515,8 @@ fun HomeScreen(vm: HomeViewModel) {
                     consent.removeAlways(id, o)
                     before?.let { b -> { consent.undo(id, b, dev.nasawa.configlauncher.consent.Consent.Event.Kind.SiteRemoved) } }
                 },
-                onDismiss = { detailFor = null }, notice = changedSnack)
+                onDismiss = { detailFor = null }, snack = consentSnack, onSnack = { consentSnack = it }, onUndo = undoConsent,
+                notice = changedSnack)
         }
         if (titleBarSheet) TitleBarSheet(TitleBarEdits.state(ui.load.config),
             onToggle = { on -> TitleBarEdits.toggle(vm.store.engine.state.value.config, on)?.let(vm.store::edit) },

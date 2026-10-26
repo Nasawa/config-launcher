@@ -60,26 +60,23 @@ fun B9Banner(count: Int, onReview: () -> Unit, onDismiss: () -> Unit) {
 }
 
 /**
- * Count chip: 20 dp pill at the top end of the banner slot, shield + number, tap → review list. It sits beside the
- * banners, not in a row of its own; the 48 dp touch target comes from Compose's minimum touch size around it.
+ * Count chip: 20 dp pill at the top end of the banner slot, shield + number, tap → review list. The tap target is the
+ * clickable box itself, at least 48 × 48 dp (ux.md §12), with the pill centred in it; nothing outside it is padding.
  */
 @Composable
-fun ReviewCountChip(count: Int, onClick: () -> Unit) {
+fun ReviewCountChip(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val said = pluralStringResource(R.plurals.chip_review_a11y, count, count)
-    Box(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-        Row(
-            Modifier.widthIn(min = 48.dp).clickable(onClick = onClick).clearAndSetSemantics {
-                contentDescription = said; liveRegion = LiveRegionMode.Polite; onClick { onClick(); true }
-            },
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(Modifier.height(20.dp).background(Color(0xCC263238), RoundedCornerShape(10.dp)).padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Shield(Color.White, 12.dp)
-                Spacer(Modifier.width(4.dp))
-                Text("$count", color = Color.White, style = MaterialTheme.typography.labelSmall)
-            }
+    Box(
+        modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).clickable(onClick = onClick).clearAndSetSemantics {
+            contentDescription = said; liveRegion = LiveRegionMode.Polite; onClick { onClick(); true }
+        }.padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(Modifier.height(20.dp).background(Color(0xCC263238), RoundedCornerShape(10.dp)).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Shield(Color.White, 12.dp)
+            Spacer(Modifier.width(4.dp))
+            Text("$count", color = Color.White, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -113,8 +110,9 @@ private fun Section(header: String) {
 /** No `Allow all` (Q-D2): each widget gets its own decision. Needs-OK rows open the prompt, the others the detail. */
 @Composable
 fun ReviewScreen(review: ConsentUi.Review, onNeeds: (String) -> Unit, onOpen: (String) -> Unit, onDismiss: () -> Unit,
-                 notice: String? = null) {
-    FullScreen(stringResource(R.string.review_title), onDismiss, snack = { notice?.let { NoticeSnack(it) } }) {
+                 notice: String? = null, snack: ConsentSnack? = null, onUndo: () -> Unit = {}) {
+    // [snack]: a detail page's Undo, still live after that page closed (§17.6).
+    FullScreen(stringResource(R.string.review_title), onDismiss, snack = { snack?.let { ConsentSnackbar(it, onUndo) } ?: notice?.let { NoticeSnack(it) } }) {
         if (review.empty) Text(stringResource(R.string.review_empty), color = secondary(), modifier = Modifier.padding(top = 24.dp))
         if (review.needs.isNotEmpty()) {
             Section(stringResource(R.string.review_section_needs, review.needs.size))
@@ -161,28 +159,34 @@ private fun nounText(n: ConsentUi.Noun) = stringResource(when (n) {
 
 // ---- Widget detail (§17.6) ----
 
-/** A snackbar on the detail page: text, optional Undo, and how long it stays. */
-private data class DetailSnack(val text: String, val undo: (() -> Unit)?, val ms: Long)
+/**
+ * A consent snackbar (§17.6): text, optional Undo, and how long it stays. HomeScreen holds and times it, so its Undo
+ * outlives the detail page: it moves to the review list or home when the page closes (Grace #164 recheck (5)).
+ */
+data class ConsentSnack(val text: String, val undo: (() -> Unit)?, val ms: Long)
+
+/** Shows a [ConsentSnack]; `Undo` calls [onUndo], which clears the snack and runs its undo. Polite live region. */
+@Composable
+fun ConsentSnackbar(s: ConsentSnack, onUndo: () -> Unit, modifier: Modifier = Modifier) =
+    Snackbar(modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        action = s.undo?.let { { TextButton(onUndo) { Text(stringResource(R.string.merge_undo)) } } },
+    ) { Text(s.text) }
 
 /**
  * Header, `This widget can:`, history, `Approved on this phone:`, `Always allowed sites`, then Turn off / Allow and
  * `Forget approval`. Nothing here writes launcher.json: consent is device-local. [onTurnOff] and [onRemoveSite]
  * return their Undo, or null when there's nothing to put back. [notice] is the home's changed-card snackbar.
+ * [snack] is the caller's: the page sets it with [onSnack] and shows it, `Undo` calls [onUndo].
  */
 @Composable
 fun DetailScreen(d: ConsentUi.Detail, appLabel: (String) -> String, onTurnOff: () -> (() -> Unit)?, onAllow: () -> Unit,
-                 onForget: () -> Unit, onRemoveSite: (String) -> (() -> Unit)?, onDismiss: () -> Unit, notice: String? = null) {
+                 onForget: () -> Unit, onRemoveSite: (String) -> (() -> Unit)?, onDismiss: () -> Unit,
+                 snack: ConsentSnack?, onSnack: (ConsentSnack) -> Unit, onUndo: () -> Unit, notice: String? = null) {
     val title = consentText(d.title) ?: d.id
     val res = androidx.compose.ui.platform.LocalResources.current
-    var snack by remember { mutableStateOf<DetailSnack?>(null) }
     var confirmForget by remember { mutableStateOf(false) }
     FullScreen(title, onDismiss, snack = {
-        snack?.let { s ->
-            LaunchedEffect(s) { kotlinx.coroutines.delay(s.ms); if (snack == s) snack = null }
-            Snackbar(Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                action = s.undo?.let { u -> { TextButton({ snack = null; u() }) { Text(stringResource(R.string.merge_undo)) } } },
-            ) { Text(s.text) }
-        } ?: notice?.let { NoticeSnack(it) }
+        snack?.let { ConsentSnackbar(it, onUndo) } ?: notice?.let { NoticeSnack(it) }
     }) {
         whereText(d.where)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = secondary()) }
         d.changed?.let { Text(withAuthor(stringResource(R.string.detail_changed_file, consentTime(it)), d.author), style = MaterialTheme.typography.bodySmall, color = secondary()) }
@@ -225,7 +229,7 @@ fun DetailScreen(d: ConsentUi.Detail, appLabel: (String) -> String, onTurnOff: (
                     Text(host, modifier = Modifier.weight(1f))
                     TextButton({
                         val undo = onRemoveSite(o)
-                        snack = DetailSnack(res.getString(R.string.site_removed_snack, host), undo, UndoSnack.DURATION_MS)
+                        onSnack(ConsentSnack(res.getString(R.string.site_removed_snack, host), undo, UndoSnack.DURATION_MS))
                     }, Modifier.semantics { contentDescription = a11y }) { Text(stringResource(R.string.detail_site_remove)) }
                 }
             }
@@ -235,7 +239,7 @@ fun DetailScreen(d: ConsentUi.Detail, appLabel: (String) -> String, onTurnOff: (
         if (d.state == Consent.State.Off) Button(onAllow) { Text(stringResource(R.string.detail_allow)) }
         else if (d.state == Consent.State.Allowed) Button({
             val undo = onTurnOff()
-            snack = DetailSnack(res.getString(R.string.turned_off_snack, title), undo, UndoSnack.DURATION_MS)
+            onSnack(ConsentSnack(res.getString(R.string.turned_off_snack, title), undo, UndoSnack.DURATION_MS))
         }) { Text(stringResource(R.string.detail_turn_off)) }
         if (d.canForget) {
             val a11y = stringResource(R.string.detail_forget_a11y, title)
@@ -249,7 +253,7 @@ fun DetailScreen(d: ConsentUi.Detail, appLabel: (String) -> String, onTurnOff: (
     if (confirmForget) ForgetDialog(title, onForget = {
         confirmForget = false
         onForget()
-        snack = DetailSnack(res.getString(R.string.forget_snack), null, SHORT_SNACK_MS)
+        onSnack(ConsentSnack(res.getString(R.string.forget_snack), null, SHORT_SNACK_MS))
     }, onCancel = { confirmForget = false })
 }
 
