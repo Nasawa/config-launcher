@@ -1069,32 +1069,36 @@ These rules apply to every **grid-placed** element (`page`, `x`, `y`, `w`, `h`):
 `text` / `clock`. They don't apply to the title bar (§16.7.3).
 
 #### 16.7.1 `Remove from home` (elements)
-`{name}` below is the widget's name (§17.2): the title, or the element `id` when it has none.
+`<name>` below is the widget's name (§17.2): the title, or the element `id` when it has none.
 - **What it writes.** One write that deletes the element from root `elements[]` by `id` (two-way binding, §4.3). A
   grid-placed element lives on exactly one page (`page` is a page ID), so removal is never per-page: the element is
   gone from the file. The same write drops any `pages[].overrides["<id>"]` entry, so no dangling-override warning
   follows. Its cells are free at once (the next layout pass, no reflow, §4.2). Nothing else in the file changes.
 - **No confirm dialog.** Same as a folder (§14 R3): the write happens, then the snackbar
-  `Removed "{name}" from home.` [`Undo`]. TalkBack announces `"{name}" removed.`, and `Undo` is also reachable as a
+  `Removed "<name>" from home.` [`Undo`] (`removed_element`). TalkBack announces `"<name>" removed.`
+  (`removed_element_a11y`), and `Undo` is also reachable as a
   custom accessibility action on the snackbar, not only by touch.
 - **Undo window:** 10 s, or the user's Android accessibility **Time to take action** if that's longer:
   `AccessibilityManager.getRecommendedTimeoutMillis(10_000, FLAG_CONTENT_TEXT or FLAG_CONTENT_CONTROLS)`. The held
   device-local state (below) uses this same window.
 - **Undo** is a second write that puts the **same element object back verbatim** (same `id`, same keys, including
   ones this phone can't edit) at its old index in `elements[]`:
-  1. Its old cells, when they're all still free.
+  1. Its old cells, when they're all still free. No message: the widget reappearing is the feedback.
   2. Otherwise the **first free spot that fits its `w`×`h`** on the same page, scanning row-major from the top-left,
      then on the following pages in order. Only `page` / `x` / `y` change, never `w` / `h`. If its page is gone,
-     the scan starts on the first page. Undo never adds a page.
+     the scan starts on the first page. Undo never adds a page. Then a 4 s snackbar with no action,
+     `Put "<name>" back on <page>.` (`undo_element_moved`; TalkBack announces it), where `<page>` is the page name
+     as the title bar's `{page}` shows it, or `page <n>` for an untitled page.
   3. No room anywhere: nothing is written, the widget stays removed, and the snackbar says
-     `Couldn't put "{name}" back. There's no free space.` (TalkBack: the same text).
-  If the `id` is in the file again (an agent re-added it), Undo is refused with no write and the snackbar
-  `Couldn't restore "{name}": its space is taken.` Undo never fails silently.
+     `Couldn't put "<name>" back. There's no free space.` (`undo_element_no_room`; TalkBack: the same text).
+  If the `id` is in the file again (an agent re-added it during the window), Undo writes nothing and says so, as
+  information rather than a failure: `"<name>" is already back on home.` (`undo_element_back`). Undo never fails
+  silently.
 - **Device-local state is held for the Undo window.** On Remove, the phone sets aside everything it keeps for that
   `id`: the consent record (approval ceiling, `Always allow` sites, `Turn off`, history; §17.2, §17.6) and, for an
   `appWidget`, the binding in `bindings.json` and its `appWidgetId`. A successful Undo (at the old cells or a new
   spot) puts it all back, so a restored card is live with no prompt and a restored `appWidget` needs no rebind.
-  A refused or failed Undo doesn't release anything early: everything stays held until the window ends. When the
+  An Undo that writes nothing (`undo_element_back`, `undo_element_no_room`) doesn't release anything early: everything stays held until the window ends. When the
   window ends without a successful Undo (timeout, dismissed, the app closes), it's released: the consent record is
   deleted (the normal GC for an element that left the file, dynamic-widgets.md), and the binding is deleted with
   `deleteAppWidgetId`. Load-time GC never sees a held record, and a held record never applies to an element the
@@ -1106,20 +1110,21 @@ These rules apply to every **grid-placed** element (`page`, `x`, `y`, `w`, `h`):
   `status.json` on the next write, and its data file is still where the agent left it.
 
 #### 16.7.2 `Move to…` (elements)
-- **Same picker as items** (§12): `Move {name}`, `Page n of N`, `Row`, `Column`, `Move`. Row and column pick the
+- **Same picker as items** (§12): `Move <name>`, `Page n of N`, `Row`, `Column`, `Move`. Row and column pick the
   **top-left** cell; `w`/`h` never change (that's `Resize…`, §16.4). Positions where the `w`×`h` rectangle would
   leave the grid or cover a taken cell can't be picked. No reflow and no swapping: unlike a 1×1 item, an element
   never pushes anything aside.
 - **No room.** A page with no fully free spot for the element's `w`×`h` is still listed, but **disabled**, with
   the reason `No room` (TalkBack: `Page 2 of 3, No room, disabled`). When no page has room, the `Move to…` action
   itself is disabled with the reason `No room`. Android custom accessibility actions can't be greyed out, so the
-  TalkBack action stays listed as `Move to…, No room` and only announces `No room` when used.
+  TalkBack action stays listed as `Move to…, No room`. Activating it (or the disabled item) changes nothing and
+  announces `No room on any page.` (`move_element_no_room_any`).
 - **What it writes.** One write of the element's `page` / `x` / `y`. Same `id`, so the approval ceiling, `Always allow`
   sites, `Turn off`, the `appWidget` binding and the data file all carry over. Placement isn't part of the consent
   fingerprint (dynamic-widgets.md), so a move never re-prompts. Moving to another page doesn't change that.
 - **Collisions at write time.** The write is replayed against the current file (§4.4). If the target cells are taken,
   outside the grid, or the page is gone by then, nothing is written and the snackbar says
-  `Couldn't move "{name}": that space is taken.` The widget stays where it was.
+  `Couldn't move "<name>": that space is taken.` (`move_element_taken`). The widget stays where it was.
 - **Drag** in edit mode follows the same rules: a widget lands only on a fully free rectangle (§16.4), one write.
 - **Never offered for elements:** `Move to dock`, `Add to folder…`, `Hide` (those are for 1×1 app items).
 
@@ -1136,16 +1141,18 @@ These rules apply to every **grid-placed** element (`page`, `x`, `y`, `w`, `h`):
 The title bar is turned off with `Show title bar` (§15.2), which writes `enabled: false` and never deletes it. A
 disabled or skipped grid element is changed in the file only. The phone never removes what it can't show.
 
-Strings (new; `{name}` = the §17.2 name):
+Strings (new; `%1$s` placeholders as in §17.13):
 
-| ID | Text |
-|---|---|
-| `removed_element` | `Removed "{name}" from home.` [`Undo`] |
-| `removed_element_a11y` | `"{name}" removed.` (TalkBack announcement) |
-| `undo_element_no_room` | `Couldn't put "{name}" back. There's no free space.` |
-| `undo_element_refused` | `Couldn't restore "{name}": its space is taken.` (the `id` was re-added to the file) |
-| `move_element_taken` | `Couldn't move "{name}": that space is taken.` |
-| `move_element_no_room` | `No room` (reason on a disabled page in the picker, and on a disabled `Move to…`) |
+| ID | Text | Placeholders | Where |
+|---|---|---|---|
+| `removed_element` | `Removed "%1$s" from home.` | 1 = name (title, or the element id, §17.2) | Snackbar with `Undo` |
+| `removed_element_a11y` | `"%1$s" removed.` | 1 = name | TalkBack announcement of the remove |
+| `undo_element_moved` | `Put "%1$s" back on %2$s.` | 1 = name, 2 = page name as `{page}` shows it, else `page %d` | 4 s snackbar, no action; only when Undo lands off the old cells |
+| `undo_element_no_room` | `Couldn't put "%1$s" back. There's no free space.` | 1 = name | Snackbar; Undo found no room |
+| `undo_element_back` | `"%1$s" is already back on home.` | 1 = name | Snackbar; the id was re-added during the window (information) |
+| `move_element_taken` | `Couldn't move "%1$s": that space is taken.` | 1 = name | Snackbar; target taken at write time |
+| `move_element_no_room` | `No room` | — | Reason on a disabled page in the picker, and on a disabled `Move to…` |
+| `move_element_no_room_any` | `No room on any page.` | — | Announced when the disabled `Move to…` is activated |
 
 The `Undo` button is the existing one; its window is the one above (10 s or longer).
 
