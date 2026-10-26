@@ -202,7 +202,7 @@ def severity(cid, m):
     fs = float(m.get('font_scale', '1.0'))
     tier = m.get('tier', 'phone')
     pending = {'G5b', 'G5c'}
-    advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D3', 'X1'}
+    advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D1', 'D3', 'X1'}
     if cid in pending:
         return 'pending'
     if cid == 'F1':
@@ -312,6 +312,11 @@ def run_checks(d):
         clipped = [n.text for n in sb if 0 < n.h / s < 12 * fs * 0.85 and n.b[3] < H - 2]
         add('D3', 'Drawer labels not clipped (rows above the nav bar)', not clipped,
             f'{len(sb)} labels, clipped: {clipped[:5]}', 'ux.md §2.1, §12 Font scaling')
+        sf = next((n for n in dr if n.text == 'Search apps' or (n.desc or '').startswith('Search apps')), None)
+        if sf is not None:
+            # ux.md §2.1: the drawer opens full height, so the search field sits near the top (#179: half sheet)
+            add('D1', 'Drawer opens full height', sf.b[1] <= H * 0.25,
+                f'search field top y {sf.b[1]} of {H} ({sf.b[1] * 100 // max(H, 1)}%)', 'ux.md §2.1; #179')
 
     # F6 Pages switch
     pg = load(os.path.join(d, 'pages.xml')); h2 = home['home2']

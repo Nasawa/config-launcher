@@ -91,7 +91,7 @@ is `SKIP`. On a real run, a SKIP of a blocking check makes the point `INCOMPLETE
 | ID | Check | Pass |
 |---|---|---|
 | X0 | Requested display size applied | The `wm size` override in `run.txt` equals the point's `size_px`. Android clamps an override to a multiple of the AVD panel, so CI sets a panel per shard (§5). A FAIL means the point ran at another size, so its other results describe that size, not the point |
-| X1 | Requested night mode applied | advisory. `cmd uimode night` reads back the variant's theme. The API 29 image ignored `cmd uimode night yes` in run 1 (as in #150), so the driver retries with `settings put secure ui_night_mode`, and TH1 is judged against the theme that really applied |
+| X1 | Requested night mode applied | advisory. `cmd uimode night` reads back the variant's theme. The API 29 image ignored `cmd uimode night yes` in run 1 (as in #150), so the driver retries with `settings put secure ui_night_mode`, and TH1 is judged against the theme that really applied. The retry didn't help in run 2 either (all four API 29 v2 points stayed light), so the API 29 v2 points effectively test font 1.3 in light; dark is covered by the eight API 35/36 v2 points. Switching it on API 29 likely needs a reboot or the Settings UI, which isn't worth the time per point |
 
 **Title bar** (both pages; ux.md §15 "Overflow ladder (narrow phones, #149)"):
 
@@ -115,6 +115,7 @@ is `SKIP`. On a real run, a SKIP of a blocking check makes the point `INCOMPLETE
 | G5a | Count chip (c1 only) | The first load shows the B9 banner, so the driver taps its `×` (ux.md §17.4: "`×` collapses it into the count chip") and dumps `home-chip`. The chip is present there with a ≥ 48×48 dp hit area (§17.4, §12) |
 | G5b | Chip shares the page-label row (c1, `home-chip`) | **pending** #175 (merged spec, decides #173): collapsed chips share one row with the page label. Advisory until the #175 implementation lands (Sprite, #178 at the time of writing), then blocking |
 | G5c | Labels whole or hidden with the banner/chip showing (c1) | **pending** #175: grid labels are whole or hidden, never cut. Advisory until the #175 implementation lands, then blocking. Expected to fail until then (pr174 item e; run 1: 4.5 dp labels at s320-a51-c1) |
+| D1 | Drawer opens full height | advisory (ux.md §2.1). The `Search apps` field's top is in the top 25 % of the screen. Added after run 2 for #179 (the drawer opens as a half sheet, field at 55–61 %) |
 | D3 | Drawer labels not clipped | advisory (§2.1, §12: the drawer always shows labels). Rows cut by the real screen bottom (the list scrolls) don't count |
 | TH1 | Theme | advisory. The drawer surface pixel is within 16/255 of `#141218` (dark) or `#FEF7FF` (light), per ux.md §12.1 Palettes. Needs Pillow |
 | P1 | `TotalTime` recorded | advisory. Emulator timing is not PF-2, which is device-only (test-plan §15.3) |
@@ -143,7 +144,7 @@ The policy is coded in `severity()` in `screen_matrix_check.py`.
   screenshots.
 - Everything at font 2.0 except F1 (crashes always block). Decided: ux.md §12 allows hidden labels at ≥ 150 % and
   Q-S5 (fitting cells at 200 %) is open, so at 2.0 only a crash or ANR is a dev7 blocker; the rest needs a human look.
-- T5, T6, A1, D3, TH1, X1 and P1.
+- T5, T6, A1, D1, D3, TH1, X1 and P1.
 
 **Pending:** G5b and G5c: advisory until the #175 implementation lands (#178 at the time of writing), then blocking.
 The policy is approved as written (Christopher, #177).
@@ -181,7 +182,11 @@ so dev7 can't be tagged with the ladder broken.
 - **Measured, run 1** ([40373955590](https://github.com/Nasawa/config-launcher/actions/runs/40373955590), label
   trigger on #177): **≈ 56 runner-minutes (≈ 61 billed with per-job rounding) and 16 min wall clock**. That is low:
   most large points ran clamped to smaller screens and F5b was skipped on 17 points, so expect more after the fixes.
-  The rerun will replace these numbers. Minutes are free while the repo is public; a private repo would bill each run.
+  Minutes are free while the repo is public; a private repo would bill each run.
+- **Measured, run 2** ([40377723279](https://github.com/Nasawa/config-launcher/actions/runs/40377723279), dispatch on
+  bee4fe3, all points at their real size): **≈ 59 runner-minutes (≈ 63 billed) and ≈ 18 min wall clock**
+  (build 1.5 min, shards 9–15.5 min, tablets the longest). So ≈ 2 min per point, boot included;
+  the estimate above is about 2× too high on minutes. Use ≈ 60 runner-minutes and ≈ 20 min wall for the full matrix.
 
 **On-box fallback** (the box AVD has no working KVM, so it runs software-only emulation and is very slow):
 - Use only when CI is unavailable, and run only the gate subset: `scripts/screen-matrix.sh --gate --settle 20 --apk <apk> --out <dir>`.
@@ -224,6 +229,16 @@ The script changes the display size, density, font scale, night mode and rotatio
   - Re-judging run 1's dumps with the fixed checker (`evidence/matrix/run1/rejudged/`) leaves only X0, the known
     label cuts, TH1 and the skipped F5b; F5/F5b/G5a and the API 29 night-mode retry need the rerun.
   - Also harness: the API 29 points asked for dark but stayed light (X1).
+- **Run 2** (CI run 40377723279, bee4fe3, 31 points): 27 PASS, 4 FAIL, 0 INCOMPLETE. Triage in the #177 comment and
+  `evidence/matrix/run2/`:
+  - The run-1 fixes worked: X0 passes at all 31 points (real sizes applied), F5 and F5b pass at all 31, G5a finds the
+    chip at both c1 points, TH1 runs (Pillow) and D3 passes everywhere.
+  - F3 failed at both c1 points. That was the harness: collapsing the banner moved the grid up ~28 px and the
+    long-press still used `home1`'s coordinates. The driver now uses the latest home dump (`home-chip` when present).
+  - Known: s320-ldpi v1/v2 grid labels cut (G1, #173/#175/#178); G1 advisory at s320-ldpi-v3 and t7-land v1/v2; G5b
+    at both c1 points (pending #175); TH1 at the 24 light points (#180); the half-sheet drawer at every point (#179,
+    now D1). G5c passed at both c1 points once they ran at the real size.
+  - X1: the API 29 night retry still didn't apply dark (see X1 above).
 
 ## 7. Open questions
 

@@ -124,15 +124,17 @@ run_point() {
   if [ "$fixture" != launcher.json ] && tap "$d/home1.xml" desc '^Dismiss$'; then
     pause 2; dump "$d" home-chip      # §17.4: × collapses the banner into the count chip
   fi
+  # later taps use the latest home dump: collapsing the banner moves the grid up (run 2: F3 missed at the c1 points)
+  hd="$d/home1.xml"; [ -s "$d/home-chip.xml" ] && hd="$d/home-chip.xml"
 
   # F3 long-press a home item (label, or the first tile when labels are hidden at large font scales)
-  if longpress "$d/home1.xml" text '^QA Settings$' || longpress "$d/home1.xml" desc '^QA Settings'; then
+  if longpress "$hd" text '^QA Settings$' || longpress "$hd" desc '^QA Settings'; then
     pause 2; dump "$d" lp-item
     sh_ dumpsys activity activities | grep -m1 -E 'topResumedActivity|mResumedActivity' > "$d/top-lp-item.txt"
     sh_ input keyevent BACK; pause 2
   fi
   # F4 long-press empty grid space
-  if p=$($CHECK find-empty "$d/home1.xml" "$dens"); then
+  if p=$($CHECK find-empty "$hd" "$dens"); then
     read -r x y <<< "$p"; sh_ input swipe "$x" "$y" "$x" "$y" 800; pause 2; dump "$d" lp-empty
     sh_ input keyevent BACK; pause 2
   fi
@@ -142,7 +144,7 @@ run_point() {
   sh_ input swipe "$cx" $((sh * 70 / 100)) "$cx" $((sh * 25 / 100)) 300; pause
   dump "$d" drawer; echo swipe > "$d/drawer-via.txt"
   if ! grep -q 'Search apps' "$d/drawer.xml"; then
-    home; tap "$d/home1.xml" text '^Apps$' && { pause; dump "$d" drawer; echo button > "$d/drawer-via.txt"; }
+    home; tap "$hd" text '^Apps$' && { pause; dump "$d" drawer; echo button > "$d/drawer-via.txt"; }
   fi
   if longpress "$d/drawer.xml" text '^(Calendar|Camera|Clock|Contacts|Settings)$'; then pause 2; dump "$d" drawer-lp; fi
   sh_ input keyevent BACK; pause 1; home
