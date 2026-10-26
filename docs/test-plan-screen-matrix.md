@@ -252,7 +252,7 @@ The script changes the display size, density, font scale, night mode and rotatio
 - G5b/G5c stay advisory until the #175 implementation lands, then block.
 - The generic 7" and 10" tablet profiles stay and remain the gate.
 - Q1, resolved by Christopher (2026-10-26): his onn. 10.1" Tablet (model 100135925, MediaTek, Android 15) is only an
-  optional real-device spot check on Android 15, not a matrix target or a design driver (§3).
+  optional real-device spot check on Android 15, not a matrix target or a design driver (§1).
 
 **Resolved by QA** (reasons inline; say if you disagree):
 - Font 2.0: advisory except crashes (§4). ux.md §12 allows hidden labels at ≥ 150 % and Q-S5 is open.
