@@ -97,6 +97,38 @@ class WarningsListTest {
         assertEquals(emptyList<String>(), e.warnings.value)
     }
 
+    @Test fun failedFolderMoveBringsTheListStraightBack() = runBlocking {
+        // #173 L3: the write fails, the engine rolls back, and the old folder's list is back at once (no poll).
+        val dir = tmp.newFolder()
+        val src = LocalFileSource(dir); src.file.writeText(launcher())
+        val e = ConfigEngine(src, LastGoodStore(tmp.newFolder()), 0, consent = ConsentStore(tmp.newFolder()))
+        e.poll(force = true)
+        val before = assertSame(dir, e)
+        assertTrue(before.isNotEmpty())
+        val broken = object : ConfigSource by LocalFileSource(tmp.newFolder()) {
+            override fun write(bytes: ByteArray) { throw java.io.IOException("read-only") }
+        }
+        assertFalse(e.moveTo(broken, useMine = true))
+        assertSame(src, e.source)
+        assertEquals(before, e.warnings.value)
+        assertEquals(before, assertSame(dir, e))
+        // And the list keeps following status.json afterwards.
+        e.setPhoneTheme(false, mapOf("primary" to "#303030"))
+        assertEquals(before.size + 1, assertSame(dir, e).size)
+    }
+
+    @Test fun folderMoveListsTheNewFoldersWarnings() = runBlocking {
+        val dir = tmp.newFolder()
+        val src = LocalFileSource(dir); src.file.writeText(launcher())
+        val e = ConfigEngine(src, LastGoodStore(tmp.newFolder()), 0, consent = ConsentStore(tmp.newFolder()))
+        e.poll(force = true)
+        val to = tmp.newFolder()
+        assertTrue(e.moveTo(LocalFileSource(to), useMine = true))
+        // Same layout, new folder: the list matches the new folder's status.json.
+        e.poll(force = true)
+        assertTrue(assertSame(to, e).isNotEmpty())
+    }
+
     @Test fun rejectedFileHasNoWarningsOnEitherSide() = runBlocking {
         val dir = tmp.newFolder()
         val src = LocalFileSource(dir); src.file.writeText(launcher())
