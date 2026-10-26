@@ -62,24 +62,34 @@ object ReducedMotion {
 @Composable
 fun PageLabel(pages: List<ResolvedPage>, current: Int, enabled: Boolean, backdrop: Boolean, onOpen: () -> Unit) {
     if (!PageList.showLabel(pages)) return
+    val maxW = (LocalConfiguration.current.screenWidthDp - 32).coerceAtLeast(96).dp
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        PageLabelButton(pages, current, enabled, backdrop, Modifier.widthIn(max = maxW), onOpen)
+    }
+}
+
+/**
+ * The §1.3 page label itself (text, ▾ and its touch area), without the full-width row around it, so the §6.1 notice
+ * row (#173 L1) can place it next to its chips. The caller limits its width with [modifier] or its constraints.
+ */
+@Composable
+fun PageLabelButton(pages: List<ResolvedPage>, current: Int, enabled: Boolean, backdrop: Boolean, modifier: Modifier = Modifier, onOpen: () -> Unit) {
+    if (pages.isEmpty()) return
     val i = current.coerceIn(0, pages.size - 1)
     val name = PageList.title(pages[i]) ?: stringResource(R.string.page_untitled, i + 1)
     val tappable = PageList.tappable(pages)
     val spoken = if (tappable) stringResource(R.string.page_a11y, name, i + 1, pages.size) else name
     val hint = stringResource(R.string.pages_hint)
-    val maxW = (LocalConfiguration.current.screenWidthDp - 32).coerceAtLeast(96).dp
     val style = TextStyle(color = Color.White, fontSize = 14.sp, shadow = Shadow(Color(0x80000000), Offset(0f, 1f), 1f))
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Row(
-            Modifier.widthIn(min = if (tappable) 96.dp else 0.dp, max = maxW).heightIn(min = if (tappable) 48.dp else 0.dp)
-                .then(if (tappable) Modifier.clickable(enabled = enabled, onClickLabel = hint, role = Role.Button, onClick = onOpen) else Modifier)
-                .semantics(mergeDescendants = true) { contentDescription = spoken },
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
-        ) {
-            Row(LabelBackdrop.modifier(backdrop), verticalAlignment = Alignment.CenterVertically) {
-                Text(name, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (tappable) Text(" ▾", style = style.copy(fontSize = 12.sp))
-            }
+    Row(
+        modifier.widthIn(min = if (tappable) 96.dp else 0.dp).heightIn(min = if (tappable) 48.dp else 0.dp)
+            .then(if (tappable) Modifier.clickable(enabled = enabled, onClickLabel = hint, role = Role.Button, onClick = onOpen) else Modifier)
+            .semantics(mergeDescendants = true) { contentDescription = spoken },
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+    ) {
+        Row(LabelBackdrop.modifier(backdrop), verticalAlignment = Alignment.CenterVertically) {
+            Text(name, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            if (tappable) Text(" ▾", style = style.copy(fontSize = 12.sp))
         }
     }
 }

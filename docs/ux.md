@@ -340,6 +340,12 @@ apps in the drawer.
   grid: an overlay would cover the top-end cell's icon and steal its taps. With no chip, the row is gone (or is just the
   page label, as before). The row has a 12 dp end margin like the banner. Each chip keeps its 48 dp touch area inside
   the row, and the page label's touch area stops 8 dp short of the first chip.
+  - **Single titled page:** its label isn't tappable (§1.3), so it stays plain text, vertically centred in the 48 dp
+    row. The row is taller than the label alone while a chip shows; that's expected.
+  - **With a §15 title bar** (it replaces the page label): the notice row is its own 48 dp row **above** the title bar
+    and costs grid height while a chip is up. The chips never go inside the bar. If they did, the bar's width, and so its
+    fit steps and `warn_titlebar_fit` warnings in `status.json`, would change with consent state. A file's warnings
+    must depend only on the file and the phone.
 - When fixed (a valid version appears): the banner clears automatically and the snackbar `Layout loaded.` shows.
 - TalkBack: announced once when it appears (polite live region).
 
@@ -661,7 +667,8 @@ Text needs **4.5:1**, icons, outlines and controls **3:1**.
 | Dialog text / secondary | `#E6E0E9` / `#CAC4D0` | 11.08 / 8.42 | `#1D1B20` / `#49454F` | 13.94 / 7.63 |
 | Dialog buttons (`primary`) on the dialog | `#D0BCFF` | 8.42 | `#6750A4` | 5.26 |
 | Outline (text fields, checkboxes, dashed consent tile) on dialog / on surface | `#938F99` | 4.53 / 5.87 | `#79747E` | 3.72 / 4.33 |
-| Snackbar (`inverseSurface`) text / action | `#322F35` / `#6750A4` on `#E6E0E9` | 10.17 / 4.97 | `#F5EFF7` / `#D0BCFF` on `#322F35` | 11.65 / 7.73 |
+| Snackbar (`inverseSurface`, so it's light in dark and dark in light; not swapped) text / action | `#322F35` / `#6750A4` on `#E6E0E9` | 10.17 / 4.97 | `#F5EFF7` / `#D0BCFF` on `#322F35` | 11.65 / 7.73 |
+| Top-row `Apps`, `⋮`, `Done` (on the wallpaper, #182) | white with the home-label shadow (1 dp, 50 % black), plus the 60 % scrim when `Label backdrop` is on (§1.1) | as labels | same as dark: the wallpaper doesn't change with the theme | as labels |
 | Scrim behind folders and dialogs | black 50 % | | black 50 % (same: it dims the wallpaper either way) | |
 | Banner, warning (B1, B2, B4–B9) | `#4A3B00` | | `#FFF0C2` | |
 | Warning banner text / ▲ icon / buttons | `#FFFFFF` / `#FFC400` / `#D0BCFF` | 10.96 / 6.86 / 6.43 | `#3D2E00` / `#7A5900` / `#5C4300` | 11.64 / 5.68 / 8.19 |
