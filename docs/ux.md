@@ -219,8 +219,8 @@ Copy: sheet title `Pages`; untitled row and label `Page %1$d`; TalkBack `%1$s, p
   the status bar. In landscape, the display cutout inset is applied too (`safeDrawing` covers it), so no tile or the
   `⋮` sits under a cutout.
 - **Keyboard.** The search field stays pinned at the top and visible while the keyboard is up (`imePadding` on the
-  search area), and the list's bottom padding uses the larger of the keyboard and nav bar insets, so the last result
-  can be scrolled above the keyboard.
+  search area), and the grid's bottom `contentPadding` is `WindowInsets.ime.union(WindowInsets.navigationBars)`
+  (the larger of the keyboard and nav bar insets), so the last result can be scrolled above the keyboard.
 - **Close.** Swipe down closes only when the list is **scrolled to the top** (nested scroll: a downward drag first
   scrolls the list back to the top, and only an overscroll past the top drags the drawer down). Back and predictive back
   close it (keyboard first, §2). Home and launching an app close it too (§1.4).
@@ -816,8 +816,11 @@ list** dialog:
   `warn_consent_again`, `warn_consent_off`) and the widget data warnings (`warn_data_missing`, later
   `warn_cert_changed`), in the same order as `status.json` `warnings`, and `N` in `Layout loaded · N warnings` counts
   them. The phone and the agent must never see different lists. A consent line is plain text here, with no `Review`
-  action: approving stays on the tile, B9 and the review list (§17). Both lists should come from one function, so a
-  new warning source can't reach one and miss the other.
+  action: approving stays on the tile, B9 and the review list (§17). Consent lines **stay** in this list after the
+  #142 badge and the B9 banner exist. **Wiring (Archimedes):** `ConfigEngine` owns the list. It computes the full
+  list once per load (`statusWarnings` + `phoneWarnings` + consent report + widget data) with a pure function inside
+  the engine, so it's testable, exposes that list as state, and writes the same list to `status.json`. `HomeScreen`
+  only reads that state and never calls a second function from the UI.
 - Buttons `Copy` and `Close`. `Copy` puts the file name, header and every line on the clipboard and **keeps the dialog
   open**. No snackbar. For about 2 s the button changes to a check icon + `Copied` (`warnings_copy_done`, same width,
   so nothing shifts), then goes back to `Copy`. TalkBack announces `Warnings copied.` (`warnings_copied`, a polite
