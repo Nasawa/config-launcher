@@ -194,7 +194,7 @@ Copy: sheet title `Pages`; untitled row and label `Page %1$d`; TalkBack `%1$s, p
 
 | Item | Spec |
 |---|---|
-| Open / close | Swipe up from home, or tap `Apps` (§1.4). Close: swipe down at the top of the list, Back, or Home |
+| Open / close | Swipe up from home, or tap `Apps` (§1.4). It opens **at full height in one motion**, with no half-height stop (§2.1). Close: swipe down at the top of the list, Back (incl. predictive back), or Home |
 | Search | Field at top, hint `Search apps`. **Opening the drawer focuses the field and shows the keyboard** (Q-C2, search-first). Scrolling the list hides the keyboard, and tapping the field brings it back. Swipe-down or Back with the keyboard up hides the keyboard first; a second Back closes the drawer (§18.2). Setting `Open keyboard with drawer` (default on) turns auto-open off, e.g. for wall displays. A swipe up from home that's still in motion must not drop the first keystroke: focus is requested when the open animation starts. |
 | Search: accessibility | With TalkBack on, the field gets accessibility focus and is announced `Search apps, edit box`, but the **keyboard is not shown automatically**, because it would cover half the list during exploration. Double-tap the field to type. Results update a polite live region: `5 apps` / `No apps match "xyz".` With reduced motion, the keyboard appears without waiting for the drawer animation |
 | Search: hardware keyboard | With a physical keyboard attached, the field is focused, the on-screen keyboard stays hidden (system default), and typing filters immediately. `Enter` launches the first result. `↓`/`Tab` moves focus into the results, `↑` at the first result returns to the field. `Esc` clears a non-empty query, then closes the drawer. Arrow focus shows a 2 dp focus ring |
@@ -205,6 +205,30 @@ Copy: sheet title `Pages`; untitled row and label `Page %1$d`; TalkBack `%1$s, p
 | Hidden apps | Package names in `drawer.hidden[]`. Not shown in the list or search. Long-press a drawer app → `Hide` (one write). Hidden apps are listed in **Settings → Hidden apps**, where `Unhide` is one write (interim: drawer ⋮ → `Hidden apps`, §14). The `Hide` snackbar has `Undo`. A hidden app placed explicitly on a page still shows and launches there |
 | Long-press app | `Add to home` (first free cell, page 1 onward, else a new page), `Hide`, `App info`. Dragging out of the drawer to home is **later** (§14); `Add to home` covers the MVP. Work apps offer `Add to home` only when **Include work apps in config** is on |
 | Menu `⋮` | Folder mode: `Choose folder` / `Use phone storage`, `Reload layout`, `Set as home app`, `Hidden apps`, `Agent instructions (AGENTS.md)`, `Add`/`Update agent instructions`, `Include hidden apps in apps.json` (checkbox, default off, §7.2), `Ask before merging`, `Open keyboard with drawer`, `Label backdrop`, `Include work apps in config` (only when a work profile exists). App-only: hides folder-only items (AGENTS.md, apps.json). Home menu `Settings` opens the same menu (§14 R10) |
+
+### 2.1 Height, system bars and motion (A51 half-sheet report)
+- **Full height, one motion.** The drawer is a primary destination, not a transient sheet. A swipe up or `Apps`
+  opens it straight to full height. There is **no half-height (partially expanded) stop**: a half sheet adds a second
+  drag and hides rows. If it stays a Material `ModalBottomSheet`, it uses `skipPartiallyExpanded = true` so the
+  partial state doesn't exist. A plain full-screen overlay with its own drag-to-dismiss is equally fine. Either way,
+  the interactive follow-the-finger open from §1.4 settles at full height or springs back, never in between.
+- **Edge-to-edge.** The app runs edge-to-edge (`enableEdgeToEdge`). The drawer's background and scrim draw **under**
+  the status bar and the nav bar. System bar insets go into the **grid's `contentPadding`** (`WindowInsets.safeDrawing`,
+  or `statusBars` + `navigationBars`), not outer padding, so rows scroll under the bars while the **last row and the
+  scroll end sit fully above the nav bar** in both gesture and 3-button navigation. The search row is padded below
+  the status bar. In landscape, the display cutout inset is applied too (`safeDrawing` covers it), so no tile or the
+  `⋮` sits under a cutout.
+- **Keyboard.** The search field stays pinned at the top and visible while the keyboard is up (`imePadding` on the
+  search area), and the list's bottom padding uses the larger of the keyboard and nav bar insets, so the last result
+  can be scrolled above the keyboard.
+- **Close.** Swipe down closes only when the list is **scrolled to the top** (nested scroll: a downward drag first
+  scrolls the list back to the top, and only an overscroll past the top drags the drawer down). Back and predictive back
+  close it (keyboard first, §2). Home and launching an app close it too (§1.4).
+- **Motion.** Open and close durations follow the system animator duration scale. With "Remove animations"
+  (scale 0, reduced motion) the drawer uses the §1.4 150 ms fade instead of sliding.
+- **The nav-bar overlap is a bug either way.** Whatever the height, a drawer row, the last row or the scroll end
+  hidden under the nav bar (or the status bar or a cutout) is a defect, not a layout choice. Test it on the A51 in
+  gesture and 3-button modes, in portrait and landscape.
 
 ---
 
