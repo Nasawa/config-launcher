@@ -3,8 +3,9 @@
 Status: **proposal, re-scoped** on 2026-10-26 to **one device whose window changes**: rotation, fold and unfold, and
 multi-window resizing. This follows Christopher's steering (§13). The earlier versions of this doc, at 9a07171 and
 before, designed for one config shared by several devices. They went through Pragma's UX review and two re-reviews, and
-the UX review was cleared at 5348e14. This version cuts that cross-device machinery (§2), so **Pragma needs to
-re-review it** (§16). Author: Archimedes.
+the UX review was cleared at 5348e14. This version cuts that cross-device machinery (§2). Pragma re-reviewed it at
+c469d27, and its two blockers and one should-fix are applied here, so **the UX review is cleared** (§16). Author:
+Archimedes.
 
 Docs only: nothing changes in `schema/` or app code until this is accepted and dev8 has shipped the ux.md §1.5
 defaults. It builds on [#185](https://github.com/Nasawa/config-launcher/pull/185) (ux.md §1.5), which merged into `main`
@@ -72,9 +73,8 @@ without much foreseeable value, cut that thread. Functional, not one-size-fits-a
 | `scale` per entry | Icon size and label visibility are a person's preference, not a window's. The icon ladder already adapts the size to each window. It's now one root field |
 | Pins (copy-on-write into override layouts on a main edit) and the `{"skipped": true}` marker | They stopped one device's edit from moving items on another device. On one device, "landscape follows portrait except where you've placed things in landscape" is the simpler rule, and it's visible as soon as you rotate. This reverses Pragma's N1 (§16) |
 | `{"hidden": true}`, `Hide on this layout`, `hidden_here_reason_hidden` | Hiding an item on just one window shape has little foreseeable value. Move it, or remove it |
-| Snackbar trigger on load and reload | It mainly announced edits synced from another device. An agent's own edit is reported to it by `validate.py` and the warnings. The layout-switch trigger stays, because rotating is when people need to know |
 | `warn_override_unreachable` as a phone warning | It's kept as a `validate.py` info line only. The agent writing the file is who needs it |
-| `edit_layout_a11y_named`'s "screens that use it" wording | It was cross-device. It now reads `Changes here apply only to this layout.` |
+| `edit_layout_a11y_named`'s "screens that use it" wording | It was cross-device. It now reads `Moving or resizing here changes only this layout.`, because Add, Remove, the dock and folders apply to every layout |
 
 **Kept, and why:**
 - **Strict main validation.** It keeps placement independent of file order (§6.1).
@@ -223,7 +223,7 @@ shortcuts, folders and elements.
 | Edit | While main is active | While override layout `L` is active |
 |---|---|---|
 | Move / drag / `Move to…` / `Resize…` | Writes the main spot. Override layouts that inherit it follow, by design | Writes only `L.positions[id]` |
-| `Add to home` / widget picker / out of a folder | **Never refused** (Christopher, Q1). The chosen cell, or the first free cell as in ux.md §4.2 (a new page if every page is full; `home_full` at 20 pages). Override layouts inherit it where it fits and is free | The chosen cell, or `L`'s first free cell by the same rule. **If those coordinates fit main and are free there**, they become the main spot, and `L` inherits it. **Otherwise** the add writes `L.positions[id]` and **no main spot**. Main then doesn't show the item: the rotate snackbar announces it, and it's listed in `Hidden here` |
+| `Add to home` / widget picker / out of a folder | **Never refused** (Christopher, Q1). The chosen cell, or the first free cell as in ux.md §4.2 (a new page if every page is full; `home_full` at 20 pages). Override layouts inherit it where it fits and is free | The chosen cell, or `L`'s first free cell by the same rule. **If those coordinates fit main and are free there**, they become the main spot, and `L` inherits it. **Otherwise** the add writes `L.positions[id]` and **no main spot**. Main then doesn't show the item: the new-items snackbar announces it, and it's listed in `Hidden here` |
 | `Remove from home` | Deletes the item and **every** `positions[id]` entry, in one write | Same |
 | Into or out of the dock | Membership is shared, so the change applies to every layout, and the `positions[id]` entries are deleted with it | Same |
 | **Folder creation** (drop an item on another) | On every layout, the folder takes the **target** item's place, and the dragged item leaves its place | Same |
@@ -245,24 +245,35 @@ means empty in the file: no main item on it and no `positions[…].page` pointin
   (`edit_layout_title_named`), using `label`, else `id`.
 - **Rail mode:** the same text shows as a **chip in the notice row**, in edit mode only, and only while an override
   layout is active. ux.md §1.5's rail bullet needs amending to say so (§16).
-- **TalkBack on entering edit mode on an override layout:** `Editing the %1$s layout. Changes here apply only to this
-  layout. Double-tap Done when finished.` (`edit_layout_a11y_named`).
+- **TalkBack on entering edit mode on an override layout:** `Editing the %1$s layout. Moving or resizing here changes
+  only this layout. Double-tap Done when finished.` (`edit_layout_a11y_named`). Add, Remove, the dock and folders apply
+  to every layout (§0), and an Add on an override layout can create the main spot (§6.2), so the line claims only moves
+  and resizes.
+- **Entering edit mode on main** in a file with at least one override layout that has `grid`: a 6 s announced
+  snackbar, `edit_main_follow` (plurals, keyed on how many override layouts have `grid`):
+  - one: `Moving or resizing things here also changes them on the %1$s layout, unless you've placed them there.`
+  - several: `Moving or resizing things here also changes them on your other layouts, unless you've placed them there.`
+
+  It shows **once per app session**, held in device-local memory and never written. It's the cue for §6.2's "main edits
+  reach the items override layouts inherit", so a rotate after a portrait move doesn't surprise anyone.
 - **A rotate, fold or resize that changes the active layout while in edit mode:** a 4 s announced snackbar, `Now editing
   the %1$s layout.` (`edit_layout_switched`). On main, the name is `main` (`layout_name_main`).
 
 ### 6.4 Hidden here: finding and bringing back items (Pragma B3, N2)
-- **Count:** the items the active layout doesn't show. On an override layout these are the items that don't fit or
-  whose spot is taken. On main, they're the items with no main spot.
+- **Count:** the items the active layout doesn't show. On an override layout these are the items that don't fit, whose
+  spot is taken, or that have neither a main spot nor an entry here. On main, they're the items with no main spot.
 - **Entry points:**
   - In edit mode, when the count is > 0, the edit bar gets a `Hidden here (%d)` button (`hidden_here_button`,
     plurals). In rail mode it's in `⋮`.
   - **Outside edit mode**, the home long-press menu gets `Hidden here (%d)` when the count is > 0. This is available
     from O4.
-- **Rotate snackbar** (Pragma N2; the rule is from Pragma's re-review of 5348e14, minus the load and reload triggers):
+- **New-items snackbar** (Pragma N2; the rule is from Pragma's re-reviews of 5348e14 and c469d27):
   a 6 s announced snackbar, `%1$d new items aren't shown on this screen.` / `1 new item isn't shown on this screen.`
   (`hidden_here_load`, plurals). Its action is `Show` (`hidden_here_load_action`), which opens `Hidden here`.
-  - It fires on **switching to a layout** (rotate, fold, unfold, resize) that has items hidden since this device last
-    showed it. That includes the first layout shown after the app starts.
+  - It fires on **switching to a layout** (rotate, fold, unfold, resize), on the first layout shown after the app
+    starts, and on **a load or reload that adds items to the active layout's hidden set**. An agent's rewrite is the
+    main way that happens while someone is looking at home. The same once-per-item set applies, so a reload that hides
+    nothing new stays quiet.
   - It counts each **newly hidden item once**. The device keeps, per layout `id` (or main), the set of item ids it has
     already announced. The snackbar counts only hidden items not in that set, and adds them when it shows. An item
     leaves the set when that layout shows it again. So the same set never fires twice, and an item that's hidden again
@@ -274,7 +285,8 @@ means empty in the file: no main item on it and no `positions[…].page` pointin
   (Pragma S-a):
   - `Doesn't fit this grid` (`hidden_here_reason_no_fit`): its spot is outside this grid;
   - `Its spot is used by "%1$s"` (`hidden_here_reason_taken`): its inherited main spot is under an explicit entry;
-  - `Not placed on this layout` (`hidden_here_reason_unplaced`): it has no main spot (main only).
+  - `Not placed on this layout` (`hidden_here_reason_unplaced`): no main spot and no `positions` entry here. That's
+    main, or any override layout.
   - Each row has the action `Show here` (`hidden_here_show`). TalkBack reads a row as
     `<Label>, <reason>, Show here, button`.
 - **`Show here`** places the item at the first free cell, scanning row-major from the **page on screen**, then the
@@ -395,7 +407,7 @@ file (Q-A12), never from the window: each override entry is checked **as if** it
 
 | Code | Text |
 |---|---|
-| `warn_override_hidden` (one per entry) | `windowOverrides[%1$d] ("%2$s"): %3$d items aren't shown on windows that use its %4$d × %5$d grid (%6$s), because they don't fit it or their spot is used by an item placed there. Give them positions there, or change the grid.` `%6$s` = the first 3 ids, then `and %d more` |
+| `warn_override_hidden` (one per entry) | `windowOverrides[%1$d] ("%2$s"): %3$d items aren't shown on windows that use its %4$d × %5$d grid (%6$s), because they don't fit it, their spot is used by an item placed there, or they have no spot on main or here. Give them positions there, or change the grid.` `%6$s` = the first 3 ids, then `and %d more` |
 | `warn_main_hidden` | `Main layout: %1$d items have no spot on the main layout (%2$s), so windows that use it don't show them. Give them x and y, or use Show here on the phone.` These are items added on another layout where main had no room |
 | `warn_override_position_id` | `windowOverrides[%1$d] ("%2$s").positions: "%3$s" doesn't match any item, so it was ignored.` |
 | `warn_orientation_lock_ignored` | `orientationLock "%1$s": this screen ignores app orientation locks (Android 16 and later), so home rotates freely here.` |
@@ -412,7 +424,7 @@ Strict keys keep any field from a later slice rejected until that slice lands.
 | **O1** schema + matcher | `windowOverrides` (`id`, `label`, `when`), root `scale`, the validators, FEATURE_LEVEL → 5 and `net.fetch` → 6 in the docs; pure `resolve(entries, WindowContext) → Resolved` (leaf merge); `cellCap` and `scale` in `HomeGeometry` | Fixtures valid and invalid; resolver unit tests; L1 (no write on rotate); the `icon: 2` L-check |
 | **O2** dock edge | `dock.edge` (top bar, start/end rail), the drag index on both axes, insets, RTL | L5/L6 rerun with each edge |
 | **O3** orientation lock | Root `orientationLock`, the lock before the first frame, the `validate.py` unreachable line, `warn_orientation_lock_ignored` | A landscape-only phone emulator; a tablet AVD at API 36 with a test build targeting 36 |
-| **O4** grid layouts, read-only | `grid` + `positions` parse and validate; the optional main spot; §6.1 placement; `warn_override_hidden`, `_position_id`, `warn_main_hidden`; §11.1 read-only behaviour; `Hidden here` from the long-press menu and the edit bar (`Show here` on main only); the rotate snackbar | Rotate between layouts with the file hash unchanged; O9; O12 on main; §11.1 copy and TalkBack |
+| **O4** grid layouts, read-only | `grid` + `positions` parse and validate; the optional main spot; §6.1 placement; `warn_override_hidden`, `_position_id`, `warn_main_hidden`; §11.1 read-only behaviour; `Hidden here` from the long-press menu and the edit bar (`Show here` on main only); the new-items snackbar; `edit_main_follow` (main stays editable) | Rotate between layouts with the file hash unchanged; O9; O12 on main; §11.1 copy and TalkBack |
 | **O5** edits on any layout | §6.2 writes on override layouts, including adds with no main spot; Undo with no room; folder placement; queued writes keyed by entry `id`; §6.3 naming; `Show here` everywhere; §6.5 mid-edit rules and reserved-cell hatching; the Settings `Grid` hint (§14) | O9b, O10–O13 |
 | **O6** folds | `androidx.window`, the `posture` matcher, `fold.halfOpened`; with `span`, focus runs straight across the hinge | Foldable AVDs with posture simulation only |
 
@@ -428,10 +440,15 @@ New test-plan checks for Grace:
 - **O12 (Hidden here):**
   - Rotating into a layout with a new hidden item shows the snackbar once, and rotating back and forth doesn't repeat
     it. It's held during a drag.
+  - A reload that adds an item with no main spot while portrait is showing fires the snackbar once; repeating the same
+    reload doesn't.
+  - An item with no main spot and no entry on a second override layout is listed there as `Not placed on this layout`
+    and counted in `warn_override_hidden`.
   - `Show here` scans the page on screen, then the later pages, then the earlier pages, then adds a new page. At 20
     full pages it's disabled.
 - **O13 (layout name):** the edit bar, the rail chip and TalkBack name the layout, and a rotate across layouts in edit
-  mode announces `Now editing the … layout.`
+  mode announces `Now editing the … layout.` Entering edit mode on main with a landscape layout shows
+  `edit_main_follow` once per session.
 
 ### 11.1 What O4 (read-only) shows (Pragma B5)
 While an override layout with `grid` is active and O5 hasn't shipped:
@@ -488,12 +505,13 @@ The earlier answers, as they stand after the re-scope:
 ## 15. Phone-UI strings (`strings.xml`)
 These are the 20 strings Pragma reviewed, minus `hide_on_layout` and `hidden_here_reason_hidden` (cut, §2). Changed:
 `hidden_here_reason_pinned` is renamed `hidden_here_reason_unplaced` (same text), and `edit_layout_a11y_named` is
-reworded. That leaves **18**:
+reworded. `edit_main_follow` is new (Pragma's re-review of c469d27). That makes **19**:
 
 | ID | Text |
 |---|---|
 | `edit_layout_title_named` | `Editing layout · %1$s` |
-| `edit_layout_a11y_named` | `Editing the %1$s layout. Changes here apply only to this layout. Double-tap Done when finished.` |
+| `edit_layout_a11y_named` | `Editing the %1$s layout. Moving or resizing here changes only this layout. Double-tap Done when finished.` |
+| `edit_main_follow` (plurals) | `Moving or resizing things here also changes them on the %1$s layout, unless you've placed them there.` / `Moving or resizing things here also changes them on your other layouts, unless you've placed them there.` |
 | `edit_layout_switched` | `Now editing the %1$s layout.` |
 | `layout_name_main` | `main` |
 | `edit_sheet_closed_layout_changed` | `Screen size changed, so nothing was moved.` |
@@ -515,11 +533,14 @@ Reused unchanged: `No room`, `home_full`, `move_element_taken`, `undo_element_mo
 `undo_element_no_room` (files without `windowOverrides` only).
 
 ## 16. Review status and follow-ups
-- **Pragma must re-review the re-scope.** In particular:
-  - cutting pins reverses N1, so main edits now reach the items override layouts inherit (§6.2);
-  - the snackbar no longer fires on load or reload (N2 trimmed, §6.4);
-  - `Hide on this layout` and the `hidden` reason are cut;
-  - `edit_layout_a11y_named` is reworded, and `hidden_here_reason_pinned` is renamed `hidden_here_reason_unplaced`.
+- **Pragma's UX review is cleared** for the re-scope (re-review of c469d27). Applied from it:
+  - blocker 1: `edit_layout_a11y_named` claims only moves and resizes, and the main-only `edit_main_follow` snackbar
+    makes inheritance visible (§6.3, O13);
+  - blocker 2: the new-items snackbar fires again on a load or reload that grows the active layout's hidden set, with
+    the same once-per-item set (§6.4, O12); that row is gone from §2;
+  - should-fix: items with neither a main spot nor an entry are unplaced on override layouts too (§6.4 count and
+    reason, `warn_override_hidden`).
+  - Agreed as written: cutting pins (reverses N1), cutting `Hide on this layout`, and the `unplaced` rename.
 - **Once accepted, Pragma (ux.md):**
   - §1.5: replace "the same columns × rows on every device" and the multi-device placement wording with §0 and §6 here;
   - §4.2: `Add to home` is never refused short of `home_full`, and pages are shared by all layouts;
