@@ -139,7 +139,8 @@ The policy is coded in `severity()` in `screen_matrix_check.py`.
 
 **Advisory for dev7:**
 - G1–G3 on tablets, landscape and the fold. ux.md §1.1 says "Phones only in MVP" and landscape is Q-S2 (ux.md open
-  questions). These become blocking once Christopher answers Q-S2 (Q2).
+  questions). Interim call (Q2): advisory through dev7, blocking from dev8 after the §1.1 review of the run-2
+  screenshots.
 - Everything at font 2.0 except F1 (crashes always block). Decided: ux.md §12 allows hidden labels at ≥ 150 % and
   Q-S5 (fitting cells at 200 %) is open, so at 2.0 only a crash or ANR is a dev7 blocker; the rest needs a human look.
 - T5, T6, A1, D3, TH1, X1 and P1.
@@ -246,6 +247,13 @@ The script changes the display size, density, font scale, night mode and rotatio
 - Minutes: free while the repo is public; run 1's measured numbers are in §5.
 
 **Needs Christopher:**
-- **Q1 (later, not blocking)** Christopher's tablet model, dp size and API, for a device-shaped tablet point beside t7/t10.
+- **Q1 (open, asked by Grok Bot; not blocking)** Christopher's tablet model, dp size and API, for a device-shaped
+  tablet point beside t7/t10.
 - **Q2 (needs Christopher)** Q-S2 / "Phones only in MVP" (ux.md §1.1): when do tablet, landscape and fold layout
   checks (G1–G3) become blocking, and is the ux.md §1.1 landscape layout (same grid, dock on the right edge) final?
+  - **Interim (Grok Bot, 2026-10-26); pending Christopher's confirmation.** Christopher has been asked directly and
+    hasn't answered, so this isn't his decision:
+    - Tablet, landscape and fold layout checks stay **advisory through dev7**.
+    - They become **blocking at dev8**, once Pragma and Archimedes have reviewed ux.md §1.1 against the run-2
+      screenshots (`evidence/matrix/run2/layout-review/`).
+    - Crashes and ANRs (F1) stay **blocking at every point**, as now.
