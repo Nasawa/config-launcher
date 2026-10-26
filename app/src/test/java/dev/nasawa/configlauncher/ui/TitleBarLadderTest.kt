@@ -152,6 +152,50 @@ class TitleBarLadderTest {
         assertEquals(30, TitleBarLayout.arrowOnlyMin(1, listOf(133, 30, 60), 30, pageMin, arrowMin, emptySet()))
     }
 
+    /**
+     * The bar as laid out (TitleBarRow places each slot after the previous one and its gap, the {page} slot widened by
+     * [TitleBarLayout.Fit.touch]): the start, center and end bounds, then the {page} touch area. Compose also widens any
+     * tap target under 48 dp to 48 dp around its centre, so that's included too. Half-open px ranges.
+     */
+    private fun bounds(fit: TitleBarLayout.Fit): Pair<List<IntRange>, IntRange> {
+        val (g0, g1) = TitleBarLayout.gaps(fit.want[0], fit.want[1], fit.want[2], gap)
+        val (sw, cw, ew) = fit.widths
+        val slots = listOf(0 until sw, sw + g0 until sw + g0 + cw, sw + g0 + cw + g1 until sw + g0 + cw + g1 + ew)
+        val (b, a) = fit.touch
+        var lo = slots[1].first - b; var hi = slots[1].last + 1 + a
+        if (hi - lo < touch) { val grow = touch - (hi - lo); lo -= grow / 2; hi += grow - grow / 2 }
+        return slots to (lo until hi)
+    }
+
+    private fun overlap(x: IntRange, y: IntRange) = maxOf(0, minOf(x.last, y.last) - maxOf(x.first, y.first) + 1)
+
+    @Test fun pageTouchAreaNeverOverlapsATappableDateOrClock() {
+        // Grace's A51 bar (dev6-a51/widths, 320 dp): date start, {page} center, clock end. Pragma: the touch area may
+        // extend over a neighbour only when it isn't tappable; by a tappable one it stops at the gap's midpoint, and
+        // that side keeps the 32 dp visible minimum. Every bar width, every ladder step, both slots tappable.
+        val pattern = "EEE d MMM yyyy"
+        val m = measure(pattern, 181.0 / 15, clock = 60, pageText = 50)
+        val rungs = TitleBarLayout.rungs(true, TitleBarLayout.dateLevels(listOf(pattern)), true)
+        var shrunk = 0
+        for (w in 120..420) {
+            val tapped = TitleBarLayout.ladder(w, gap, setOf(0, 2), setOf(0), 1, pageMin, touch, rungs, tappable = setOf(0, 2), measure = m)
+            val (slots, area) = bounds(tapped)
+            assertEquals("w=$w: never over the tappable date", 0, overlap(area, slots[0]))
+            assertEquals("w=$w: never over the tappable clock", 0, overlap(area, slots[2]))
+            if (tapped.rung.arrowOnly) {
+                shrunk++
+                assertEquals("w=$w: stops at each gap's midpoint", gap / 2 to gap / 2, tapped.touch)
+                assertTrue("w=$w: keeps 32 dp visible", tapped.widths.second >= pageMin)
+            }
+            // The same bar with neither tappable may overlap them (Grace's 320 dp case), by no more than 48 dp needs.
+            val plain = TitleBarLayout.ladder(w, gap, setOf(0, 2), setOf(0), 1, pageMin, touch, rungs, measure = m)
+            val (ps, pa) = bounds(plain)
+            if (plain.rung.arrowOnly && plain.widths.second < touch - 2 * gap) assertTrue("w=$w: overlap allowed", overlap(pa, ps[0]) + overlap(pa, ps[2]) > 0)
+            assertTrue("w=$w: 48 dp, no wider", pa.last - pa.first + 1 <= maxOf(touch, plain.widths.second))
+        }
+        assertTrue("the ▾-only steps were reached", shrunk > 0)
+    }
+
     @Test fun sizeOnlyWarningWhenTheBarHasNoDate() {
         // No date: step 2 is skipped (no date levels), so the ladder goes 0, 1, 3.
         assertEquals(listOf(0, 1, 3), TitleBarLayout.rungs(true, TitleBarLayout.dateLevels(emptyList()), smaller = true).map { it.step })
