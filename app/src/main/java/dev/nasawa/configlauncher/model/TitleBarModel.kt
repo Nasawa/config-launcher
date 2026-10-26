@@ -32,9 +32,12 @@ object TitleBarModel {
         val paddingH: Int = 16,
         val paddingV: Int = 4,
         val backdrop: Backdrop = Backdrop.Auto,
+        /** `small` / `medium` / `large` when `style.size` names a size; null for a numeric size or none (#149 step 3). */
+        val sizeName: String? = null,
     )
 
-    data class Bar(val id: String, val slots: Map<Slot, List<Template.Part>>, val style: Style)
+    /** [paths]: where each slot's template is in the file, for warnings (`elements[0].content.slots.end`). */
+    data class Bar(val id: String, val slots: Map<Slot, List<Template.Part>>, val style: Style, val paths: Map<Slot, String> = emptyMap())
 
     fun forPage(c: LauncherConfig, pageId: String?): Bar? {
         val el = Elements.shown(c).firstOrNull { Elements.typeOf(it) === TitleBar } ?: return null
@@ -47,7 +50,13 @@ object TitleBarModel {
             val t = slotsJson?.str(s.key)?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
             (Template.parse(t) as? Template.Ok)?.let { s to it.parts }
         }.toMap()
-        return Bar(id, slots, style(merge(el.obj("style"), ov?.obj("style"))))
+        val at = "elements[${c.elements.orEmpty().indexOf(el)}]"
+        val pageAt = c.pages.indexOfFirst { it.id == pageId }
+        val paths = slots.keys.associateWith { s ->
+            if (ov?.obj("content")?.obj("slots")?.containsKey(s.key) == true) "pages[$pageAt].overrides.$id.content.slots.${s.key}"
+            else "$at.content.slots.${s.key}"
+        }
+        return Bar(id, slots, style(merge(el.obj("style"), ov?.obj("style"))), paths)
     }
 
     private fun merge(base: JsonObject?, over: JsonObject?): JsonObject? =
@@ -57,6 +66,7 @@ object TitleBarModel {
         if (o == null) return Style()
         val d = Style()
         val size = (o["size"] as? JsonPrimitive)?.let { p -> if (p.isString) TitleBar.SIZES[p.content] else p.content.toDoubleOrNull() }
+        val sizeName = (o["size"] as? JsonPrimitive)?.takeIf { it.isString && it.content in TitleBar.SIZES }?.content
         val weight = (o["weight"] as? JsonPrimitive)?.let { p -> if (p.isString) TitleBar.WEIGHTS[p.content] else p.content.toIntOrNull() }
         val color = when (val v = o["color"]) {
             is JsonObject -> Colors(v.str("light") ?: "light", v.str("dark") ?: "light")
@@ -73,7 +83,7 @@ object TitleBarModel {
             else -> Backdrop.Auto
         }
         return Style(size?.toFloat() ?: d.sizeSp, weight ?: d.weight, color, align,
-            pad?.int("horizontal") ?: d.paddingH, pad?.int("vertical") ?: d.paddingV, backdrop)
+            pad?.int("horizontal") ?: d.paddingH, pad?.int("vertical") ?: d.paddingV, backdrop, sizeName)
     }
 
     /** Token values for one page; time and date are formatted by the caller (locale, 12/24 h, spoken form). */

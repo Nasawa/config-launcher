@@ -68,9 +68,12 @@ fun HomeScreen(vm: HomeViewModel) {
     LaunchedEffect(themeDark, themeHex) { vm.store.engine.setPhoneTheme(themeDark, themeHex) }
     // #79: load warnings for the file that's showing (none while a problem banner is up: that's the last-good layout),
     // then the phone-only theme-colour ones (#125), the same lines as status.json.
-    val warnings = remember(ui.load.config, ui.load.issue, themeDark, themeHex) {
+    // #149: the title bar's overflow-ladder warning (§15.1 warn_titlebar_fit), reported by the bar as it lays out.
+    var titleFit by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(titleFit) { vm.store.engine.setTitleBarFit(titleFit) }
+    val warnings = remember(ui.load.config, ui.load.issue, themeDark, themeHex, titleFit) {
         if (ui.load.issue != null) emptyList()
-        else dev.nasawa.configlauncher.config.Elements.let { it.warnings(ui.load.config) + it.phoneWarnings(ui.load.config, themeDark) { t -> themeHex[t] } }
+        else dev.nasawa.configlauncher.config.Elements.let { it.warnings(ui.load.config) + it.phoneWarnings(ui.load.config, themeDark) { t -> themeHex[t] } } + listOfNotNull(titleFit)
     }
     val ctx = LocalContext.current
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
@@ -309,8 +312,8 @@ fun HomeScreen(vm: HomeViewModel) {
                 CompositionLocalProvider(LocalLabelBackdrop provides backdrop) {
                 // #79: a title bar in the file replaces the §1.3 page label on pages where it's enabled.
                 val titleBar = TitleBarModel.forPage(ui.load.config, pages.getOrNull(pager.settledPage)?.id)
-                if (titleBar != null) TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop) { pageList = true }
-                else PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true }
+                if (titleBar != null) TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop, onFit = { titleFit = it }) { pageList = true }
+                else { LaunchedEffect(Unit) { titleFit = null }; PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true } }
                 val listPages = stringResource(R.string.pages_action)
                 val openAppList = stringResource(R.string.a11y_open_drawer)
                 HorizontalPager(

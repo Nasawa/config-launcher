@@ -500,7 +500,19 @@ class ConfigEngine(
     }
 
     private fun phoneWarnings(): List<String> =
-        phoneTheme?.let { (dark, colors) -> statusConfig?.let { c -> Elements.phoneWarnings(c, dark) { colors[it] } } }.orEmpty()
+        phoneTheme?.let { (dark, colors) -> statusConfig?.let { c -> Elements.phoneWarnings(c, dark) { colors[it] } } }.orEmpty() + listOfNotNull(titleBarFit)
+
+    private var titleBarFit: String? = null
+
+    /**
+     * #149 (ux.md §15 overflow ladder): the phone-only `warn_titlebar_fit` line while the title bar needs step 2 or later,
+     * null once it fits again. status.json is rewritten silently, only when it changes.
+     */
+    suspend fun setTitleBarFit(warning: String?) = mutex.withLock {
+        if (titleBarFit == warning) return@withLock
+        titleBarFit = warning
+        emitStatus()
+    }
 
     private var lastApps: Pair<ConfigSource, List<kotlinx.serialization.json.JsonObject>>? = null
 
