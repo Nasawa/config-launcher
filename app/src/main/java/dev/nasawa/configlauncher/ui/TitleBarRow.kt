@@ -418,6 +418,9 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
             if (!button) Text(text, style = style, textAlign = TitleBarLayout.textAlignOf(align), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth())
             else if (hidden) Row(Modifier.layout { m, c ->
                 val p = m.measure(c.copy(minWidth = 0))
+                // Grace's crash at da3849b: the ladder measures intrinsics with an unbounded width, and a layout can't
+                // be infinitely wide. Unbounded, the slot is as wide as its ▾ (that's its intrinsic width), not re-centred.
+                if (!c.hasBoundedWidth) return@layout layout(p.width, p.height) { p.placeRelative(0, 0) }
                 val full = c.maxWidth
                 layout(full, p.height) { p.placeRelative(reach[0] + (full - reach[0] - reach[1] - p.width) / 2, 0) }
             }, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
