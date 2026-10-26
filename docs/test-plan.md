@@ -355,7 +355,7 @@ API levels are the latest **official** Android for each model, as listed in A§1
 | 35 | `google_apis` x86_64 | Private space. Edge-to-edge |
 | 36 | `google_apis` x86_64 | Current (A53/S25 level) |
 
-Implemented as `.github/workflows/emulator-smoke.yml` (PR #23): nightly, on demand, or on PRs labelled `emulator`. It installs and cold-starts with crash/ANR detection, plus `am start -W` timings. Instrumented tests (`connectedDebugAndroidTest`) join the same matrix once `app/src/androidTest` exists.
+Implemented as `.github/workflows/emulator-smoke.yml` (PR #23): nightly, on demand, on every PR and on pushes to main. It installs and cold-starts with crash/ANR detection, plus `am start -W` timings. Instrumented tests (`connectedDebugAndroidTest`) join the same matrix once `app/src/androidTest` exists.
 
 ### 15.3 Performance budgets and how to measure them
 | ID | Budget | Device | Method | Pass |
@@ -406,7 +406,7 @@ Report anything that differs, with a screenshot.
 
 - `build` job (existing): `./gradlew testDebugUnitTest` (JVM + Robolectric + store fakes, including `FixtureConformanceTest`, `KotlinOnlyConformanceTest`, `WriterRefusalTest`) and `assembleDebug`.
 - Add a step for `python3 test-fixtures/check_schema.py` (needs `pip install jsonschema`).
-- `emulator-smoke` job (PR #23): API 29/35/36 matrix, nightly, on demand, or on the `emulator` label.
+- `emulator-smoke` job (PR #23): API 29/35/36 matrix, nightly, on demand, on every PR and on pushes to main.
 - Robolectric at `@Config(sdk = [29, 35])` for the API-gate cases. Lint `NewApi` as an error.
 - A test that fails on `android.*` imports in `model` and `config` (A§10, exists as `PureLayerTest`).
 
