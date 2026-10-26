@@ -48,10 +48,16 @@ A() { timeout 120 adb "$@"; }
 sh_() { A shell "$@" < /dev/null; }
 pause() { sleep "${1:-$SETTLE}"; }
 
-# dump <dir> <name>: uiautomator dump + screenshot
+# dump <dir> <name>: uiautomator dump + screenshot. A system ANR dialog that pops up after the last anr() call would
+# replace the whole dump (run 4: "Pixel Launcher isn't responding" over t7-port-v1's home1), so clear it and redump once.
 dump() {
-  sh_ uiautomator dump /sdcard/sm.xml > /dev/null 2>&1
-  sh_ cat /sdcard/sm.xml > "$1/$2.xml" 2> /dev/null
+  local i
+  for i in 1 2; do
+    sh_ uiautomator dump /sdcard/sm.xml > /dev/null 2>&1
+    sh_ cat /sdcard/sm.xml > "$1/$2.xml" 2> /dev/null
+    grep -q "isn't responding\|isn&apos;t responding" "$1/$2.xml" || break
+    [ "$i" = 1 ] && anr "$1"
+  done
   A exec-out screencap -p > "$1/$2.png" < /dev/null 2> /dev/null || true
   [ -s "$1/$2.png" ] || rm -f "$1/$2.png"
 }

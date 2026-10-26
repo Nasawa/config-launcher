@@ -219,6 +219,8 @@ python3 scripts/screen_matrix_check.py check screen-matrix-out/p411-a51-v1   # r
   the same). After F2 the driver spends it on a tap on empty grid space, which does nothing.
 - F3, F4, F5 and F5b retry once when the expected menu or drawer isn't in the dump, and log it for X2 (§3).
 - On API 29, night mode may need `adb root` or the Settings UI (X1, §3). `adb root` stays on for the rest of the run.
+- A system ANR dialog (the image's own launcher, System UI) that appears between the ANR check and a dump replaces the
+  whole dump, so `dump` clears it (taps `Wait`) and dumps again once (run 4, t7-port-v1).
 
 The script changes the display size, density, font scale, night mode and rotation, and resets them at the end
 (`wm size reset`, `wm density reset`, font 1.0, night no, rotation 0). Don't point it at a phone you're using:
@@ -262,6 +264,17 @@ The script changes the display size, density, font scale, night mode and rotatio
   1.05:1 for all 8 labels, and passes on main's dark drawer (17.1:1, white on `#1D1B20`) at every run-2 point. G5b
   passes on pr178's title-bar and no-title-bar chip dumps and fails on a copy with the page label moved out of the
   chip's row.
+- **Run 4** ([40399082476](https://github.com/Nasawa/config-launcher/actions/runs/40399082476), 02782e2, full matrix,
+  with main through #178/#181/#183 merged): **30 PASS, 1 FAIL, 0 INCOMPLETE**. ≈ 62 runner-minutes (≈ 67 billed), ≈ 18 min
+  wall clock. Triage in the #177 comment and `evidence/matrix/run4/`:
+  - D1 passes everywhere (#181), D4 passes everywhere (main's drawer is dark in both themes, labels 15–17:1), G5a/G5b/G5c
+    pass at both c1 points (chip row above the title bar, #183), and G1 passes at s320-ldpi v1/v2 now (#178).
+  - X1: the API 29 dark points switch through `adb root` (`night_via=root`) at s320-ldpi-v2 and s320-a51-v2, so all
+    twelve v2 points ran dark.
+  - The one FAIL, t7-port-v1, was the harness: a "Pixel Launcher isn't responding" system dialog came up after the
+    ANR check and replaced the `home1` dump (F2, and F3/T1/T2/T4 SKIP). `dump` now clears it and redumps (§5).
+  - Advisory: TH1 at the 20 light points (#180, fixed in #182, not merged); G6 at 16 points (white labels on the
+    default wallpaper's light areas, 1.4–2.9:1; data, §3); X2 once (F4 at t7-port-v1, behind the same dialog).
 
 ## 7. Open questions
 
