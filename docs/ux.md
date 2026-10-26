@@ -180,7 +180,7 @@ the tools to facilitate it where possible." The config will be able to override:
 phone, an error in `validate.py`). No override may break positions: `x`/`y`/`w`/`h` and the `dock[]` order keep meaning
 the same thing, and a window change still never writes.
 
-**Columns/rows overrides and items that don't fit (proposal, pending Archimedes).** When an override gives a window a
+**Columns/rows overrides and items that don't fit (agreed with Archimedes, 2026-10-26).** When an override gives a window a
 smaller grid than an item's position needs (an item at column 6 on a 4-column override, or row 5 on a 4-row one):
 - The item is **skipped on that window**: not drawn, not moved, not written. It shows again on any window whose grid
   holds it. Its cells stay its own in the file, so nothing else is placed on top of it from a bigger window.
@@ -2314,13 +2314,15 @@ Tablets, landscape and foldables (§1.5; Archimedes' notes for this PR). dev8 ne
     | end}`, `fold {halfOpened: oneHalf | span, flat: asTablet | asPhone}`, `orientationLock` (`portrait` | `landscape` |
     `system`), `scale {icon}` (e.g. 0.75–1.5 × 56 dp; touch targets stay ≥ 48 dp).
   - **Order:** entries apply in file order, a later entry wins field by field. A window with no match uses the defaults.
-  - **Points for Archimedes:**
-    - `orientationLock` can't be keyed on `orientation` or `widthClass`, because locking changes them and the rule would
-      flip itself. That's why it's keyed on `deviceClass` (stable across rotation) only.
-    - `posture: folded` needs to know the device is a foldable on its cover screen, which `FoldingFeature` alone doesn't
-      say.
-    - Smaller-grid overrides need the "skipped on that window" state proposed in §1.5. You ruled an off-grid state out
-      for the earlier widen-only sketch, so this is the main thing to settle.
+  - **Settled with Archimedes (2026-10-26)**, who takes `windowOverrides` as the baseline for
+    `docs/design/layout-overrides.md`:
+    - `orientationLock` may be keyed on `deviceClass` only (stable across rotation). Keying it on `orientation` or
+      `widthClass` is a validation error, because locking changes them and the rule would flip itself.
+    - `posture: folded` is flagged as hard and best-guess (`FoldingFeature` alone doesn't say it's the cover screen).
+      Archimedes picks the fold defaults and tests on emulators.
+    - Widen-only is dropped: smaller-grid overrides use the §1.5 "skipped on that window" state, never moved or written,
+      with a load-time warning per override.
+    - Still open (Archimedes): which coordinates a user edit writes while an override grid is active.
   - **Constraints carried over:** the root and `grid` have `additionalProperties: false`, so older builds reject the file
     (B2). It needs the Q-A10 pre-release route or `schemaVersion` 2, and FEATURE_LEVEL can't gate a root key on its own
     (`requires` is only on `elements[]`); a FEATURE_LEVEL bump still marks the release that understands it. Positions are
