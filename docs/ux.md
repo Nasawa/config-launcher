@@ -889,8 +889,8 @@ Showing the last working layout.`). Warnings never raise a banner.
 | Pattern letter run too long (`a`) | Error | `elements[0].content.slots.end: aa is too long. Use at most 1, like a.` |
 | Unclosed quote in a pattern | Error | `elements[0].content.slots.start: A ' quote isn't closed. Add a closing ' after the text.` |
 | Low contrast | Warning | `elements[0].style.color: contrast 2.1:1 on the backdrop (4.5:1 recommended). Shown anyway.` |
-| Bar too wide for this phone (overflow ladder step 2 or later, phone-only) | Warning | `elements[0].content.slots.end: the title bar doesn't fit this phone's 285 dp width, so fit step 2 of 4 was used: the date was shortened. Checked on this phone. Use a shorter date, like {date:d MMM}.` |
-| Bar too wide, **no date** in the bar (step 3, phone-only) | Warning | `elements[0].content.slots: the title bar doesn't fit this phone's 285 dp width, so fit step 3 of 4 was used: the text size went down to medium. Checked on this phone. Use fewer or shorter slots.` |
+| Bar too wide for this phone (overflow ladder step 2 or later, phone-only) | Warning | `elements[0].content.slots.end: the title bar doesn't fit in its 285 dp on this phone, so fit step 2 of 4 was used: the date was shortened. Checked on this phone. Use a shorter date, like {date:d MMM}.` |
+| Bar too wide, **no date** in the bar (step 3, phone-only) | Warning | `elements[0].content.slots: the title bar doesn't fit in its 285 dp on this phone, so fit step 3 of 4 was used: the text size went down to medium. Checked on this phone. Use fewer or shorter slots.` |
 
 Resources (character positions are 1-based, like line and column):
 ```xml
@@ -944,7 +944,7 @@ Resources (character positions are 1-based, like line and column):
      (elements[0].content.slots.end), %2$d = the shared slot width in dp: the bar's width minus its padding (the
      width the slots and gaps share, e.g. 285 on the A51), %3$d = the last step used (2, 3 or 4),
      %4$s = what was done: fit_step_date, fit_step_size or fit_step_cut. Phone-only, like warn_contrast_theme. -->
-<string name="warn_titlebar_fit">%1$s: the title bar doesn\'t fit this phone\'s %2$d dp width, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use a shorter date, like {date:d MMM}.</string>
+<string name="warn_titlebar_fit">%1$s: the title bar doesn\'t fit in its %2$d dp on this phone, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use a shorter date, like {date:d MMM}.</string>
 <!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit, step 2 -->
 <string name="fit_step_date">the date was shortened</string>
 <!-- code, not strings.xml (status.json): step 3; %1$s = medium or small -->
@@ -954,7 +954,7 @@ Resources (character positions are 1-based, like line and column):
 <!-- code, not strings.xml (status.json): size-only variant, for a bar with no {date}. Only step 3 can apply.
      %1$s = path of the bar's slots (elements[0].content.slots), %2$d = the shared slot width in dp (as above),
      %3$d = 3, %4$s = fit_step_size_only. -->
-<string name="warn_titlebar_fit_size">%1$s: the title bar doesn\'t fit this phone\'s %2$d dp width, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use fewer or shorter slots.</string>
+<string name="warn_titlebar_fit_size">%1$s: the title bar doesn\'t fit in its %2$d dp on this phone, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use fewer or shorter slots.</string>
 <!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit_size; %1$s = medium or small -->
 <string name="fit_step_size_only">the text size went down to %1$s</string>
 <!-- code, not strings.xml (status.json): phone warning for an unknown theme string; %1$s = the value as written -->
