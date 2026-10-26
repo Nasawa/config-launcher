@@ -160,8 +160,36 @@ Copy: sheet title `Pages`; untitled row and label `Page %1$d`; TalkBack `%1$s, p
 
 ### 1.5 Tablets, landscape and foldables (run-2 review, Q-S2)
 Decided by Pragma (UX) and Archimedes (architecture) from QA run 2 ([CI run 40377723279](https://github.com/Nasawa/config-launcher/actions/runs/40377723279),
-`cl-qa/evidence/matrix/run2/layout-review/`, the #177 screen matrix). Christopher's answers to Q-L1–Q-L6 are
-**pending**: this section is written with the recommended defaults, and a different answer changes only the rule it names.
+`cl-qa/evidence/matrix/run2/layout-review/`, the #177 screen matrix). **Christopher decided Q-L1–Q-L6 on 2026-10-26:
+the defaults below stand**, as starting points the config will be able to change (next paragraph).
+
+**Defaults now, overrides later (Christopher, 2026-10-26).** Every rule in this section is a **default**, not a limit.
+In his words: "The defaults are great for a starting point, but if the user wants to do weird stuff, we should provide
+the tools to facilitate it where possible." The config will be able to override:
+- **Columns and rows** per width class or orientation (e.g. 6 × 4 on an Expanded window in landscape).
+- **The cell cap and centring:** on or off, and the cap size (instead of 144 dp).
+- **The dock edge** per orientation and fold posture: `top`, `bottom`, `start` or `end` (e.g. top in portrait, start in
+  landscape).
+- **Orientation lock:** `portrait`, `landscape` or follow the system, including a landscape-only phone.
+- **Fold behaviour:** half-folded as one half (default) or spanning both halves; flat-open laid out as a tablet (default)
+  or as a phone.
+- **Icon and grid scale** (e.g. icons larger or smaller than 56 dp, within the §12 touch-target floor).
+
+**Staging.** dev8 ships the defaults only. The overrides come in a later release, with the schema shape Archimedes owns
+(Q-A11). Until that release, an override key is rejected exactly like any unknown key today (strict keys: B2 on the
+phone, an error in `validate.py`). No override may break positions: `x`/`y`/`w`/`h` and the `dock[]` order keep meaning
+the same thing, and a window change still never writes.
+
+**Columns/rows overrides and items that don't fit (proposal, pending Archimedes).** When an override gives a window a
+smaller grid than an item's position needs (an item at column 6 on a 4-column override, or row 5 on a 4-row one):
+- The item is **skipped on that window**: not drawn, not moved, not written. It shows again on any window whose grid
+  holds it. Its cells stay its own in the file, so nothing else is placed on top of it from a bigger window.
+- `status.json` gets a §15-style warning, worked out from the **file at load**, not the window (same rule as Q-A12), so
+  every device writes the same list. Draft: `pages[1].items[3]: column 6, row 2 is outside the 4 × 5 grid used for
+  compact portrait, so it isn't shown there. Move it, or widen that grid.`
+- Placement on a window (drag, `Move to…`, Undo, `Add to home`, the widget picker) uses that window's grid, so a tablet
+  can place in column 6 and the phone then skips that item with the warning above.
+- The file stays valid as long as each position fits the **largest** grid the file declares.
 
 **One rule behind all of it.** Home is drawn from `launcher.json` plus the window (size, insets, cutout, hinge, font
 scale). A window change (rotate, fold, unfold, resize) re-lays out what's on screen and nothing else: it never adds or
@@ -194,10 +222,11 @@ The classes pick **sizing and chrome only** (the cell cap, the dock's place, dra
 column or row count. A window right at a boundary (599/600, 839/840, the fold's 841) may flip class while resizing;
 that only changes chrome, never a position.
 
-**Columns and rows: the file's, everywhere (Q-L1).** A tablet shows the same `grid.columns` × `grid.rows` as the phone,
+**Columns and rows: the file's, everywhere (Q-L1, decided).** A tablet shows the same `grid.columns` × `grid.rows` as the phone,
 with bigger, centred cells. More columns on a tablet would change what `x` means per device: an item placed in column 5
-on the tablet would be outside the phone's 4-column grid, which is a B2 error for the whole file. A per-class grid
-(e.g. 6 columns on Expanded) is deferred to Archimedes (Q-A11); nothing in this section needs a schema change.
+on the tablet would be outside the phone's 4-column grid, which is a B2 error for the whole file today. A per-class
+grid (e.g. 6 columns on Expanded) is planned as a config override (above, Q-A11); the dev8 defaults need no schema
+change.
 
 **Cell size: capped and centred (Q-L2).** Let `availW` × `availH` be the page area (after insets, the top row, notice
 row, page label or title bar, page indicator and a bottom dock), `W0 = availW / columns` and `H0 = availH / rows`:
@@ -282,7 +311,10 @@ window (§15 "Fit warnings", Q-A12).
 The §6.1 notice-row rules hold in every layout: chips share the page-label row; with a title bar the row is its own 48 dp
 row above the bar and the chips never go in the bar.
 
-**Foldables (Q-L4, Q-L5).**
+**Foldables (Q-L4, Q-L5).** What the postures look like: **folded**, it's a normal phone, using the small screen on
+the outside. **Flat open**, it's a small, nearly square tablet. **Half open like a book**, it stands on its edge with the
+crease running top to bottom; **half open like a laptop on a table** ("tabletop"), the bottom half lies flat and the top
+half stands up, with the crease running side to side.
 - **Folded (cover screen):** a phone. Compact width; portrait uses the phone layout, landscape uses the rail.
 - **Unfolded, flat:** an ordinary window, usually Medium/Expanded width with a bottom dock (1.2 : 1). A flat hinge
   (`FoldingFeature.isSeparating == false`) is ignored.
@@ -853,7 +885,7 @@ this table.
 ## 13. Build checklist (Sprite)
 
 - [ ] Home: pager + grid (`grid.columns/rows`, default 4 × 5, file allows 2–12) + dock (0–7), sizes from §1.1, wallpaper through.
-- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L15 in test-plan.md §20.
+- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L15 in test-plan.md §20. dev8 builds the defaults only and still rejects any override key (O0); the config overrides (Q-A11, checks O1–O8) come after dev8.
 - [ ] Dimmed tiles and reconciliation (§1.2): not installed, unpublished shortcut, paused work apps, activity fallback, unplaced apps in the drawer only (`page` not offered in Settings), private space never placed. Never auto-delete.
 - [ ] Item sheet shows the real app name and package. Strip bidi and zero-width characters from labels at render.
 - [ ] Drawer: search (§2 match rules, focused with the keyboard up; TalkBack and hardware-keyboard rules, Back hides the keyboard first, `Open keyboard with drawer` setting), `drawer.sort` (label or installTime), `drawer.rules` groups, hidden apps section (package names), work tab.
@@ -1859,7 +1891,7 @@ The same `launcher.json` syncs to a tablet. Cells are bigger there, up to the §
   declared `minSpan`, it renders at that span with the §16.5 amber outline + ▲ and the warning `elements[4]: span 2×1 is
   below this widget's minimum 3×2. Shown at 2×1 anyway.`
 - **Grid too small for the position** (an `x`+`w` past the columns): a validation error (B2, §6). There's no per-device
-  grid schema in v1 (Q-A6): one `grid` in the file, and cell size and `k` absorb phone vs tablet.
+  grid schema in v1 (Q-A6; config overrides are planned, Q-A11): one `grid` in the file, and cell size and `k` absorb phone vs tablet.
 - **Approval doesn't travel** (A1): on the tablet, the first load shows `Needs your OK`, the tile keeps the widget's
   real cells, and the dashboard comes alive one tap per widget.
 
@@ -2171,23 +2203,21 @@ Title bar and home theme (§12.1, §15):
   the current dark palette. Contrast checks then run against whatever is showing, and the `dark mode on/off` warning
   words still fit.] Raised by Grace and Sprite in [#152](https://github.com/Nasawa/config-launcher/pull/152) and
   [#153](https://github.com/Nasawa/config-launcher/pull/153).
-Tablets, landscape and foldables (§1.5). **Pending Christopher.** Raised by Archimedes and Pragma from QA run 2; §1.5 is
-written with the recommended default, in brackets:
-- **Q-L1** More columns on a tablet? The same file is used everywhere, so a tablet shows the phone's 4 × 5, bigger and
-  centred. [No. Same grid everywhere (Q-D4 stands), no per-device override in v1. More icons on a tablet later means a
-  schema change that older builds reject (Q-A11).] Pending Christopher.
-- **Q-L2** Big empty margins or stretched cells? On a 10" tablet in landscape the grid is 576 dp wide with about 300 dp of
-  wallpaper each side. [Centred grid with a 144 dp cell cap. The alternative is an aspect-only cap: about 860 dp wide,
-  cells 1.25 : 1.] Pending Christopher.
-- **Q-L3** Which edge does the dock move to in landscape? [The end edge: right, or left in a right-to-left language.]
-  Pending Christopher.
-- **Q-L4** The fold's inner screen is nearly square (841 × 701). Bottom dock or rail? [Bottom (the rail starts at
-  1.4 : 1), so unfolding doesn't move the dock.] Pending Christopher.
-- **Q-L5** Half-folded (book or tabletop)? [All of home in one half: the start half for book, grid on top and dock below for
-  tabletop. Never a cell across the hinge.] Pending Christopher.
-- **Q-L6** Phone landscape (was Q-S2): support it or lock portrait? [Support it, with the dock rail and the existing
-  label-hiding ladder. A home app that ignores rotation feels broken on tablets, and the same code covers both.]
-  Pending Christopher.
+Tablets, landscape and foldables (§1.5). ✅ **All six decided by Christopher on 2026-10-26: the default, each one**,
+as a starting point the config will be able to override later (§1.5 "Defaults now, overrides later", Q-A11). His
+principle: "if the user wants to do weird stuff, we should provide the tools to facilitate it where possible."
+- ✅ **Q-L1** More columns on a tablet? **Decided: the same grid everywhere by default** (Q-D4 stands). A per-class or
+  per-orientation grid is planned as an override (Q-A11).
+- ✅ **Q-L2** Big empty margins or stretched cells? **Decided: centred grid with a 144 dp cell cap** (1.25 : 1). Cap on/off
+  and its size are planned overrides.
+- ✅ **Q-L3** Which edge does the dock move to in landscape? **Decided: the end edge** (right, or left in a right-to-left
+  language). The edge per orientation and posture (top, bottom, start, end) is a planned override.
+- ✅ **Q-L4** The fold's inner screen (841 × 701): bottom dock or rail? **Decided: bottom**, so unfolding doesn't move
+  the dock. Planned override as Q-L3.
+- ✅ **Q-L5** Half-folded? **Decided: all of home in one half**, never a cell across the hinge. Spanning both halves, and
+  flat-open as a phone, are planned overrides.
+- ✅ **Q-L6** Phone landscape (was Q-S2)? **Decided: support it**, with the dock rail and the label-hiding ladder. An
+  orientation lock (portrait, landscape, system), including landscape-only phones, is a planned override.
 
 - **Q-T7** Should home use wallpaper (dynamic) colours on Android 12+? It would change menus, dialogs, banners and
   the title bar's theme tokens with the wallpaper, and the contrast checks would follow. [Later, as an extra `theme`
@@ -2197,7 +2227,7 @@ written with the recommended default, in brackets:
 ## UI questions for Sprite
 
 - **Q-S1** Compose drag-and-drop across pager pages and into the dock: is `Modifier.dragAndDropSource/Target` enough, or a custom pointer-input layer?
-- ~~Q-S2~~ Landscape: moved to Christopher as Q-L6 (§1.5, recommended: support it, dock rail on the end edge).
+- ~~Q-S2~~ Landscape: moved to Christopher as Q-L6, decided 2026-10-26: support it, dock rail on the end edge (§1.5).
 - **Q-S3** The architecture picks `kotlinx.serialization` (plus a `JsonElement` tree). Does it give line/column for parse errors, and positions for validation paths, or do we need a small tokenizer for the excerpts?
 - **Q-S5** Fitting cells at 200 % font scale on small phones: confirm the label-hiding fallback is acceptable visually.
 - **Q-S6** Dock with 6–7 items: is shrinking icons to a 48 dp minimum readable, or should the UI cap drags at 5 (the file still allows 7)?
@@ -2256,13 +2286,47 @@ Flags from Christopher's answers, both resolved in ARCHITECTURE §18:
 - ~~AQ-10~~ Label backdrop: 60 % black scrim. White on it over a pure white wallpaper is 5.7:1, which meets 4.5:1.
 - ~~AQ-11~~ Settled by AF-2: `unsorted.mode` is never acted on, so `page` behaves as the drawer, per Christopher.
 
-Tablets, landscape and foldables (§1.5; Archimedes' notes for this PR). Both have a no-schema-change default that §1.5 uses:
-- **Q-A11** Per-window-class grid override (e.g. `"grid": {"columns": 4, "rows": 5, "expanded": {"columns": 6}}`), only if
-  Christopher answers Q-L1 "yes". **Default: deferred, no schema change, `schemaVersion` 1, FEATURE_LEVEL stays 4.**
-  Archimedes' constraints if it comes back: additive inside `grid`, widen only; positions validated and placed against the
-  base grid from every device; no narrowing (it would need an "off-grid" state); `grid` has `additionalProperties: false`,
-  so it needs the Q-A10 pre-release route or `schemaVersion` 2 (FEATURE_LEVEL can't gate it, `requires` is only on
-  `elements[]`).
+Tablets, landscape and foldables (§1.5; Archimedes' notes for this PR). dev8 needs no schema change; Q-A11 is the planned override work:
+- **Q-A11** Config overrides for §1.5 (**planned work, reopened 2026-10-26**; was "deferred"). Christopher decided Q-L1–Q-L6
+  as defaults and wants the config able to override each (§1.5 "Defaults now, overrides later"). **Archimedes owns and
+  finalises the schema shape.** Pragma's candidate, for discussion only:
+
+  ```json
+  "windowOverrides": [
+    { "when": { "widthClass": "expanded", "orientation": "landscape" },
+      "grid": { "columns": 6, "rows": 4 },
+      "cellCap": { "enabled": true, "maxWidthDp": 160 },
+      "dock": { "edge": "start" } },
+    { "when": { "orientation": "portrait" }, "dock": { "edge": "top" } },
+    { "when": { "posture": "halfOpened" }, "fold": { "halfOpened": "span" } },
+    { "when": { "posture": "flat" }, "fold": { "flat": "asPhone" } },
+    { "when": { "deviceClass": "phone" }, "orientationLock": "landscape" },
+    { "when": {}, "scale": { "icon": 1.15 } }
+  ]
+  ```
+
+  - **Name:** a top-level `windowOverrides` array. Not `layouts` (already the widget layouts keyed `"WxH"`, Q-A6) and not
+    `overrides` (easy to mix up with the title bar's per-page overrides).
+  - **`when`:** every key given must match; an empty `when` always matches. Keys: `widthClass` (`compact` | `medium` |
+    `expanded`), `orientation` (`portrait` | `landscape`), `posture` (`folded` | `flat` | `halfOpened`, maybe split into
+    `book` | `tabletop`), and `deviceClass` (`phone` | `tablet`, from `smallestScreenWidthDp` < / ≥ 600).
+  - **Fields:** `grid {columns, rows}` (2–12, as today), `cellCap {enabled, maxWidthDp}`, `dock {edge: top | bottom | start
+    | end}`, `fold {halfOpened: oneHalf | span, flat: asTablet | asPhone}`, `orientationLock` (`portrait` | `landscape` |
+    `system`), `scale {icon}` (e.g. 0.75–1.5 × 56 dp; touch targets stay ≥ 48 dp).
+  - **Order:** entries apply in file order, a later entry wins field by field. A window with no match uses the defaults.
+  - **Points for Archimedes:**
+    - `orientationLock` can't be keyed on `orientation` or `widthClass`, because locking changes them and the rule would
+      flip itself. That's why it's keyed on `deviceClass` (stable across rotation) only.
+    - `posture: folded` needs to know the device is a foldable on its cover screen, which `FoldingFeature` alone doesn't
+      say.
+    - Smaller-grid overrides need the "skipped on that window" state proposed in §1.5. You ruled an off-grid state out
+      for the earlier widen-only sketch, so this is the main thing to settle.
+  - **Constraints carried over:** the root and `grid` have `additionalProperties: false`, so older builds reject the file
+    (B2). It needs the Q-A10 pre-release route or `schemaVersion` 2, and FEATURE_LEVEL can't gate a root key on its own
+    (`requires` is only on `elements[]`); a FEATURE_LEVEL bump still marks the release that understands it. Positions are
+    validated against the largest declared grid, placement and the warnings stay file-derived, and a window change never
+    writes.
+  - **Until then:** dev8 ships the §1.5 defaults only, and an override key is rejected as any unknown key is today.
 - ~~Q-A12~~ ✅ Resolved by Archimedes (title-bar fit warnings vs "a resize never writes"): the fit check runs **only on
   config load or reload**, against a **portrait bar at `smallestScreenWidthDp`**, and never re-runs on rotation, fold or
   resize. A fold changes the warnings only at the next load, because `status.json` describes the last load, not the

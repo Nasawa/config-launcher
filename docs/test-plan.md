@@ -464,6 +464,21 @@ landscape and fold G1–G3 are advisory through dev7 and blocking at dev8.
 | L14 | **Fit warning comes from the load only** (Q-A12). Fixture with a long `{date}` bar. Load on the fold's inner screen, fold to the cover screen, rotate, resize in multi-window, then reload | No `status.json` write on fold, rotate or resize; the cover-screen bar steps down the ladder and truncates on screen with no new warning. The reload rewrites the warnings from a portrait bar at the cover screen's `smallestScreenWidthDp`. The matrix T3 check compares the warning with that load-time check, not with the step on screen (they match on a phone in portrait) | File hash + logcat; xml of the bar |
 | L15 | **Icon ladder at 360 dp, font 1.3** (§1.5). `s360-mdpi-v2` (360 × 640 dp, font 1.3, title bar, 2 pages) after the 56 dp change | **Step 2: 48 dp icons, labels shown whole.** Row pitch 77.6 dp, tile 73.6 dp: 56 + 17 label + 8 padding = 81 doesn't fit, 48 + 17 + 8 = 73 does (0.6 dp spare). If Sprite changes the paddings or the label line and it no longer fits, step 3 (48 dp, labels hidden) is the only other pass. **Fail:** a cut label (G1), or a 56 dp icon with its label cut or overlapping. With a notice-row chip up it's step 3 | xml: icon 48 × 48, label height ≥ one line or no label node; G1 |
 
+**Config overrides (after dev8; placeholders until Q-A11 has a schema shape).** dev8 ships the §1.5 defaults only. Until
+then the only check is O0.
+
+| # | Check | Expected | When |
+|---|---|---|---|
+| O0 | An override key (e.g. `windowOverrides`) in a dev8 file | Rejected like any unknown key: B2 on the phone, an error in `validate.py` | dev8 |
+| O1 | Columns/rows override per width class and orientation | That window uses the override grid; the other windows keep theirs; no write on rotate | after dev8 |
+| O2 | Items outside a smaller override grid | Skipped on that window only, never moved or written; shown again on a window whose grid holds them; the warning comes from the file and matches on every device | after dev8 |
+| O3 | Cell cap off, and a custom cap size | Cells stretch, or cap at the given size; still centred when on | after dev8 |
+| O4 | Dock edge per orientation and posture (`top`, `bottom`, `start`, `end`) | Dock on that edge, inside `safeDrawing`, in `dock[]` order, mirrored for `start`/`end` in RTL | after dev8 |
+| O5 | Orientation lock `portrait`, `landscape`, `system`, incl. a landscape-only phone | The lock holds; the rule doesn't flip itself after the lock rotates the screen | after dev8 |
+| O6 | Fold: half-folded `span`, flat `asPhone` | `span`: home across both halves; `asPhone`: phone layout on the inner screen; no write on fold or unfold | after dev8 |
+| O7 | Icon scale | Icons at scale × 56 dp, the ladder still runs, touch targets ≥ 48 dp, labels whole or hidden | after dev8 |
+| O8 | Several matching entries | Later entries win field by field; an empty `when` matches every window | after dev8 |
+
 Manual (TalkBack and keyboard, one tablet in landscape and one RTL point): focus order is rail head → banner → notice row
 → page label or title bar → grid in reading order → page dots → rail dock items top to bottom, whichever side the rail
 is on. D-pad from a grid cell next to the rail moves to the nearest rail slot and back. Side margins take no focus.
