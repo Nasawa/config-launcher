@@ -81,7 +81,7 @@ Shape notes (ARCHITECTURE §3, §16):
 | Element | Spec |
 |---|---|
 | Grid | `grid.columns` × `grid.rows`, default **4 × 5**. The file allows **2–12 × 2–12** (validation rule). The Settings picker offers a narrower 3–6 × 4–7 (UX choice only); a file outside the picker range still renders, and the picker then shows the file's value. Cells fill the space between the banner slot and the page indicator evenly. The same columns × rows on every device and window: on Medium/Expanded-width windows (tablets, the open fold) cells are capped at **144 dp wide** and **1.25 : 1**, and the grid is centred (§1.5) |
-| Cell | Icon **56 dp** centred, label below. **Minimum cell 64 × 80 dp**. If the screen can't fit the configured rows at that size, labels are hidden first, then icons shrink to 48 dp; the layout is never clipped. 56 dp is the size on every device; 48 dp is only this fallback (§1.5) |
+| Cell | Icon **56 dp** centred, label below. **Minimum cell 64 × 80 dp**. When a cell is too short for the icon plus one whole label line, the **icon ladder** (§1.5) steps down for the whole grid: 56 dp icon + label → 48 dp icon + label → 48 dp icon, label hidden. Never clipped. 56 dp is the size on every device; 48 dp is only this fallback |
 | Label | 12 sp, 1 line, ellipsized at the end, centred, white with a soft shadow for wallpaper contrast (§12) |
 | Label backdrop (v1 setting, default off, Q-C4, §18.1) | When on: a rounded **60 % black** scrim behind each home-grid label (a background on the label, 6 dp side and 2 dp top/bottom padding, hugging the text width up to the cell width). The text shadow stays on. Applies to page items and folder tiles on home, not the dock (no labels) or inside the folder card. Stored in app settings (DataStore), not in `launcher.json` |
 | Pages | Horizontal pager. One page minimum. The page indicator shows only with ≥ 2 pages. Dots are 8 dp, current = filled |
@@ -211,8 +211,8 @@ pitchH = min(H0, 1.5 × pitchW)                    // at most 1.5× the cell's w
   (equal side margins) and vertically in the page area. With the default 4 columns the block is at most 576 dp wide.
 - **Compact width (phones in portrait, a folded fold's cover screen):** unchanged. Cells fill the width as today
   (`PhoneOutputGoldenTest` stays green; the caps would be no-ops anyway, 411 / 4 ≈ 103 dp).
-- **Under the minimum** (`H0` < 80 dp or `W0` < 64 dp): the §1.1 ladder applies: labels are hidden first (whole or
-  hidden, §12), then icons shrink to 48 dp. Never clipped. Phone landscape lands here at the default 4 × 5.
+- **Short cells:** the icon ladder below applies on every class. Never clipped. Phone landscape lands on its last step
+  at the default 4 × 5.
 - **Expected** (Archimedes' estimates, rail as below): t10-land ≈ 144 × 138, block 576 dp wide; t10-port 144 × 200;
   t7-port 144 × 136; t7-land ≈ 106 × 85 (labels come back); fold-open 104 × 83, block 416 dp wide.
 - **Side margins are home, not cells.** Long-press in a margin opens the home menu (as in a gutter, #75), swipe-up there
@@ -221,17 +221,33 @@ pitchH = min(H0, 1.5 × pitchW)                    // at most 1.5× the cell's w
 - **Icons and labels keep their phone size** (56 dp icon, 12 sp label) on every class. Bigger cells give room, not bigger
   icons. Cards scale by `k` from the smaller cell side (§17.8), so capped cells keep them from ballooning.
 
-**Icon size: 56 dp (Archimedes' note).** §1.1 says 56 dp; the current `Tile` draws 48 dp (`AppIconImage(…, 48)`). **56 dp is the
-size**, on home tiles, folder tiles and the dock. 48 dp is the ladder's fallback when a cell can't fit 56 + label, not the
-default. Reason: 48 dp icons in 104–144 dp cells are the "small icons" QA saw on every tablet point, and 56 dp still fits
-the 64 × 80 dp minimum cell with a 12 sp label. This moves the phone goldens once (an intentional change, in the same PR
-as the cap); after that, Compact stays unchanged.
+**Icon size: 56 dp, 48 dp only when the cell is too small** (agreed by Pragma and Archimedes). §1.1 says 56 dp; the
+current `Tile` draws 48 dp (`AppIconImage(…, 48)`). **56 dp is the size** on home tiles, folder tiles and the dock, on
+every class. Reason: 48 dp icons in 104–144 dp cells are the "small icons" QA saw on every tablet point.
+
+**Icon ladder.** "Fits" means the icon plus one whole label line fits the cell's content box (with today's code: the row
+pitch minus 4 dp cell padding minus 8 dp tile padding). All cells are one size, so the step is chosen once for the whole
+grid and icons never mix sizes on a page. First step that fits wins:
+1. 56 dp icon + label.
+2. 48 dp icon + label.
+3. 48 dp icon, label hidden (still spoken by TalkBack, §12).
+
+The icon shrinks before the label goes: a readable label matters more than 8 dp of icon. The label is never cut (§12).
+Worked example, the 360 × 640 dp phone at font 1.3 with a title bar and 2 pages (`s360-mdpi-v2-home1`, run 2): the row
+pitch is 77.6 dp, so the tile has 73.6 dp; the label line is 17 dp. 56 + 17 + 8 = 81 doesn't fit; 48 + 17 + 8 = 73 fits
+with 0.6 dp spare, so it's **step 2: 48 dp icons, labels shown**. (At font 1.0 the label is 16 dp and it's still step 2;
+56 dp needs a row pitch of about 84 dp at font 1.0.) A notice-row chip there (its own 48 dp row above the title bar,
+§6.1) takes about 10 dp per row and drops it to step 3.
+
+**Phone goldens move once.** Drawing 56 dp changes `PhoneOutputGoldenTest` on any phone whose cells reach step 1. They
+are re-baselined once, in the same PR as the icon change; after that, Compact stays unchanged.
 
 **Content width for the rows above and below the grid.** On Medium and Expanded, the §6.1 banner, the notice row, the
 §1.3 page label, the §15 title bar and a bottom dock are centred on the grid block and use the **content width**: the
 wider of the block and 576 dp, but no wider than the page area. (fold-open: 576 of 841 dp; t10-land: 576 dp.) The title
-bar's overflow ladder runs on that width. Compact keeps the full width. Which width the `status.json` fit warning
-is checked against is Q-A12 (default: the narrowest portrait width, so a rotation never writes).
+bar's overflow ladder runs on that width. Compact keeps the full width. The `status.json` fit warning is **not** checked
+against this width: it comes from a load-time check against a portrait bar at `smallestScreenWidthDp`, never from the
+window (§15 "Fit warnings", Q-A12).
 
 **Dock: bottom bar or side rail (Q-L3, Q-L4).**
 - **Rail** when the window is at least **1.4 : 1** (width ÷ height), **or** its height is **Compact** (< 480 dp).
@@ -774,7 +790,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | Edit mode | Announce `Editing layout. Double-tap Done when finished.` Focus order: top bar, then grid in reading order, then dock. With a dock rail (§1.5): the rail head (`Done`, `⋮`), then the grid, then the rail's dock items top to bottom |
 | Banners | Polite live region, announced once. Buttons are focusable. The error detail view reads as a list of problems |
 | Touch targets | ≥ **48 × 48 dp** for everything (cells 64 × 80 dp, dock slots 64 dp, rail slots 64 dp shrinking to 48 dp, chip ≥ 48 dp hit area, banner buttons 48 dp tall) |
-| Font scaling | Labels and text use sp and follow the system font size up to 200 %. Grid labels stay 1 line and ellipsize; at ≥ 150 % labels may be hidden on the home grid (still spoken by TalkBack) if cells can't fit them. **A label is shown whole or not at all, for any reason** (font scale, a banner, B9, the notice row, a small phone): when a cell is shorter than icon + full label line, the label is hidden, never cut through the letters (#173, 320 dp). Hidden labels are still spoken by TalkBack. The drawer always shows labels (wrapping to 2 lines). Banners and settings wrap, never truncate |
+| Font scaling | Labels and text use sp and follow the system font size up to 200 %. Grid labels stay 1 line and ellipsize; at ≥ 150 % labels may be hidden on the home grid (still spoken by TalkBack) if cells can't fit them. **A label is shown whole or not at all, for any reason** (font scale, a banner, B9, the notice row, a small phone): when a cell is shorter than icon + full label line (even after the icon steps down to 48 dp, §1.5 icon ladder), the label is hidden, never cut through the letters (#173, 320 dp). Hidden labels are still spoken by TalkBack. The drawer always shows labels (wrapping to 2 lines). Banners and settings wrap, never truncate |
 | Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (the home theme, §12.1: follows the system unless `launcher.json` overrides it; no dynamic colour in this release). Home labels over wallpaper: white text with a 1 dp 50 % black shadow. With `Label backdrop` on, the 60 % black scrim is added (§1.1). Over a pure white wallpaper, white text on that scrim alone measures 5.7:1 (WCAG, worst case), so it meets 4.5:1 on any wallpaper |
 | Reduced motion | Respect `Settings.Global.ANIMATOR_DURATION_SCALE == 0` and "Remove animations": no page-slide spring, folder open as a fade, no shake (use a red outline), no jiggle ever |
 | Colour | Status is never colour-only: ▲ warning / ■ error glyphs, dimmed tiles also say "not installed" to TalkBack |
@@ -837,7 +853,7 @@ this table.
 ## 13. Build checklist (Sprite)
 
 - [ ] Home: pager + grid (`grid.columns/rows`, default 4 × 5, file allows 2–12) + dock (0–7), sizes from §1.1, wallpaper through.
-- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons; dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L13 in test-plan.md §20.
+- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L15 in test-plan.md §20.
 - [ ] Dimmed tiles and reconciliation (§1.2): not installed, unpublished shortcut, paused work apps, activity fallback, unplaced apps in the drawer only (`page` not offered in Settings), private space never placed. Never auto-delete.
 - [ ] Item sheet shows the real app name and package. Strip bidi and zero-width characters from labels at render.
 - [ ] Drawer: search (§2 match rules, focused with the keyboard up; TalkBack and hardware-keyboard rules, Back hides the keyboard first, `Open keyboard with drawer` setting), `drawer.sort` (label or installTime), `drawer.rules` groups, hidden apps section (package names), work tab.
@@ -929,12 +945,25 @@ has already ellipsized), the phone applies these steps **in order and stops at t
    numeric `style.size`, or `small`, skips this step. The step changes only the bar's own size. **The system font
    scale is never overridden**: it still multiplies whatever size is used.
 4. **Last resort: the date truncates with an ellipsis at the end** (`Sun, Oct 1…`). The clock never truncates.
-TalkBack always reads the **full** spoken date and time (`Sunday, October 18`), whatever step is showing. The ladder
-runs again on every layout change: rotation, a font-scale or display-size change, a reload, a home-theme switch.
-Whenever step 2 or later is in use, `status.json` gets the phone-only warning `warn_titlebar_fit` (§15.1). It's
-marked `checked on this phone`, like the theme contrast warnings, because `validate.py` can't know the phone's width.
-It shows in the Warnings list, with no snackbar or banner, and it clears silently once the bar fits again. Step 1 alone
-writes no warning. **Bar with no date:** steps 2 and 4 don't apply (there's nothing to shorten or cut), so only step 3
+TalkBack always reads the **full** spoken date and time (`Sunday, October 18`), whatever step is showing. On screen,
+the ladder runs again on every layout change: rotation, fold, resize, a font-scale or display-size change, a reload, a
+home-theme switch. **That on-screen run never writes anything.**
+
+**Fit warnings (Q-A12, Archimedes).** The warning comes from a separate **fit check**, not from the on-screen ladder:
+- It runs **only when the config loads or reloads** (§5), never on rotation, fold, resize or any other window change.
+- It measures a **portrait bar at the device's `smallestScreenWidthDp`**: the bar width the §1.5 rules give a portrait
+  window that wide (Compact: full width; 600 dp or more: the content width). This is the narrowest the bar gets on that
+  screen, whatever the current window.
+- **Sprite: don't wire the check to window metrics** (`currentWindowMetrics`, `onConfigurationChanged`, the composable's
+  measured width). It takes `smallestScreenWidthDp`, the font scale and the file at load time, and nothing else.
+- If that check needs step 2 or later, `status.json` gets the phone-only warning `warn_titlebar_fit` (§15.1). It's
+  marked `checked on this phone`, like the theme contrast warnings, because `validate.py` can't know the phone's width.
+  It shows in the Warnings list, with no snackbar or banner, and it clears silently at the first load whose check
+  fits. Step 1 alone writes no warning.
+- `status.json` describes the **last load, not the current window**. A fold changes `smallestScreenWidthDp` (cover vs
+  inner screen), so the warnings can change at the **next load** after a fold, never at the fold itself.
+- When the real window is narrower than the one checked (e.g. the cover screen after a load on the inner screen), the
+  bar on screen still steps down the ladder and truncates gracefully. That never writes a warning or anything else. **Bar with no date:** steps 2 and 4 don't apply (there's nothing to shorten or cut), so only step 3
 can write a warning, and it uses the size-only variant `warn_titlebar_fit_size` (§15.1), which doesn't mention the
 date and suggests `Use fewer or shorter slots.` If the bar still doesn't fit after step 3 (or step 3 was
 skipped), that is **step 4 for this bar**: side text other than the clock ellipsizes as in the layout rules above, and
@@ -1112,7 +1141,10 @@ Resources (character positions are 1-based, like line and column):
 <!-- code, not strings.xml (status.json): overflow ladder (§15 Layout). %1$s = path of the slot holding the date
      (elements[0].content.slots.end), %2$d = the shared slot width in dp: the bar's width minus its padding (the
      width the slots and gaps share, e.g. 285 on the A51), %3$d = the last step used (2, 3 or 4),
-     %4$s = what was done: fit_step_date, fit_step_size or fit_step_cut. Phone-only, like warn_contrast_theme. -->
+     %4$s = what was done: fit_step_date, fit_step_size or fit_step_cut. Phone-only, like warn_contrast_theme.
+     Written only by the load-time fit check (§15 "Fit warnings", Q-A12): a portrait bar at smallestScreenWidthDp,
+     on load or reload only. Never from window metrics; rotation, fold and resize never write it. %2$d is that
+     checked bar's width, not the current window's. Same for warn_titlebar_fit_size. -->
 <string name="warn_titlebar_fit">%1$s: the title bar doesn\'t fit in its %2$d dp on this phone, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use a shorter date, like {date:d MMM}.</string>
 <!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit, step 2 -->
 <string name="fit_step_date">the date was shortened</string>
@@ -2231,11 +2263,9 @@ Tablets, landscape and foldables (§1.5; Archimedes' notes for this PR). Both ha
   base grid from every device; no narrowing (it would need an "off-grid" state); `grid` has `additionalProperties: false`,
   so it needs the Q-A10 pre-release route or `schemaVersion` 2 (FEATURE_LEVEL can't gate it, `requires` is only on
   `elements[]`).
-- **Q-A12** Title-bar fit warnings vs "a resize never writes". §15's `warn_titlebar_fit` / `warn_titlebar_fit_size` are
-  `checked on this phone` against the bar's width, and §1.5 makes that width depend on the window (Compact: full width;
-  Medium/Expanded: the content width). **Default (Pragma):** the fit check behind the warning runs at load time against
-  the bar width of a **portrait window at the device's `smallestScreenWidthDp`** (the narrowest the bar gets on that
-  screen), so rotating or resizing never changes the warning set and never writes `status.json`. The bar on screen still
-  uses its own ladder step for the current width. A fold changes `smallestScreenWidthDp`, so the next load (not the fold
-  itself) may write a different set. Phone and tablet can still differ, as every `checked on this phone` warning does.
-  Archimedes to confirm, or rule the warning window-independent some other way.
+- ~~Q-A12~~ ✅ Resolved by Archimedes (title-bar fit warnings vs "a resize never writes"): the fit check runs **only on
+  config load or reload**, against a **portrait bar at `smallestScreenWidthDp`**, and never re-runs on rotation, fold or
+  resize. A fold changes the warnings only at the next load, because `status.json` describes the last load, not the
+  current window. At runtime the bar still truncates gracefully on the §15 ladder when the real window is narrower than
+  the one checked (e.g. the cover screen after a load on the inner screen), and that never writes. The check must not
+  be wired to window metrics. Applied in §15 "Fit warnings", the `warn_titlebar_fit` string comment and §1.5.
