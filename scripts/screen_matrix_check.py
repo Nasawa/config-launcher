@@ -6,11 +6,12 @@ matrix point and decides each check. No adb here, so it can be dry-run against o
 
   screen_matrix_check.py find <dump.xml> <attr> <regex>     print the centre "x y" of the first match
   screen_matrix_check.py find-empty <dump.xml> <density>     print a point on empty home grid space
+  screen_matrix_check.py screen <dump.xml>                   print the real screen size "w h" (root bounds)
   screen_matrix_check.py check <run-dir>                     write result.json + result.md for one point
   screen_matrix_check.py summarize <out-dir>                 merge every */result.json; exit 1 on a blocking FAIL
 
-Severity per check: block (fails the dev7 gate), advisory (reported only) or pending (rule not in
-docs yet; reported, never blocks). See the "dev7 gate" section of the test plan.
+Severity per check: block (fails the dev7 gate), advisory (reported only) or pending (spec merged in
+#175, advisory until its implementation lands; never blocks). See the "dev7 gate" section of the test plan.
 """
 import json, os, re, sys
 import xml.etree.ElementTree as ET
@@ -145,6 +146,19 @@ def cmd_find(path, attr, rx):
     return 0 if n else 1
 
 
+def screen_of(nodes):
+    """Real screen size from a dump: the root node's bounds."""
+    return (max([n.b[2] for n in nodes] or [0]), max([n.b[3] for n in nodes] or [0]))
+
+
+def cmd_screen(path):
+    nodes = load(path)
+    if not nodes:
+        return 1
+    print(*screen_of(nodes))
+    return 0
+
+
 def cmd_find_empty(path, density):
     nodes = load(path) or []
     s = float(density) / 160
@@ -182,11 +196,13 @@ def meta_of(d):
 
 
 def severity(cid, m):
-    """Gate policy (test plan, 'dev7 gate')."""
+    """Gate policy (test plan, 'dev7 gate'). Page-2 variants (suffix p2) share their check's severity."""
+    if cid.endswith('p2'):
+        cid = cid[:-2]
     fs = float(m.get('font_scale', '1.0'))
     tier = m.get('tier', 'phone')
     pending = {'G5b', 'G5c'}
-    advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D3'}
+    advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D3', 'X1'}
     if cid in pending:
         return 'pending'
     if cid == 'F1':
@@ -218,8 +234,19 @@ def run_checks(d):
     home = {}
     for k in ('home1', 'home2'):
         home[k] = load(os.path.join(d, k + '.xml'))
-    if not W and home['home1']:
-        W = max(n.b[2] for n in home['home1']); H = max(n.b[3] for n in home['home1'])
+    if home['home1']:
+        W, H = screen_of(home['home1'])     # what the device really drew, not what was asked for
+
+    # X0 harness: the wm size override really applied (Android clamps it to a multiple of the physical panel)
+    run = read(os.path.join(d, 'run.txt'))
+    got = m.get('applied_px') or next(iter(re.findall(r'Override size: (\d+x\d+)', run) or re.findall(r'Physical size: (\d+x\d+)', run)), '')
+    want = m.get('size_px', '')
+    add('X0', 'Requested display size applied (harness)', (got == want) if got and want else None,
+        f'requested {want or "?"}, applied {got or "?"}' + ('' if not got or got == want else ' (clamped: the AVD panel is too small, results describe the applied size)'),
+        'test plan §5 (AVD panel sizes)')
+    night_got = m.get('night_applied') or next(iter(re.findall(r'Night mode: (\w+)', run)), '')
+    add('X1', 'Requested night mode applied (harness)', (night_got == m.get('night')) if night_got and m.get('night') else None,
+        f"requested {m.get('night', '?')}, applied {night_got or '?'}", 'test plan §1 variants (API 29: #150)')
 
     # F1 cold start, crash and ANR
     crash = read(os.path.join(d, 'crash.txt'))
@@ -379,7 +406,7 @@ def run_checks(d):
         cid = 'G5c' if chip_fixture else 'G1'
         add(cid + sfx, 'Grid labels whole or hidden, never cut' + (' (chip/notice row showing)' if chip_fixture else ''),
             not clipped, f'{len(labels)} labels; cut (text, dp tall, need ≥ {min_h:.1f}): {clipped[:6]}',
-            'ux.md §1.1 Cell ("the layout is never clipped"), §12 Font scaling' + ('; Pragma ux/notice-row (pending)' if chip_fixture else ''))
+            'ux.md §1.1 Cell ("the layout is never clipped"), §12 Font scaling' + ('; #175 whole-or-hidden (advisory until implemented)' if chip_fixture else ''))
         ov = [(a.text, b.text) for i, a in enumerate(labels) for b in labels[i + 1:] if inter(a.b, b.b) > 0]
         tov = [(a.b, b.b) for i, a in enumerate(tiles) for b in tiles[i + 1:]
                if inter(a.b, b.b) > 0 and not contains(a.b, b.b) and not contains(b.b, a.b)]
@@ -392,16 +419,23 @@ def run_checks(d):
             f'{len(tiles)} tiles, {len(dock)} dock; under 48 dp {small[:4]}; off-screen {off[:3]}; into bar {intobar[:3]}',
             'ux.md §12 Touch targets, §1.1 Cell, §15 "Never overlaps icons"')
         if chip_fixture and k == 'home1':
+            # §17.4: the first load shows the B9 banner; the driver taps × and dumps home-chip with the count chip
+            hc = load(os.path.join(d, 'home-chip.xml'))
+            if hc is not None:
+                nodes = hc; tb = title_bar(hc, s)
             chip = find(nodes, 'desc', r'^Widget permissions')
             if chip is None:
-                add('G5a', 'Count chip present with ≥ 48 dp hit area', False, 'no "Widget permissions" chip', 'ux.md §17.4 Count chip, §12')
+                banner = any('needs your OK.' in t or 'need your OK.' in t for t in texts(nodes))
+                add('G5a', 'Count chip present with ≥ 48 dp hit area', None if hc is None and banner else False,
+                    'banner showing, chip not reached (no home-chip dump)' if hc is None and banner else 'no "Widget permissions" chip',
+                    'ux.md §17.4 Count chip, §12')
             else:
                 add('G5a', 'Count chip present with ≥ 48 dp hit area', chip.w / s >= 47.5 and chip.h / s >= 47.5,
                     f'chip {chip.w / s:.1f}×{chip.h / s:.1f} dp at {chip.b}', 'ux.md §17.4 Count chip, §12 Touch targets')
                 same_row = tb is not None and chip.b[1] < tb['rect'][3] and chip.b[3] > tb['rect'][1]
                 add('G5b', 'Collapsed chip shares one row with the page label (no extra strip)', same_row,
                     f"chip y {chip.b[1]}-{chip.b[3]}, title bar y {tb['rect'][1] if tb else '?'}-{tb['rect'][3] if tb else '?'}",
-                    'Pragma ux/notice-row (pending doc, decides #173)')
+                    'ux.md notice row (#175, decides #173); advisory until the #175 implementation lands')
 
     # TH1 theme: drawer surface colour
     th = None; detail = 'no drawer.png or Pillow'
@@ -414,9 +448,10 @@ def run_checks(d):
             row = [im.getpixel((x, y)) for x in range(0, im.width, max(1, im.width // 40))]
             from collections import Counter
             c = Counter(row).most_common(1)[0][0]
-            want = (0x14, 0x12, 0x18) if m.get('night') == 'yes' else (0xFE, 0xF7, 0xFF)
-            th = None if m.get('night') not in ('yes', 'no') else all(abs(a - b) <= 16 for a, b in zip(c, want))
-            detail = f'surface sample #{c[0]:02X}{c[1]:02X}{c[2]:02X}, want #{want[0]:02X}{want[1]:02X}{want[2]:02X} (night={m.get("night")})'
+            night = night_got or m.get('night')     # judge against the theme the system really had
+            want = (0x14, 0x12, 0x18) if night == 'yes' else (0xFE, 0xF7, 0xFF)
+            th = None if night not in ('yes', 'no') else all(abs(a - b) <= 16 for a, b in zip(c, want))
+            detail = f'surface sample #{c[0]:02X}{c[1]:02X}{c[2]:02X}, want #{want[0]:02X}{want[1]:02X}{want[2]:02X} (night={night})'
     except Exception as e:  # no Pillow, or an empty/corrupt screenshot: advisory check just doesn't run
         detail = f'screenshot not readable ({type(e).__name__})'
     add('TH1', 'Drawer follows the system theme (§12.1 surface colour)', th, detail, 'ux.md §12.1 Palettes (Surface)')
@@ -478,6 +513,8 @@ if __name__ == '__main__':
         sys.exit(__doc__)
     if a[0] == 'find':
         sys.exit(cmd_find(a[1], a[2], a[3]))
+    if a[0] == 'screen':
+        sys.exit(cmd_screen(a[1]))
     if a[0] == 'find-empty':
         sys.exit(cmd_find_empty(a[1], a[2]))
     if a[0] == 'check':

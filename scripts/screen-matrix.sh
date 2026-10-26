@@ -95,6 +95,17 @@ run_point() {
   sh_ "settings put system accelerometer_rotation 0; settings put system user_rotation $rot"
   pause 3
   sh_ "wm size; wm density; settings get system font_scale; cmd uimode night" > "$d/run.txt" 2>&1
+  # Android clamps a wm size override to a multiple of the physical panel (2x on API 29, less on 35/36), so record
+  # what was applied; the checker fails X0 when it differs (run 1: 1080x2400 became 1080x1920 on a 320x640 AVD).
+  p=$(grep -m1 'Override size' "$d/run.txt" | grep -oE '[0-9]+x[0-9]+')
+  [ -n "$p" ] || p=$(grep -m1 'Physical size' "$d/run.txt" | grep -oE '[0-9]+x[0-9]+')
+  echo "applied_px=$p" >> "$d/meta.txt"
+  # API 29 images ignore `cmd uimode night yes` (run 1, #150): try the secure setting, then record what stuck (X1)
+  if ! grep -q "Night mode: $night" "$d/run.txt"; then
+    sh_ "settings put secure ui_night_mode $([ "$night" = yes ] && echo 2 || echo 1); cmd uimode night $night" > /dev/null 2>&1
+    pause 2
+  fi
+  echo "night_applied=$(sh_ cmd uimode night | grep -oE 'yes|no|auto' | head -1)" >> "$d/meta.txt"
 
   # Fresh app data, launcher as home, seeded layout (app-only mode)
   sh_ am force-stop "$PKG"; sh_ pm clear "$PKG" > /dev/null
@@ -110,6 +121,9 @@ run_point() {
   sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" >> "$d/run.txt" 2>&1
   pause; anr "$d"
   dump "$d" home1
+  if [ "$fixture" != launcher.json ] && tap "$d/home1.xml" desc '^Dismiss$'; then
+    pause 2; dump "$d" home-chip      # §17.4: × collapses the banner into the count chip
+  fi
 
   # F3 long-press a home item (label, or the first tile when labels are hidden at large font scales)
   if longpress "$d/home1.xml" text '^QA Settings$' || longpress "$d/home1.xml" desc '^QA Settings'; then
@@ -123,13 +137,14 @@ run_point() {
     sh_ input keyevent BACK; pause 2
   fi
   # F5 drawer: swipe up (ux.md §1.4), then long-press an app in it
+  read -r sw sh <<< "$($CHECK screen "$d/home1.xml" 2> /dev/null || echo "$sw $sh")"
   cx=$((sw / 2))
-  sh_ input swipe "$cx" $((sh * 80 / 100)) "$cx" $((sh * 30 / 100)) 300; pause
+  sh_ input swipe "$cx" $((sh * 70 / 100)) "$cx" $((sh * 25 / 100)) 300; pause
   dump "$d" drawer; echo swipe > "$d/drawer-via.txt"
   if ! grep -q 'Search apps' "$d/drawer.xml"; then
     home; tap "$d/home1.xml" text '^Apps$' && { pause; dump "$d" drawer; echo button > "$d/drawer-via.txt"; }
   fi
-  if longpress "$d/drawer.xml" text '^Settings$'; then pause 2; dump "$d" drawer-lp; fi
+  if longpress "$d/drawer.xml" text '^(Calendar|Camera|Clock|Contacts|Settings)$'; then pause 2; dump "$d" drawer-lp; fi
   sh_ input keyevent BACK; pause 1; home
 
   # F6 Pages list from the {page} slot, then page 2
@@ -164,6 +179,9 @@ run_point() {
 A wait-for-device < /dev/null
 A install -r -g "$APK" < /dev/null | tee "$OUT/install.txt"
 grep -q '^Success' "$OUT/install.txt" || { echo "install failed" >&2; exit 1; }
+
+dups=$(awk -F'\t' '!/^#/ && NF > 1 {print $1}' "$FIX/points.tsv" | sort | uniq -d)
+[ -z "$dups" ] || { echo "duplicate point ids in points.tsv: $dups" >&2; exit 2; }
 
 n=0
 while IFS=$'\t' read -r id shard size dens rot fs night fixture tier shape <&3; do

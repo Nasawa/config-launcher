@@ -29,4 +29,4 @@ t10-land-v2	tablets	1600x2560	320	1	1.3	yes	launcher.json	large	simulated 10-inc
 fold-open-v1	fold	2208x1840	420	0	1.0	no	launcher.json	large	simulated unfolded inner screen (841x701 dp)
 fold-open-v2	fold	2208x1840	420	0	1.3	yes	launcher.json	large	simulated unfolded inner screen (841x701 dp)
 fold-open-v3	fold	2208x1840	420	0	2.0	no	launcher.json	large	simulated unfolded inner screen (841x701 dp)
-p411-a51-v1	fold	1080x2400	420	0	1.0	no	launcher.json	phone	device-shaped: A51 411 dp on API 36 (newest image)
+p411-a51-v1-a36	fold	1080x2400	420	0	1.0	no	launcher.json	phone	device-shaped: A51 411 dp on API 36 (newest image)

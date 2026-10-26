@@ -37,11 +37,13 @@ jobs:
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os
           all_ = [
-              {"shard": "small-a", "api": 29, "target": "default", "arch": "x86"},
-              {"shard": "small-b", "api": 29, "target": "default", "arch": "x86"},
-              {"shard": "phones", "api": 35, "target": "google_apis", "arch": "x86_64"},
-              {"shard": "tablets", "api": 35, "target": "google_apis", "arch": "x86_64"},
-              {"shard": "fold", "api": 36, "target": "google_apis", "arch": "x86_64"},
+              # skin = AVD panel (portrait). Android clamps `wm size` overrides to a multiple of the panel,
+              # so each panel is at least as big as every point in its shard (run 1 used the 320x640 default).
+              {"shard": "small-a", "api": 29, "target": "default", "arch": "x86", "skin": "720x1440"},
+              {"shard": "small-b", "api": 29, "target": "default", "arch": "x86", "skin": "720x1440"},
+              {"shard": "phones", "api": 35, "target": "google_apis", "arch": "x86_64", "skin": "1344x2992"},
+              {"shard": "tablets", "api": 35, "target": "google_apis", "arch": "x86_64", "skin": "1600x2560"},
+              {"shard": "fold", "api": 36, "target": "google_apis", "arch": "x86_64", "skin": "2208x2400"},
           ]
           want = {s.strip() for s in os.environ["SHARDS"].split(",") if s.strip()}
           inc = [s for s in all_ if "all" in want or s["shard"] in want]
@@ -82,6 +84,11 @@ jobs:
         with:
           name: screen-matrix-apk
           path: apk
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Pillow for the theme check (TH1)
+        run: python3 -m pip install --quiet pillow
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -97,6 +104,7 @@ jobs:
           arch: ${{ matrix.arch }}
           ram-size: 4096M
           disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -skin ${{ matrix.skin }}
           # One line: the runner executes each script line in its own sh.
           script: bash scripts/screen-matrix.sh --shard "$SHARD" --points "$POINTS" --apk apk --out "screen-matrix-out/$SHARD"
       - uses: actions/upload-artifact@v7
@@ -121,7 +129,10 @@ jobs:
       - name: Merge results (fails on any blocking check)
         run: |
           mkdir -p results/all
-          for d in results/*/*/; do [ -f "$d/meta.txt" ] && cp -r "$d" results/all/; done
+          # <shard>-<point>: a point id may repeat across shards without overwriting another
+          for d in results/*/*/; do
+            if [ -f "$d/meta.txt" ]; then cp -r "$d" "results/all/$(basename "$(dirname "$d")")-$(basename "$d")"; fi
+          done
           set +e
           python3 scripts/screen_matrix_check.py summarize results/all > /dev/null
           rc=$?
