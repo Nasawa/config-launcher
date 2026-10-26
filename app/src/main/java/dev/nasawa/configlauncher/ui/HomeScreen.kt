@@ -586,7 +586,7 @@ fun HomeScreen(vm: HomeViewModel) {
         }
 
         if (drawerOpen) {
-            ModalBottomSheet({ drawerOpen = false }) {
+            AppDrawerSheet({ drawerOpen = false }) {
                 var query by remember { mutableStateOf("") }
                 val shown = remember(query, ui.layout.drawer) { DrawerSearch.filter(ui.layout.drawer, query) }
                 val focus = remember { androidx.compose.ui.focus.FocusRequester() }
@@ -619,7 +619,8 @@ fun HomeScreen(vm: HomeViewModel) {
                 }
                 }
                 if (shown.isEmpty()) Text(stringResource(R.string.search_no_match, query.trim()), Modifier.padding(16.dp), color = Color.Gray)
-                LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxHeight(0.85f).padding(8.dp), state = gridState) {
+                // #179: the grid takes the rest of the full-height sheet, so the drawer is full height with few apps too.
+                LazyVerticalGrid(GridCells.Fixed(4), Modifier.weight(1f).padding(8.dp), state = gridState) {
                     items(shown, key = { it.key }) { app ->
                         val ri = ResolvedItem(AppItem("drawer", app.packageName, app.activityName), app)
                         with(drag) { Tile(ri, vm.apps, Modifier.tile(ri, canDrag = false, onClick = { drawerOpen = false; launchApp(app) }, onLongClick = { drawerSheet = app })) }
