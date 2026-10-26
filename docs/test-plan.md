@@ -433,6 +433,56 @@ Report anything that differs, with a screenshot.
 
 Automation: R = Robolectric Compose UI test (`performTouchInput { longClick() }`), E = `scripts/longpress-smoke.sh` (seeds app-only mode with one tile via `run-as`, `input swipe x y x y 800`, then a `uiautomator dump` that must contain `App info` and the real package, and the launcher must still be on top).
 
+## 20. Tablets, landscape and foldables (ux.md §1.5, Archimedes' large-screen notes)
+
+Evidence so far: QA run 2 ([CI run 40377723279](https://github.com/Nasawa/config-launcher/actions/runs/40377723279) on bee4fe3; the #177 matrix), points t7-port, t7-land,
+t10-port, t10-land and fold-open at font 1.0 / 1.3 / 2.0. Until these checks exist, #177's Q2 interim stands: tablet,
+landscape and fold G1–G3 are advisory through dev7 and blocking at dev8.
+
+**Gaps in that evidence** (each needs a new point or fixture before its check can block):
+- The fold points are a **simulated** inner screen (`wm size` 841 × 701). No `FoldingFeature`, no hinge, no fold ↔ unfold
+  transition, and no folded cover-screen point.
+- No phone-landscape point, no RTL point, no width-class boundary points (599/600, 839/840 dp). The fold's 841 dp is 1 dp
+  above Expanded.
+- No cards on large screens, and no 6–7 item dock.
+
+| # | Check | Expected | How |
+|---|---|---|---|
+| L1 | **No write on a window change.** Rotate ×4, fold/unfold ×2, resize in multi-window | `launcher.json` hash and `revision` unchanged, no `status.json` write, history unchanged | File hash before/after; logcat for writes |
+| L2 | **Positions are exact** on every point | Every item and card is in column `x`, row `y` (span `w` × `h`) | From the xml: `floor((centre − blockLeft) / pitchW)` |
+| L3 | **Cap and centring** on Medium/Expanded | `pitchW` ≤ 144 dp, cell W/H ≤ 1.25 and H/W ≤ 1.5, left margin = right margin (±1 dp). Compact phone goldens unchanged (after the one-time 56 dp icon re-baseline) | xml bounds; `PhoneOutputGoldenTest` |
+| L4 | **Minimum and labels** | `pitchH` ≥ 80 dp at font 1.0 on t7-land and t10-land. On every point every label is full height or absent, no slivers (fixes today's G1 on t7-land) | xml label bounds ≥ 1 line |
+| L5 | **Dock placement** | Rail on t7-land and t10-land (end edge; left in RTL), with `Apps`/`⋮` at its head; bottom on t7-port, t10-port and fold-open. Rail inside `safeDrawing` (nav bar on the same side, cutout side) | xml + insets dump |
+| L6 | **Dock count.** Fixture `dock7` at t7-land, phone landscape and t7-port | All 7 fit, slots ≥ 48 dp, in file order (top → bottom on the rail); the rail scrolls rather than hides | New fixture `dock7` |
+| L7 | **Page continuity.** On page 2, rotate and fold/unfold | Still `Second`, `Page 2 of 2` (restored by page `id`); edit mode, drawer and open sheets kept | Screenshot + xml |
+| L8 | **Drag on a config change.** Start a drag, then rotate | Drag cancelled, nothing written, item in its old cell | Instrumented test |
+| L9 | **Hinge.** Real `FoldingFeature`: emulator posture HALF_OPENED, book and tabletop | No cell, card or dock slot intersects the hinge bounds; book uses the start half, tabletop puts the grid on top and the dock below. Flat: hinge ignored | New fold points (the current ones are simulated) |
+| L10 | **Placement is window-independent** | `Move to…` shows Column 1–4 / Row 1–5 everywhere; Undo's free spot, `Add to home` and the widget picker give the same answer on every point for the same file | Unit test on the pure placement functions + one UI check |
+| L11 | **Margins** | Long-press in a side margin opens the home menu, swipe-up there opens the drawer, a drop there is refused, and a tap at each column centre hits the right item | Instrumented |
+| L12 | **Class boundaries, phone landscape, RTL** | Points at 599/600 and 839/840 dp width, phone landscape (e.g. 800 × 360: rail, labels hidden whole, icons ≥ 48 dp) and one RTL point (grid mirrored, rail on the left) | New matrix rows |
+| L13 | **Cards.** Fixture with a 2×2 and a 4×1 card | `k` ≤ 1.5 on t10-land, no stretching, nothing crosses the hinge | New fixture `cards-large` |
+| L14 | **Fit warning comes from the load only** (Q-A12). Fixture with a long `{date}` bar. Load on the fold's inner screen, fold to the cover screen, rotate, resize in multi-window, then reload | No `status.json` write on fold, rotate or resize; the cover-screen bar steps down the ladder and truncates on screen with no new warning. The reload rewrites the warnings from a portrait bar at the cover screen's `smallestScreenWidthDp`. The matrix T3 check compares the warning with that load-time check, not with the step on screen (they match on a phone in portrait) | File hash + logcat; xml of the bar |
+| L15 | **Icon ladder at 360 dp, font 1.3** (§1.5). `s360-mdpi-v2` (360 × 640 dp, font 1.3, title bar, 2 pages) after the 56 dp change | **Pass: every label is whole or cleanly hidden (no label node, still read by TalkBack), never clipped.** Expected today is step 2 (48 dp icons, labels whole): row pitch 77.6 dp, tile 73.6 dp, 48 + 17 + 8 = 73 fits with only 0.6 dp spare, so rounding or density on a real device may land on step 3 (48 dp, labels hidden), which also passes. The check doesn't pin the step. With a notice-row chip up it's step 3. **Fail:** a cut label (G1), a label overlapping its icon, or a 56 dp icon with its label cut | xml: each label height ≥ one full line or no label node; G1 |
+
+**Config overrides (after dev8; placeholders until Q-A11 has a schema shape).** dev8 ships the §1.5 defaults only. Until
+then the only check is O0.
+
+| # | Check | Expected | When |
+|---|---|---|---|
+| O0 | An override key (e.g. `windowOverrides`) in a dev8 file | Rejected like any unknown key: B2 on the phone, an error in `validate.py` | dev8 |
+| O1 | Columns/rows override per width class and orientation | That window uses the override grid; the other windows keep theirs; no write on rotate | after dev8 |
+| O2 | Items outside a smaller override grid | Skipped on that window only, never moved or written; shown again on a window whose grid holds them; the warning comes from the file and matches on every device | after dev8 |
+| O3 | Cell cap off, and a custom cap size | Cells stretch, or cap at the given size; still centred when on | after dev8 |
+| O4 | Dock edge per orientation and posture (`top`, `bottom`, `start`, `end`) | Dock on that edge, inside `safeDrawing`, in `dock[]` order, mirrored for `start`/`end` in RTL | after dev8 |
+| O5 | Orientation lock `portrait`, `landscape`, `system`, incl. a landscape-only phone | The lock holds; the rule doesn't flip itself after the lock rotates the screen | after dev8 |
+| O6 | Fold: half-folded `span`, flat `asPhone` | `span`: home across both halves; `asPhone`: phone layout on the inner screen; no write on fold or unfold | after dev8 |
+| O7 | Icon scale | Icons at scale × 56 dp, the ladder still runs, touch targets ≥ 48 dp, labels whole or hidden | after dev8 |
+| O8 | Several matching entries | Later entries win field by field; an empty `when` matches every window | after dev8 |
+
+Manual (TalkBack and keyboard, one tablet in landscape and one RTL point): focus order is rail head → banner → notice row
+→ page label or title bar → grid in reading order → page dots → rail dock items top to bottom, whichever side the rail
+is on. D-pad from a grid cell next to the rail moves to the nearest rail slot and back. Side margins take no focus.
+
 ## Open questions (v3)
 
 All v3 questions are resolved in A§18.6 (Q-v3-1, -2, -3, -4, -6, -9); the rulings are folded into SK-8, DR-6, LB-2, OU-2, CM-6/CM-22–26 and §13. Remaining unknown: the Secure Folder detection heuristic (SF-A51, pending manual run).

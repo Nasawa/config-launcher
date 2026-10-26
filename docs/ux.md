@@ -80,14 +80,14 @@ Shape notes (ARCHITECTURE §3, §16):
 
 | Element | Spec |
 |---|---|
-| Grid | `grid.columns` × `grid.rows`, default **4 × 5**. The file allows **2–12 × 2–12** (validation rule). The Settings picker offers a narrower 3–6 × 4–7 (UX choice only); a file outside the picker range still renders, and the picker then shows the file's value. Cells fill the space between the banner slot and the page indicator evenly |
-| Cell | Icon **56 dp** centred, label below. **Minimum cell 64 × 80 dp**. If the screen can't fit the configured rows at that size, labels are hidden first, then icons shrink to 48 dp; the layout is never clipped |
+| Grid | `grid.columns` × `grid.rows`, default **4 × 5**. The file allows **2–12 × 2–12** (validation rule). The Settings picker offers a narrower 3–6 × 4–7 (UX choice only); a file outside the picker range still renders, and the picker then shows the file's value. Cells fill the space between the banner slot and the page indicator evenly. The same columns × rows on every device and window: on Medium/Expanded-width windows (tablets, the open fold) cells are capped at **144 dp wide** and **1.25 : 1**, and the grid is centred (§1.5) |
+| Cell | Icon **56 dp** centred, label below. **Minimum cell 64 × 80 dp**. When a cell is too short for the icon plus one whole label line, the **icon ladder** (§1.5) steps down for the whole grid: 56 dp icon + label → 48 dp icon + label → 48 dp icon, label hidden. Never clipped. 56 dp is the size on every device; 48 dp is only this fallback |
 | Label | 12 sp, 1 line, ellipsized at the end, centred, white with a soft shadow for wallpaper contrast (§12) |
 | Label backdrop (v1 setting, default off, Q-C4, §18.1) | When on: a rounded **60 % black** scrim behind each home-grid label (a background on the label, 6 dp side and 2 dp top/bottom padding, hugging the text width up to the cell width). The text shadow stays on. Applies to page items and folder tiles on home, not the dock (no labels) or inside the folder card. Stored in app settings (DataStore), not in `launcher.json` |
 | Pages | Horizontal pager. One page minimum. The page indicator shows only with ≥ 2 pages. Dots are 8 dp, current = filled |
-| Dock | `dock[]` (a plain array, left to right), **0–7 items** (schema max), same icon size, **no labels**, fixed on all pages. The starter layout fills 4. Above 5 items, icons shrink to fit the width (min 48 dp). A 1 dp divider (white 24 %) above it |
+| Dock | `dock[]` (a plain array, left to right), **0–7 items** (schema max), same icon size, **no labels**, fixed on all pages. The starter layout fills 4. Above 5 items, icons shrink to fit the width (min 48 dp). A 1 dp divider (white 24 %) above it. Becomes a **rail on the end edge** (right in LTR, left in RTL) when the window is ≥ 1.4 : 1 or under 480 dp tall; bottom otherwise, including the open fold (§1.5) |
 | Wallpaper | System wallpaper, shown through (`windowShowWallpaper`) |
-| Density | Uses dp/sp only. Phones only in MVP. Landscape: same grid, rotated pager, dock moves to the right edge (Q-S2) |
+| Density and windows | Uses dp/sp only. Phones, tablets, landscape and foldables follow §1.5: rules come from the current window's size class (width Compact < 600, Medium 600–839, Expanded ≥ 840 dp), never from the device. A rotation, fold or resize re-lays out the screen and never writes |
 
 Gestures and taps (home):
 
@@ -157,6 +157,207 @@ Copy: sheet title `Pages`; untitled row and label `Page %1$d`; TalkBack `%1$s, p
   `⌃ handle` in the wireframe; one tap target is enough.) A TalkBack custom action `Open app list` is also on the home grid.
 - **Reduced motion:** the drawer appears with a fade (150 ms) instead of sliding with the finger; the threshold is the same.
 - **Close:** swipe down at the top of the list, Back (keyboard first, §2), Home, or launching an app.
+
+### 1.5 Tablets, landscape and foldables (run-2 review, Q-S2)
+Decided by Pragma (UX) and Archimedes (architecture) from QA run 2 ([CI run 40377723279](https://github.com/Nasawa/config-launcher/actions/runs/40377723279),
+`cl-qa/evidence/matrix/run2/layout-review/`, the #177 screen matrix). **Christopher decided Q-L1–Q-L6 on 2026-10-26:
+the defaults below stand**, as starting points the config will be able to change (next paragraph).
+
+**Defaults now, overrides later (Christopher, 2026-10-26).** Every rule in this section is a **default**, not a limit.
+In his words: "The defaults are great for a starting point, but if the user wants to do weird stuff, we should provide
+the tools to facilitate it where possible." The config will be able to override:
+- **Columns and rows** per width class or orientation (e.g. 6 × 4 on an Expanded window in landscape).
+- **The cell cap and centring:** on or off, and the cap size (instead of 144 dp).
+- **The dock edge** per orientation and fold posture: `top`, `bottom`, `start` or `end` (e.g. top in portrait, start in
+  landscape).
+- **Orientation lock:** `portrait`, `landscape` or follow the system, including a landscape-only phone.
+- **Fold behaviour:** half-folded as one half (default) or spanning both halves; flat-open laid out as a tablet (default)
+  or as a phone.
+- **Icon and grid scale** (e.g. icons larger or smaller than 56 dp, within the §12 touch-target floor).
+
+**Staging.** dev8 ships the defaults only. The overrides come in a later release, with the schema shape Archimedes owns
+(Q-A11). Until that release, an override key is rejected exactly like any unknown key today (strict keys: B2 on the
+phone, an error in `validate.py`). No override may break positions: `x`/`y`/`w`/`h` and the `dock[]` order keep meaning
+the same thing, and a window change still never writes.
+
+**Columns/rows overrides and items that don't fit (agreed with Archimedes, 2026-10-26).** When an override gives a window a
+smaller grid than an item's position needs (an item at column 6 on a 4-column override, or row 5 on a 4-row one):
+- The item is **skipped on that window**: not drawn, not moved, not written. It shows again on any window whose grid
+  holds it. Its cells stay its own in the file, so nothing else is placed on top of it from a bigger window.
+- `status.json` gets a §15-style warning, worked out from the **file at load**, not the window (same rule as Q-A12), so
+  every device writes the same list. Draft: `pages[1].items[3]: column 6, row 2 is outside the 4 × 5 grid used for
+  compact portrait, so it isn't shown there. Move it, or widen that grid.`
+- Placement on a window (drag, `Move to…`, Undo, `Add to home`, the widget picker) uses that window's grid, so a tablet
+  can place in column 6 and the phone then skips that item with the warning above.
+- The file stays valid as long as each position fits the **largest** grid the file declares.
+
+**One rule behind all of it.** Home is drawn from `launcher.json` plus the window (size, insets, cutout, hinge, font
+scale). A window change (rotate, fold, unfold, resize) re-lays out what's on screen and nothing else: it never adds or
+removes cells, never moves an item, and **never writes** (no `launcher.json`, `status.json`, `revision`, history or
+DataStore change). `grid.columns` × `grid.rows`, every `x`/`y` (and `w`/`h`) and the `dock[]` order mean the same
+thing on every device that reads the file.
+
+**What run 2 showed** (dp from the `home1.xml` dumps; pitch = centre-to-centre distance between cells):
+
+| Point (window, width class) | Pitch today, column × row | Problem | Screenshots |
+|---|---|---|---|
+| t7-port 600 × 960, Medium | 146 × 136 | Mostly fine; small icons in tall cells | `t7-port-v1-home1.png`, `t7-port-v2-home1.png` |
+| t7-land 960 × 600, Expanded | **236 × 64** | Rows under the 80 dp minimum; labels cut to a 3–4 dp sliver (G1). The bottom dock, the top row and the title bar eat the height | `t7-land-v1-home1.png`, `t7-land-v2-home1.png`, `t7-land-v2-home2.png` |
+| t10-port 800 × 1280, Medium | 196 × 200 | Small icons, wide gaps; title bar and dock span 784 dp | `t10-port-v1-home1.png`, `t10-port-v2-home1.png` |
+| t10-land 1280 × 800, Expanded | **316 × 104** | Worst stretch: 4 icons spread over 1280 dp, a 1-item dock bar 1264 dp wide | `t10-land-v1-home1.png`, `t10-land-v2-home1.png` |
+| fold-open 841 × 701, Expanded (by 1 dp) | 206 × 83 | Stretched 2.5 : 1; at font 2.0 labels ellipsize to 4–5 letters | `fold-open-v1-home1.png`, `fold-open-v3-home1.png` |
+
+The Pages sheet and the item sheet already stop at about 640 dp (`t10-land-v1-pages.png`, `t7-land-v1-lp-item.png`);
+the home grid is the only thing that stretches.
+
+**Window classes.** Computed from the **current window** (`currentWindowMetrics`), not the device or its rotation, so
+multi-window and desktop windowing follow the same rules:
+
+| | Compact | Medium | Expanded |
+|---|---|---|---|
+| Width | < 600 dp | 600–839 dp | ≥ 840 dp |
+| Height | < 480 dp | 480–899 dp | ≥ 900 dp |
+
+The classes pick **sizing and chrome only** (the cell cap, the dock's place, drawer columns). They never pick the
+column or row count. A window right at a boundary (599/600, 839/840, the fold's 841) may flip class while resizing;
+that only changes chrome, never a position.
+
+**Columns and rows: the file's, everywhere (Q-L1, decided).** A tablet shows the same `grid.columns` × `grid.rows` as the phone,
+with bigger, centred cells. More columns on a tablet would change what `x` means per device: an item placed in column 5
+on the tablet would be outside the phone's 4-column grid, which is a B2 error for the whole file today. A per-class
+grid (e.g. 6 columns on Expanded) is planned as a config override (above, Q-A11); the dev8 defaults need no schema
+change.
+
+**Cell size: capped and centred (Q-L2).** Let `availW` × `availH` be the page area (after insets, the top row, notice
+row, page label or title bar, page indicator and a bottom dock), `W0 = availW / columns` and `H0 = availH / rows`:
+
+```
+pitchW = min(W0, 144 dp, max(64 dp, 1.25 × H0))   // at most 144 dp wide, and at most 1.25× the cell's height
+pitchH = min(H0, 1.5 × pitchW)                    // at most 1.5× the cell's width
+```
+
+- **Medium and Expanded width:** the grid is a `columns × pitchW` by `rows × pitchH` block, **centred** horizontally
+  (equal side margins) and vertically in the page area. With the default 4 columns the block is at most 576 dp wide.
+- **Compact width (phones in portrait, a folded fold's cover screen):** unchanged. Cells fill the width as today
+  (`PhoneOutputGoldenTest` stays green; the caps would be no-ops anyway, 411 / 4 ≈ 103 dp).
+- **Short cells:** the icon ladder below applies on every class. Never clipped. Phone landscape lands on its last step
+  at the default 4 × 5.
+- **Expected** (Archimedes' estimates, rail as below): t10-land ≈ 144 × 138, block 576 dp wide; t10-port 144 × 200;
+  t7-port 144 × 136; t7-land ≈ 106 × 85 (labels come back); fold-open 104 × 83, block 416 dp wide.
+- **Side margins are home, not cells.** Long-press in a margin opens the home menu (as in a gutter, #75), swipe-up there
+  opens the drawer, and a drop there is refused (the item springs back). The §4.2 page turn while dragging uses the
+  **window** edge, not the block's edge.
+- **Icons and labels keep their phone size** (56 dp icon, 12 sp label) on every class. Bigger cells give room, not bigger
+  icons. Cards scale by `k` from the smaller cell side (§17.8), so capped cells keep them from ballooning.
+
+**Icon size: 56 dp, 48 dp only when the cell is too small** (agreed by Pragma and Archimedes). §1.1 says 56 dp; the
+current `Tile` draws 48 dp (`AppIconImage(…, 48)`). **56 dp is the size** on home tiles, folder tiles and the dock, on
+every class. Reason: 48 dp icons in 104–144 dp cells are the "small icons" QA saw on every tablet point.
+
+**Icon ladder.** "Fits" means the icon plus one whole label line fits the cell's content box (with today's code: the row
+pitch minus 4 dp cell padding minus 8 dp tile padding). All cells are one size, so the step is chosen once for the whole
+grid and icons never mix sizes on a page. First step that fits wins:
+1. 56 dp icon + label.
+2. 48 dp icon + label.
+3. 48 dp icon, label hidden (still spoken by TalkBack, §12).
+
+The icon shrinks before the label goes: a readable label matters more than 8 dp of icon. The label is never cut (§12).
+Worked example, the 360 × 640 dp phone at font 1.3 with a title bar and 2 pages (`s360-mdpi-v2-home1`, run 2): the row
+pitch is 77.6 dp, so the tile has 73.6 dp; the label line is 17 dp. 56 + 17 + 8 = 81 doesn't fit; 48 + 17 + 8 = 73 fits
+with 0.6 dp spare, so it's **step 2: 48 dp icons, labels shown**. (At font 1.0 the label is 16 dp and it's still step 2;
+56 dp needs a row pitch of about 84 dp at font 1.0.) A notice-row chip there (its own 48 dp row above the title bar,
+§6.1) takes about 10 dp per row and drops it to step 3.
+
+**Phone goldens move once.** Drawing 56 dp changes `PhoneOutputGoldenTest` on any phone whose cells reach step 1. They
+are re-baselined once, in the same PR as the icon change; after that, Compact stays unchanged.
+
+**Content width for the rows above and below the grid.** On Medium and Expanded, the §6.1 banner, the notice row, the
+§1.3 page label, the §15 title bar and a bottom dock are centred on the grid block and use the **content width**: the
+wider of the block and 576 dp, but no wider than the page area. (fold-open: 576 of 841 dp; t10-land: 576 dp.) The title
+bar's overflow ladder runs on that width. Compact keeps the full width. The `status.json` fit warning is **not** checked
+against this width: it comes from a load-time check against a portrait bar at `smallestScreenWidthDp`, never from the
+window (§15 "Fit warnings", Q-A12).
+
+**Dock: bottom bar or side rail (Q-L3, Q-L4).**
+- **Rail** when the window is at least **1.4 : 1** (width ÷ height), **or** its height is **Compact** (< 480 dp).
+  That's t7-land and t10-land (1.6 : 1) and any phone in landscape (≈ 2 : 1).
+- **Bottom** otherwise: phones and tablets in portrait, and the **open fold** (841 × 701 is 1.2 : 1) in both
+  orientations, so unfolding a phone never moves the dock. The classes alone can't make this call: t7-land and
+  fold-open are both Expanded width × Medium height, but only t7-land runs out of height.
+- **Which side:** the **end** edge: right in LTR, left in RTL. It doesn't follow the rotation direction.
+- **Insets:** the rail sits inside `WindowInsets.safeDrawing`: inboard of a 3-button nav bar on that side, past a cutout
+  on that side. The wallpaper still draws edge to edge.
+- **The rail holds the top row too.** From the top: `Apps` (or `Done` in edit mode) and `⋮`, then a 1 dp divider (white
+  24 %), then the dock items **top → bottom in `dock[]` order**. With the top row gone from the page area, t7-land gets
+  about 48 dp of height back; the rail alone would leave its rows at about 78 dp. The rail is 80 dp wide, or wider when
+  `Apps`/`Done` at the current font scale needs it. The folder/storage note from the top row (`App storage`,
+  `Folder: …`) isn't shown in rail mode; it's in `⋮` → `Config folder`. Edit mode's `Editing layout` text isn't shown
+  either (the cell outlines and the announcement say it). While dragging, the §4.2 `Remove` and `App info` targets appear
+  at the top of the page area, over the notice row and page label or title bar, and go away when the drag ends.
+- **Slots:** 64 dp, shared evenly down the rail. If `count × 64` doesn't fit, slots shrink to 48 dp (icons 40 dp, the §12
+  touch-target floor). If 7 × 48 still doesn't fit, the rail scrolls. Items are never hidden, dropped or reordered.
+- **Dragging into the dock:** the drop index follows the rail's vertical axis, and the write is the same `dock[]` index
+  as on a bottom bar.
+- **Bottom bar on Medium/Expanded:** content width, centred, divider the same width. Unchanged on Compact.
+
+**Page label, notice row, title bar and page indicator** in each layout:
+
+| Layout | Top of the page area | Grid | Below the grid |
+|---|---|---|---|
+| Compact portrait (phone, cover screen) | Top row, then banner / notice row / page label or title bar, full width (§1.3, §6.1, §15), unchanged | Fills the width | Page dots, then the bottom dock |
+| Medium/Expanded, bottom dock (tablet portrait, open fold) | Top row across the window; banner, notice row, page label or title bar at the content width, centred on the block | Capped block, centred | Page dots centred on the block, then the bottom dock at the content width |
+| Rail (tablet landscape, phone landscape) | No top row (it's on the rail). Banner, notice row, page label or title bar at the content width, centred on the block | Capped block, centred in the area beside the rail (Compact width: fills it) | Page dots centred on the block. No dock (it's on the rail) |
+
+The §6.1 notice-row rules hold in every layout: chips share the page-label row; with a title bar the row is its own 48 dp
+row above the bar and the chips never go in the bar.
+
+**Foldables (Q-L4, Q-L5).** What the postures look like: **folded**, it's a normal phone, using the small screen on
+the outside. **Flat open**, it's a small, nearly square tablet. **Half open like a book**, it stands on its edge with the
+crease running top to bottom; **half open like a laptop on a table** ("tabletop"), the bottom half lies flat and the top
+half stands up, with the crease running side to side.
+- **Folded (cover screen):** a phone. Compact width; portrait uses the phone layout, landscape uses the rail.
+- **Unfolded, flat:** an ordinary window, usually Medium/Expanded width with a bottom dock (1.2 : 1). A flat hinge
+  (`FoldingFeature.isSeparating == false`) is ignored.
+- **Half-folded or dual-screen** (`isSeparating == true`, e.g. `HALF_OPENED`): no cell, card or dock slot crosses the hinge
+  bounds. **All of home goes in one half**, laid out as if that half were the window (classes recomputed from it):
+  - **Book** (vertical hinge): the start half (left in LTR, right in RTL).
+  - **Tabletop** (horizontal hinge): the top row, notice row, page label or title bar and the grid in the top half; the
+    page dots and the dock, as a bottom bar, in the bottom half.
+  - The other half shows wallpaper only. Swipe-up there opens the drawer and long-press opens the home menu, as in a margin.
+  - Splitting columns around the hinge is ruled out: it would depend on odd column counts or a card's span, so the grid
+    would jump while paging.
+
+**Rotate, fold, unfold, resize: what's kept.**
+- The **same page stays shown, by page `id`** (not by index, in case a reload changed the page list). Dots and label agree.
+- Edit mode stays on. The drawer (with its search text and scroll position), an open folder, the Pages sheet and the
+  item sheet stay open if what they show still exists, as on a reload (§4.4).
+- **A drag in progress is cancelled**: the item goes back to its cell and nothing is written. Writes already queued
+  (debounced, §4.3) still go out; they're in file coordinates, which don't change.
+- TalkBack and keyboard focus stay on the same item when it's still on screen, otherwise on the first grid item.
+- No animation beyond the system's re-layout. Nothing on screen moves except by the re-layout.
+
+**Placement uses the file's grid.** `Move to…` (§12, §16.7.2: `Row` 1…rows, `Column` 1…columns, `No room`), Undo's
+free-spot scan (§16.7.1), drawer `Add to home` and the §16.1 widget picker all scan `grid.columns` × `grid.rows` from the
+file. The same file gives the same answer on the phone, the tablet and the fold. TalkBack cell names stay in file terms
+(`Empty, column 2, row 3`) wherever the block sits.
+
+**TalkBack and D-pad order.** Bottom dock: top row → banner → notice row → page label or title bar → grid in reading
+order (row by row, start to end) → page dots → dock (start to end). Rail: rail head (`Apps`/`Done`, `⋮`) → banner → notice
+row → page label or title bar → grid → page dots → dock items on the rail (top to bottom). The order is the same whichever
+side the rail is on. D-pad: from a grid cell next to the rail, the arrow toward it goes to the nearest rail slot by height;
+from a rail slot, the opposite arrow goes back to the nearest row's end cell. Side margins and the empty half of a
+half-folded screen take no focus.
+
+**RTL.** Everything mirrors: column `x = 0` is the start column (on the right), a bottom dock runs `dock[0]` at the start,
+the rail is on the left, and book posture uses the right half. The rail's top-to-bottom order and the file don't change.
+Centring and the cap are symmetric.
+
+**Drawer on Medium/Expanded.** Full height (§2.1), in a sheet capped at about 640 dp. Columns: `grid.columns` on Compact;
+on Medium/Expanded `clamp(sheetWidth / 96 dp, grid.columns, 8)`. The drawer isn't positioned by the file, so it may adapt.
+
+**Edge cases.** Shrinking the launcher window (multi-window, DeX, desktop windowing) uses the same rules from the window
+size, with no special case. Font 2.0 on the open fold ellipsizes labels to about 4 letters
+(`fold-open-v3-home1.png`); that's accepted: labels stay whole-line or hidden and the cap doesn't shrink text.
 
 ### 1.2 Reconciliation with installed apps (spike §4)
 - Entries for **uninstalled or unknown** apps, unpublished shortcuts and paused or removed work apps show as dimmed
@@ -264,10 +465,10 @@ Copy: sheet title `Pages`; untitled row and label `Page %1$d`; TalkBack `%1$s, p
 | Empty cell | Move there |
 | Occupied cell (app) | Create a folder (§3) |
 | Folder | Add to that folder |
-| Screen edge (hold 600 ms) | Turn to the previous/next page. Past the last page → creates a new empty page |
+| Screen edge (hold 600 ms; the window edge, not the grid's edge, §1.5) | Turn to the previous/next page. Past the last page → creates a new empty page |
 | Dock slot | Move into the dock (if 7 are full, the drop is refused with a short shake, or a red outline with reduced motion) |
 | Any target, dragging a work app with **Include work apps in config** off | Refused, with snackbar `Turn on "Include work apps in config" in Settings to place work apps.` |
-| `Remove` target (top bar, appears while dragging) | Remove from home. The app stays installed and in the drawer |
+| `Remove` target (top bar, appears while dragging; with a dock rail, at the top of the page area, §1.5) | Remove from home. The app stays installed and in the drawer |
 | `App info` target | Opens system app info, and the item doesn't move |
 
 There's no automatic reflow: other items never move to make room (keeps the file diff minimal and predictable). An
@@ -618,10 +819,10 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 |---|---|
 | TalkBack labels | App: `<Label>`. Work app: `<Label>, work`. Dimmed: `<Label>, not installed` (or `, shortcut unavailable` / `, work apps paused`). Folder: `<Label> folder, 5 apps`. Dock item: `<Label>, dock`. Empty cell in edit mode: `Empty, column 2, row 3`. Page indicator: `Page 2 of 3` |
 | Actions | Every drag action also has custom accessibility actions on the item (`Move to…` with a page/row/column picker, `Add to folder…`, `Move to dock`, `Remove from home`, `Hide`), so the layout is fully editable without drag. Each is one write. `Add to folder…` is added in the same PR that builds dropping onto a folder |
-| Edit mode | Announce `Editing layout. Double-tap Done when finished.` Focus order: top bar, then grid in reading order, then dock |
+| Edit mode | Announce `Editing layout. Double-tap Done when finished.` Focus order: top bar, then grid in reading order, then dock. With a dock rail (§1.5): the rail head (`Done`, `⋮`), then the grid, then the rail's dock items top to bottom |
 | Banners | Polite live region, announced once. Buttons are focusable. The error detail view reads as a list of problems |
-| Touch targets | ≥ **48 × 48 dp** for everything (cells 64 × 80 dp, dock slots 64 dp, chip ≥ 48 dp hit area, banner buttons 48 dp tall) |
-| Font scaling | Labels and text use sp and follow the system font size up to 200 %. Grid labels stay 1 line and ellipsize; at ≥ 150 % labels may be hidden on the home grid (still spoken by TalkBack) if cells can't fit them. **A label is shown whole or not at all, for any reason** (font scale, a banner, B9, the notice row, a small phone): when a cell is shorter than icon + full label line, the label is hidden, never cut through the letters (#173, 320 dp). Hidden labels are still spoken by TalkBack. The drawer always shows labels (wrapping to 2 lines). Banners and settings wrap, never truncate |
+| Touch targets | ≥ **48 × 48 dp** for everything (cells 64 × 80 dp, dock slots 64 dp, rail slots 64 dp shrinking to 48 dp, chip ≥ 48 dp hit area, banner buttons 48 dp tall) |
+| Font scaling | Labels and text use sp and follow the system font size up to 200 %. Grid labels stay 1 line and ellipsize; at ≥ 150 % labels may be hidden on the home grid (still spoken by TalkBack) if cells can't fit them. **A label is shown whole or not at all, for any reason** (font scale, a banner, B9, the notice row, a small phone): when a cell is shorter than icon + full label line (even after the icon steps down to 48 dp, §1.5 icon ladder), the label is hidden, never cut through the letters (#173, 320 dp). Hidden labels are still spoken by TalkBack. The drawer always shows labels (wrapping to 2 lines). Banners and settings wrap, never truncate |
 | Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (the home theme, §12.1: follows the system unless `launcher.json` overrides it; no dynamic colour in this release). Home labels over wallpaper: white text with a 1 dp 50 % black shadow. With `Label backdrop` on, the 60 % black scrim is added (§1.1). Over a pure white wallpaper, white text on that scrim alone measures 5.7:1 (WCAG, worst case), so it meets 4.5:1 on any wallpaper |
 | Reduced motion | Respect `Settings.Global.ANIMATOR_DURATION_SCALE == 0` and "Remove animations": no page-slide spring, folder open as a fade, no shake (use a red outline), no jiggle ever |
 | Colour | Status is never colour-only: ▲ warning / ■ error glyphs, dimmed tiles also say "not installed" to TalkBack |
@@ -685,6 +886,7 @@ this table.
 ## 13. Build checklist (Sprite)
 
 - [ ] Home: pager + grid (`grid.columns/rows`, default 4 × 5, file allows 2–12) + dock (0–7), sizes from §1.1, wallpaper through.
+- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L15 in test-plan.md §20. dev8 builds the defaults only and still rejects any override key (O0); the config overrides (Q-A11, checks O1–O8) come after dev8.
 - [ ] Dimmed tiles and reconciliation (§1.2): not installed, unpublished shortcut, paused work apps, activity fallback, unplaced apps in the drawer only (`page` not offered in Settings), private space never placed. Never auto-delete.
 - [ ] Item sheet shows the real app name and package. Strip bidi and zero-width characters from labels at render.
 - [ ] Drawer: search (§2 match rules, focused with the keyboard up; TalkBack and hardware-keyboard rules, Back hides the keyboard first, `Open keyboard with drawer` setting), `drawer.sort` (label or installTime), `drawer.rules` groups, hidden apps section (package names), work tab.
@@ -776,12 +978,25 @@ has already ellipsized), the phone applies these steps **in order and stops at t
    numeric `style.size`, or `small`, skips this step. The step changes only the bar's own size. **The system font
    scale is never overridden**: it still multiplies whatever size is used.
 4. **Last resort: the date truncates with an ellipsis at the end** (`Sun, Oct 1…`). The clock never truncates.
-TalkBack always reads the **full** spoken date and time (`Sunday, October 18`), whatever step is showing. The ladder
-runs again on every layout change: rotation, a font-scale or display-size change, a reload, a home-theme switch.
-Whenever step 2 or later is in use, `status.json` gets the phone-only warning `warn_titlebar_fit` (§15.1). It's
-marked `checked on this phone`, like the theme contrast warnings, because `validate.py` can't know the phone's width.
-It shows in the Warnings list, with no snackbar or banner, and it clears silently once the bar fits again. Step 1 alone
-writes no warning. **Bar with no date:** steps 2 and 4 don't apply (there's nothing to shorten or cut), so only step 3
+TalkBack always reads the **full** spoken date and time (`Sunday, October 18`), whatever step is showing. On screen,
+the ladder runs again on every layout change: rotation, fold, resize, a font-scale or display-size change, a reload, a
+home-theme switch. **That on-screen run never writes anything.**
+
+**Fit warnings (Q-A12, Archimedes).** The warning comes from a separate **fit check**, not from the on-screen ladder:
+- It runs **only when the config loads or reloads** (§5), never on rotation, fold, resize or any other window change.
+- It measures a **portrait bar at the device's `smallestScreenWidthDp`**: the bar width the §1.5 rules give a portrait
+  window that wide (Compact: full width; 600 dp or more: the content width). This is the narrowest the bar gets on that
+  screen, whatever the current window.
+- **Sprite: don't wire the check to window metrics** (`currentWindowMetrics`, `onConfigurationChanged`, the composable's
+  measured width). It takes `smallestScreenWidthDp`, the font scale and the file at load time, and nothing else.
+- If that check needs step 2 or later, `status.json` gets the phone-only warning `warn_titlebar_fit` (§15.1). It's
+  marked `checked on this phone`, like the theme contrast warnings, because `validate.py` can't know the phone's width.
+  It shows in the Warnings list, with no snackbar or banner, and it clears silently at the first load whose check
+  fits. Step 1 alone writes no warning.
+- `status.json` describes the **last load, not the current window**. A fold changes `smallestScreenWidthDp` (cover vs
+  inner screen), so the warnings can change at the **next load** after a fold, never at the fold itself.
+- When the real window is narrower than the one checked (e.g. the cover screen after a load on the inner screen), the
+  bar on screen still steps down the ladder and truncates gracefully. That never writes a warning or anything else. **Bar with no date:** steps 2 and 4 don't apply (there's nothing to shorten or cut), so only step 3
 can write a warning, and it uses the size-only variant `warn_titlebar_fit_size` (§15.1), which doesn't mention the
 date and suggests `Use fewer or shorter slots.` If the bar still doesn't fit after step 3 (or step 3 was
 skipped), that is **step 4 for this bar**: side text other than the clock ellipsizes as in the layout rules above, and
@@ -959,7 +1174,10 @@ Resources (character positions are 1-based, like line and column):
 <!-- code, not strings.xml (status.json): overflow ladder (§15 Layout). %1$s = path of the slot holding the date
      (elements[0].content.slots.end), %2$d = the shared slot width in dp: the bar's width minus its padding (the
      width the slots and gaps share, e.g. 285 on the A51), %3$d = the last step used (2, 3 or 4),
-     %4$s = what was done: fit_step_date, fit_step_size or fit_step_cut. Phone-only, like warn_contrast_theme. -->
+     %4$s = what was done: fit_step_date, fit_step_size or fit_step_cut. Phone-only, like warn_contrast_theme.
+     Written only by the load-time fit check (§15 "Fit warnings", Q-A12): a portrait bar at smallestScreenWidthDp,
+     on load or reload only. Never from window metrics; rotation, fold and resize never write it. %2$d is that
+     checked bar's width, not the current window's. Same for warn_titlebar_fit_size. -->
 <string name="warn_titlebar_fit">%1$s: the title bar doesn\'t fit in its %2$d dp on this phone, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use a shorter date, like {date:d MMM}.</string>
 <!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit, step 2 -->
 <string name="fit_step_date">the date was shortened</string>
@@ -1664,7 +1882,7 @@ right away instead of waiting for the next poll. It doesn't ask the agent for ne
 - TalkBack: the button reads `<Label>, button`. A tile with a reload tap adds the custom action `Reload`.
 
 ### 17.10 Phone → tablet (and any span change)
-The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may give it its own grid).
+The same `launcher.json` syncs to a tablet. Cells are bigger there, up to the §1.5 cap (144 dp wide, 1.25 : 1), and the grid is the file's (Q-D4, Q-L1).
 - **Same span, bigger cells:** `k` rises (tokens grow up to 1.5×, text up to 1.25×). Spare room goes to `list auto`
   rows, then to `showIn: ["wide"]` children, then to padding. The text doesn't become a poster.
 - **Bigger span** (the user resizes on the tablet, or the tablet layout gives more): the next declared `layouts` entry
@@ -1674,7 +1892,7 @@ The same `launcher.json` syncs to a tablet. Cells are bigger there (and Q-D4 may
   declared `minSpan`, it renders at that span with the §16.5 amber outline + ▲ and the warning `elements[4]: span 2×1 is
   below this widget's minimum 3×2. Shown at 2×1 anyway.`
 - **Grid too small for the position** (an `x`+`w` past the columns): a validation error (B2, §6). There's no per-device
-  grid schema in v1 (Q-A6): one `grid` in the file, and cell size and `k` absorb phone vs tablet.
+  grid schema in v1 (Q-A6; config overrides are planned, Q-A11): one `grid` in the file, and cell size and `k` absorb phone vs tablet.
 - **Approval doesn't travel** (A1): on the tablet, the first load shows `Needs your OK`, the tile keeps the widget's
   real cells, and the dashboard comes alive one tap per widget.
 
@@ -1986,6 +2204,22 @@ Title bar and home theme (§12.1, §15):
   the current dark palette. Contrast checks then run against whatever is showing, and the `dark mode on/off` warning
   words still fit.] Raised by Grace and Sprite in [#152](https://github.com/Nasawa/config-launcher/pull/152) and
   [#153](https://github.com/Nasawa/config-launcher/pull/153).
+Tablets, landscape and foldables (§1.5). ✅ **All six decided by Christopher on 2026-10-26: the default, each one**,
+as a starting point the config will be able to override later (§1.5 "Defaults now, overrides later", Q-A11). His
+principle: "if the user wants to do weird stuff, we should provide the tools to facilitate it where possible."
+- ✅ **Q-L1** More columns on a tablet? **Decided: the same grid everywhere by default** (Q-D4 stands). A per-class or
+  per-orientation grid is planned as an override (Q-A11).
+- ✅ **Q-L2** Big empty margins or stretched cells? **Decided: centred grid with a 144 dp cell cap** (1.25 : 1). Cap on/off
+  and its size are planned overrides.
+- ✅ **Q-L3** Which edge does the dock move to in landscape? **Decided: the end edge** (right, or left in a right-to-left
+  language). The edge per orientation and posture (top, bottom, start, end) is a planned override.
+- ✅ **Q-L4** The fold's inner screen (841 × 701): bottom dock or rail? **Decided: bottom**, so unfolding doesn't move
+  the dock. Planned override as Q-L3.
+- ✅ **Q-L5** Half-folded? **Decided: all of home in one half**, never a cell across the hinge. Spanning both halves, and
+  flat-open as a phone, are planned overrides.
+- ✅ **Q-L6** Phone landscape (was Q-S2)? **Decided: support it**, with the dock rail and the label-hiding ladder. An
+  orientation lock (portrait, landscape, system), including landscape-only phones, is a planned override.
+
 - **Q-T7** Should home use wallpaper (dynamic) colours on Android 12+? It would change menus, dialogs, banners and
   the title bar's theme tokens with the wallpaper, and the contrast checks would follow. [Later, as an extra `theme`
   value, `"dynamic"`, so it's opt-in and `system` stays predictable. Status colours (banners, ▲ / ■) would stay fixed
@@ -1994,7 +2228,7 @@ Title bar and home theme (§12.1, §15):
 ## UI questions for Sprite
 
 - **Q-S1** Compose drag-and-drop across pager pages and into the dock: is `Modifier.dragAndDropSource/Target` enough, or a custom pointer-input layer?
-- **Q-S2** Landscape: support it in the MVP (dock on the right) or lock portrait?
+- ~~Q-S2~~ Landscape: moved to Christopher as Q-L6, decided 2026-10-26: support it, dock rail on the end edge (§1.5).
 - **Q-S3** The architecture picks `kotlinx.serialization` (plus a `JsonElement` tree). Does it give line/column for parse errors, and positions for validation paths, or do we need a small tokenizer for the excerpts?
 - **Q-S5** Fitting cells at 200 % font scale on small phones: confirm the label-hiding fallback is acceptable visually.
 - **Q-S6** Dock with 6–7 items: is shrinking icons to a 48 dp minimum readable, or should the UI cap drags at 5 (the file still allows 7)?
@@ -2052,3 +2286,53 @@ Flags from Christopher's answers, both resolved in ARCHITECTURE §18:
 
 - ~~AQ-10~~ Label backdrop: 60 % black scrim. White on it over a pure white wallpaper is 5.7:1, which meets 4.5:1.
 - ~~AQ-11~~ Settled by AF-2: `unsorted.mode` is never acted on, so `page` behaves as the drawer, per Christopher.
+
+Tablets, landscape and foldables (§1.5; Archimedes' notes for this PR). dev8 needs no schema change; Q-A11 is the planned override work:
+- **Q-A11** Config overrides for §1.5 (**planned work, reopened 2026-10-26**; was "deferred"). Christopher decided Q-L1–Q-L6
+  as defaults and wants the config able to override each (§1.5 "Defaults now, overrides later"). **Archimedes owns and
+  finalises the schema shape.** Pragma's candidate, for discussion only:
+
+  ```json
+  "windowOverrides": [
+    { "when": { "widthClass": "expanded", "orientation": "landscape" },
+      "grid": { "columns": 6, "rows": 4 },
+      "cellCap": { "enabled": true, "maxWidthDp": 160 },
+      "dock": { "edge": "start" } },
+    { "when": { "orientation": "portrait" }, "dock": { "edge": "top" } },
+    { "when": { "posture": "halfOpened" }, "fold": { "halfOpened": "span" } },
+    { "when": { "posture": "flat" }, "fold": { "flat": "asPhone" } },
+    { "when": { "deviceClass": "phone" }, "orientationLock": "landscape" },
+    { "when": {}, "scale": { "icon": 1.15 } }
+  ]
+  ```
+
+  - **Name:** a top-level `windowOverrides` array. Not `layouts` (already the widget layouts keyed `"WxH"`, Q-A6) and not
+    `overrides` (easy to mix up with the title bar's per-page overrides).
+  - **`when`:** every key given must match; an empty `when` always matches. Keys: `widthClass` (`compact` | `medium` |
+    `expanded`), `orientation` (`portrait` | `landscape`), `posture` (`folded` | `flat` | `halfOpened`, maybe split into
+    `book` | `tabletop`), and `deviceClass` (`phone` | `tablet`, from `smallestScreenWidthDp` < / ≥ 600).
+  - **Fields:** `grid {columns, rows}` (2–12, as today), `cellCap {enabled, maxWidthDp}`, `dock {edge: top | bottom | start
+    | end}`, `fold {halfOpened: oneHalf | span, flat: asTablet | asPhone}`, `orientationLock` (`portrait` | `landscape` |
+    `system`), `scale {icon}` (e.g. 0.75–1.5 × 56 dp; touch targets stay ≥ 48 dp).
+  - **Order:** entries apply in file order, a later entry wins field by field. A window with no match uses the defaults.
+  - **Settled with Archimedes (2026-10-26)**, who takes `windowOverrides` as the baseline for
+    `docs/design/layout-overrides.md`:
+    - `orientationLock` may be keyed on `deviceClass` only (stable across rotation). Keying it on `orientation` or
+      `widthClass` is a validation error, because locking changes them and the rule would flip itself.
+    - `posture: folded` is flagged as hard and best-guess (`FoldingFeature` alone doesn't say it's the cover screen).
+      Archimedes picks the fold defaults and tests on emulators.
+    - Widen-only is dropped: smaller-grid overrides use the §1.5 "skipped on that window" state, never moved or written,
+      with a load-time warning per override.
+    - Still open (Archimedes): which coordinates a user edit writes while an override grid is active.
+  - **Constraints carried over:** the root and `grid` have `additionalProperties: false`, so older builds reject the file
+    (B2). It needs the Q-A10 pre-release route or `schemaVersion` 2, and FEATURE_LEVEL can't gate a root key on its own
+    (`requires` is only on `elements[]`); a FEATURE_LEVEL bump still marks the release that understands it. Positions are
+    validated against the largest declared grid, placement and the warnings stay file-derived, and a window change never
+    writes.
+  - **Until then:** dev8 ships the §1.5 defaults only, and an override key is rejected as any unknown key is today.
+- ~~Q-A12~~ ✅ Resolved by Archimedes (title-bar fit warnings vs "a resize never writes"): the fit check runs **only on
+  config load or reload**, against a **portrait bar at `smallestScreenWidthDp`**, and never re-runs on rotation, fold or
+  resize. A fold changes the warnings only at the next load, because `status.json` describes the last load, not the
+  current window. At runtime the bar still truncates gracefully on the §15 ladder when the real window is narrower than
+  the one checked (e.g. the cover screen after a load on the inner screen), and that never writes. The check must not
+  be wired to window metrics. Applied in §15 "Fit warnings", the `warn_titlebar_fit` string comment and §1.5.
