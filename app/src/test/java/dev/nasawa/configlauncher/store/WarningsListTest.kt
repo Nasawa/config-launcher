@@ -69,6 +69,23 @@ class WarningsListTest {
         assertTrue(assertSame(dir, e).none { "checked on this phone" in it })
     }
 
+    @Test fun titleBarFitWarningIsListedOnce() = runBlocking {
+        // #167 (ux.md §15.1): the bar's overflow-ladder warning goes through the engine, so it's in status.json and
+        // on the phone list exactly once (HomeScreen no longer appends it a second time), and it clears from both.
+        val dir = tmp.newFolder()
+        val src = LocalFileSource(dir); src.file.writeText(launcher())
+        val e = ConfigEngine(src, LastGoodStore(tmp.newFolder()), 0, consent = ConsentStore(tmp.newFolder()))
+        e.poll(force = true)
+        val before = assertSame(dir, e)
+        val fit = "elements[1].content.slots.start: the title bar doesn't fit (test)"
+        e.setTitleBarFit(fit)
+        val with = assertSame(dir, e)
+        assertEquals(1, with.count { it == fit })
+        assertEquals(before.size + 1, with.size)
+        e.setTitleBarFit(null)
+        assertEquals(before, assertSame(dir, e))
+    }
+
     @Test fun folderSwitchClearsTheList() = runBlocking {
         // #171 (Grace #168 L1): switching to a folder with no launcher.json yet leaves no warnings from the old one.
         val dir = tmp.newFolder()

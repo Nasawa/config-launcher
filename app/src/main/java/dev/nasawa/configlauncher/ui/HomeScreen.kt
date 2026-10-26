@@ -66,6 +66,10 @@ fun HomeScreen(vm: HomeViewModel) {
     val homeScheme = HomeTheme.scheme()
     val themeHex = remember(homeScheme) { TitleBarLayout.themeHex(homeScheme) }
     LaunchedEffect(themeDark, themeHex) { vm.store.engine.setPhoneTheme(themeDark, themeHex) }
+    // #149: the title bar's overflow-ladder warning (§15.1 warn_titlebar_fit), reported by the bar as it lays out. The
+    // engine adds it to status.json's warnings, so it reaches the list below through engine.warnings (once).
+    var titleFit by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(titleFit) { vm.store.engine.setTitleBarFit(titleFit) }
     // #79/#159 (ux.md §15): the status.json `warnings` lines, taken from the engine so the list is the same
     // (count, order, text; phone-only and consent warnings included). None while a problem banner is up: that's the last-good layout.
     val statusWarnings by vm.store.engine.warnings.collectAsStateWithLifecycle()
@@ -340,8 +344,8 @@ fun HomeScreen(vm: HomeViewModel) {
                 CompositionLocalProvider(LocalLabelBackdrop provides backdrop) {
                 // #79: a title bar in the file replaces the §1.3 page label on pages where it's enabled.
                 val titleBar = TitleBarModel.forPage(ui.load.config, pages.getOrNull(pager.settledPage)?.id)
-                if (titleBar != null) TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop) { pageList = true }
-                else PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true }
+                if (titleBar != null) TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop, onFit = { titleFit = it }) { pageList = true }
+                else { LaunchedEffect(Unit) { titleFit = null }; PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true } }
                 val listPages = stringResource(R.string.pages_action)
                 val openAppList = stringResource(R.string.a11y_open_drawer)
                 HorizontalPager(
