@@ -3,6 +3,7 @@ package dev.nasawa.configlauncher.ui
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -111,10 +112,13 @@ class HomeThemeTest {
     }
 
     @Test fun overTheWallpaperNothingChangesWithTheTheme() {
-        // Labels and the default title bar stay white with the label shadow (§12.1); the top-row buttons keep one accent.
+        // Labels, the default title bar and the top-row buttons stay white with the label shadow (§12.1, #182).
         assertEquals(Color.White, TitleBarLayout.color("light") { null })
         assertEquals(Color.White, TitleBarLayout.color("onWallpaper") { null })
-        assertEquals(HomeTheme.scheme(true).primary, HomeTheme.onWallpaperAccent)
-        assertTrue("top-row accent on a black wallpaper", ratio(HomeTheme.onWallpaperAccent, Color.Black) >= 4.5)
+        assertEquals(Color.White, OnWallpaperButton.content)
+        // Pragma: white on the 60 % scrim reaches 5.7:1 even over a white wallpaper; the old #D0BCFF accent was ~1.7:1.
+        val scrimOnWhite = LabelBackdrop.scrim.compositeOver(Color.White)
+        text(OnWallpaperButton.content, scrimOnWhite, "top-row button on the scrim over white")
+        assertTrue(ratio(Color(0xFFD0BCFF), Color.White) < 2.0)
     }
 }

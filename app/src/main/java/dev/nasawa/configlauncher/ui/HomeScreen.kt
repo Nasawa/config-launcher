@@ -259,16 +259,16 @@ fun HomeScreen(vm: HomeViewModel) {
                 Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
                 if (editing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.editing_layout), color = Color.White, modifier = Modifier.weight(1f))
-                    TextButton(leaveEdit, colors = onWallpaperButton()) { Text(stringResource(R.string.done)) }
+                    WallpaperTextButton(leaveEdit, backdrop) { Text(stringResource(R.string.done)) }
                 } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (ui.load.reconnectable) stringResource(R.string.source_folder, ui.load.sourceName.removePrefix("Folder: ")) else stringResource(R.string.source_app_storage), style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
                     // §1.4: the Apps button is the tap path (hint "open app list"); hidden in edit mode.
                     val hint = stringResource(R.string.a11y_open_drawer_hint)
-                    TextButton({ drawerOpen = true }, Modifier.semantics { onClick(label = hint) { drawerOpen = true; true } }, colors = onWallpaperButton()) { Text(stringResource(R.string.apps)) }
+                    WallpaperTextButton({ drawerOpen = true }, backdrop, Modifier.semantics { onClick(label = hint) { drawerOpen = true; true } }) { Text(stringResource(R.string.apps)) }
                     Box {
                         // §17.4: a ⋮ icon by itself only gets a dot, never a number.
                         val dotSaid = stringResource(R.string.menu_dot_a11y)
-                        TextButton({ menuOpen = true }, colors = onWallpaperButton()) {
+                        WallpaperTextButton({ menuOpen = true }, backdrop) {
                             BadgedBox(badge = { if (reviewCount > 0) Badge(Modifier.semantics { contentDescription = dotSaid }) }) { Text("⋮") }
                         }
                         DropdownMenu(menuOpen, { menuOpen = false }) {
@@ -812,7 +812,3 @@ private fun FolderIcon(r: ResolvedItem, apps: InstalledApps) {
 data class WidgetSheetFor(val tile: ConsentUi.Tile?, val live: ConsentUi.Live?) {
     val name: String get() = consentText(tile?.title ?: live?.title) ?: tile?.id ?: live?.id ?: ""
 }
-
-/** Top-row text buttons sit on the wallpaper, so they keep one accent in both home themes (§12.1, [HomeTheme.onWallpaperAccent]). */
-@Composable
-private fun onWallpaperButton() = ButtonDefaults.textButtonColors(contentColor = HomeTheme.onWallpaperAccent)

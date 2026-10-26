@@ -20,7 +20,8 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
  * #150/#180: the colour schemes home is drawn with. HomeScreen wraps everything in [HomeThemed], and the title bar's
  * theme-colour contrast check (#125) measures the same scheme, so the warning always describes the colours on screen.
  * Dark is the Material 3 baseline dark palette (unchanged since #153); light is the Material 3 baseline light one.
- * Home labels over the wallpaper don't follow the theme (§12.1): they stay white with the label shadow.
+ * Home labels and the top-row buttons over the wallpaper don't follow the theme (§12.1): they stay white with the
+ * label shadow ([WallpaperTextButton]).
  */
 object HomeTheme {
     private val dark = darkColorScheme()
@@ -34,13 +35,6 @@ object HomeTheme {
     }
 
     fun scheme(dark: Boolean): ColorScheme = if (dark) this.dark else light
-
-    /**
-     * Text buttons in the top row (`Apps`, `⋮`, `Done`) sit on the wallpaper, not on a themed surface, so like the
-     * labels they keep the dark palette's accent in both themes (light `primary` #6750A4 would be hard to read on a
-     * dark wallpaper).
-     */
-    val onWallpaperAccent: Color get() = dark.primary
 
     /** §12.1 banner colours. [hint] and [icon] are for the error banner's hint line and ■ (warning: ▲). */
     data class Banner(val background: Color, val title: Color, val detail: Color, val hint: Color, val icon: Color, val button: Color)
