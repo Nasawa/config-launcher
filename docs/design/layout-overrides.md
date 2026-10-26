@@ -3,7 +3,9 @@
 Status: **proposal**, 2026-10-26, revised the same day after Pragma's UX review (all blocking items, should-fix items
 and nits applied, except the AGENTS.md line, which is deferred to O1, and S1, which Christopher's Q1 answer replaces:
 §15), then updated with Christopher's answers to §12 (all six decided) and Pragma's re-review of 960f735 (N1, N2,
-S-a, S-c, S-d applied; N3 and S-b moot under strict main validation). Author: Archimedes. Docs only: nothing changes in `schema/` or app code until this
+S-a, S-c, S-d applied; N3 and S-b moot under strict main validation), then Pragma's re-review of 5348e14 (UX review
+cleared; `Show here` placement, the new-items snackbar rule and the `hidden_here_reason_no_fit` rename applied).
+Author: Archimedes. Docs only: nothing changes in `schema/` or app code until this
 is accepted and dev8 has shipped the §1.5 defaults.
 Builds on [#185](https://github.com/Nasawa/config-launcher/pull/185) (ux.md §1.5), which merged into `main` on
 2026-10-26. This doc was written against #185 at 7dd5842, which matches what merged in ux.md §1.5.
@@ -271,27 +273,35 @@ as well as elements**.
     (%d)` (`hidden_here_button`, plurals). In rail mode it lives in `⋮`.
   - **Outside edit mode too** (Pragma N2): the home long-press menu gets `Hidden here (%d)` when the count is > 0. This
     is available from O4, where edit mode is off on override layouts.
-- **New-items snackbar** (Pragma N2): whenever the active layout's set of items it doesn't show **grows** compared with
-  what this device last showed for that layout, a 6 s snackbar (announced) says `%1$d new items aren't shown on this
+- **New-items snackbar** (Pragma N2, rule decided in Pragma's re-review of 5348e14): a 6 s snackbar (announced) says `%1$d new items aren't shown on this
   screen.` / `1 new item isn't shown on this screen.` (`hidden_here_load`, plurals), with the action `Show`
   (`hidden_here_load_action`), which opens `Hidden here`.
-  - It covers a load, a reload, and switching to a layout that gained items since it was last shown.
-  - The "last shown" set is device-local UI state (app-private, per layout `id` or main), never written to the file.
-    So the window still never writes, and Q-A12 still holds: the warning itself is computed from the file at load.
-  - It shows once per growth. Items marked `{"hidden": true}` on purpose don't trigger it.
+  - It fires on a load, a reload, and **switching to a layout** (rotate, fold, unfold, resize) that has items hidden
+    since this device last showed it. Unfolding or rotating into a layout is exactly when people need to know.
+  - It counts each **newly hidden item once**. The device keeps, per layout `id` (or main), the set of item ids it has
+    already announced. The snackbar counts only hidden items not in that set, and adds them when it shows. An item
+    leaves the set when that layout shows it again. So the same set never fires twice, and an item that's hidden again
+    later is announced again. The first time a device shows a layout, every hidden item there counts as new.
+  - `{"hidden": true}` items never count.
+  - The set is device-local UI state (app-private), **never written to the file**. The window still never writes, and
+    Q-A12 holds.
+  - **While a drag is in progress it's held**, and it shows when the drag ends or is cancelled. In edit mode, after a
+    layout switch, it follows the `Now editing the %1$s layout.` snackbar rather than replacing it.
 - **The sheet** is titled `Not shown on this layout` (`hidden_here_title`). Each row is the item's label with one reason
   (Pragma S-a):
-  - `Doesn't fit this grid` (`hidden_here_reason_skipped`): its spot is outside this grid;
+  - `Doesn't fit this grid` (`hidden_here_reason_no_fit`): its spot is outside this grid;
   - `Its spot is used by "%1$s"` (`hidden_here_reason_taken`): its inherited main spot is under an explicit entry;
   - `Not placed on this layout` (`hidden_here_reason_pinned`): `{"skipped": true}`, or no main spot on main;
   - `Hidden on this layout` (`hidden_here_reason_hidden`): `{"hidden": true}`.
   - Each row has the action `Show here` (`hidden_here_show`).
   - TalkBack reads a row as `<Label>, <reason>, Show here, button`, e.g. `Maps, its spot is used by Camera, Show here,
     button`.
-- **`Show here`** places the item at the first free cell, scanning row-major from the item's own page, then later
-  pages. On an override layout it writes `L.positions[id]`. On main it writes the main spot as a main move, **with
-  pins**, so a layout that wasn't showing it gets `{"skipped": true}` and nothing changes there. With no room, the row
-  is disabled with the existing `No room`.
+- **`Show here`** places the item at the first free cell, scanning row-major from the **page on screen**, then the
+  pages after it, then the pages before it. If no page has room, it goes on a new page at the end, as `Add to home`
+  does (ux.md §4.2). Only at 20 full pages is the row disabled with `No room`; activating it announces `home_full`. If
+  the item lands on a page other than the one on screen, the sheet closes and home scrolls to that page (Pragma's
+  re-review of 5348e14). On an override layout it writes `L.positions[id]`. On main it writes the main spot as a main
+  move, **with pins**, so a layout that wasn't showing it gets `{"skipped": true}` and nothing changes there.
 - **Long-press on an override layout** gets `Hide on this layout` (`hide_on_layout`), which writes
   `{"hidden": true}` into `L.positions[id]`. It isn't offered on main: hiding there is `drawer.hidden` or Remove.
 - **In O4:** on main, `Show here` works (it's a main edit, with pins). On an override layout, the sheet shows without
@@ -608,7 +618,7 @@ Pragma's re-review adds 5 (N2, S-a, S-c), for **20**.
 | `edit_sheet_closed_layout_changed` | `Screen size changed, so nothing was moved.` |
 | `hidden_here_button` (plurals) | `Hidden here (%d)` |
 | `hidden_here_title` | `Not shown on this layout` |
-| `hidden_here_reason_skipped` | `Doesn't fit this grid` |
+| `hidden_here_reason_no_fit` | `Doesn't fit this grid` |
 | `hidden_here_reason_hidden` | `Hidden on this layout` |
 | `hidden_here_reason_taken` | `Its spot is used by "%1$s"` |
 | `hidden_here_reason_pinned` | `Not placed on this layout` |
