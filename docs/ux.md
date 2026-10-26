@@ -332,6 +332,14 @@ apps in the drawer.
 - Full-width card, 12 dp margin, amber ▲ icon (error red ■ for access loss), 1–2 lines of text, one or two text buttons, and `×`.
   Colours follow the home theme (light or dark, §12.1); both banner palettes meet 4.5:1 for text and 3:1 for icons.
 - `×` collapses it to a small ▲ chip in the top-right corner that reopens it. It stays until the problem is fixed (no auto-dismiss).
+  The chip goes in the **notice row** (below), not in a strip of its own.
+- **Notice row (#173 L1).** The collapsed chips (this ▲ chip and the §17.4 count chip) share one 48 dp row at the top
+  of the page area, and the §1.3 page label moves into that same row while a chip shows: label centred, chips at the
+  end. So when the page label is showing, a chip costs **no** grid height. Only when there's no page label (one
+  untitled page) does the row take 48 dp from the grid, and only while a chip is up. The chips never float over the
+  grid: an overlay would cover the top-end cell's icon and steal its taps. With no chip, the row is gone (or is just the
+  page label, as before). The row has a 12 dp end margin like the banner. Each chip keeps its 48 dp touch area inside
+  the row, and the page label's touch area stops 8 dp short of the first chip.
 - When fixed (a valid version appears): the banner clears automatically and the snackbar `Layout loaded.` shows.
 - TalkBack: announced once when it appears (polite live region).
 
@@ -607,7 +615,7 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | Edit mode | Announce `Editing layout. Double-tap Done when finished.` Focus order: top bar, then grid in reading order, then dock |
 | Banners | Polite live region, announced once. Buttons are focusable. The error detail view reads as a list of problems |
 | Touch targets | ≥ **48 × 48 dp** for everything (cells 64 × 80 dp, dock slots 64 dp, chip ≥ 48 dp hit area, banner buttons 48 dp tall) |
-| Font scaling | Labels and text use sp and follow the system font size up to 200 %. Grid labels stay 1 line and ellipsize; at ≥ 150 % labels may be hidden on the home grid (still spoken by TalkBack) if cells can't fit them. The drawer always shows labels (wrapping to 2 lines). Banners and settings wrap, never truncate |
+| Font scaling | Labels and text use sp and follow the system font size up to 200 %. Grid labels stay 1 line and ellipsize; at ≥ 150 % labels may be hidden on the home grid (still spoken by TalkBack) if cells can't fit them. **A label is shown whole or not at all, for any reason** (font scale, a banner, B9, the notice row, a small phone): when a cell is shorter than icon + full label line, the label is hidden, never cut through the letters (#173, 320 dp). Hidden labels are still spoken by TalkBack. The drawer always shows labels (wrapping to 2 lines). Banners and settings wrap, never truncate |
 | Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (the home theme, §12.1: follows the system unless `launcher.json` overrides it; no dynamic colour in this release). Home labels over wallpaper: white text with a 1 dp 50 % black shadow. With `Label backdrop` on, the 60 % black scrim is added (§1.1). Over a pure white wallpaper, white text on that scrim alone measures 5.7:1 (WCAG, worst case), so it meets 4.5:1 on any wallpaper |
 | Reduced motion | Respect `Settings.Global.ANIMATOR_DURATION_SCALE == 0` and "Remove animations": no page-slide spring, folder open as a fade, no shake (use a red outline), no jiggle ever |
 | Colour | Status is never colour-only: ▲ warning / ■ error glyphs, dimmed tiles also say "not installed" to TalkBack |
@@ -768,8 +776,9 @@ marked `checked on this phone`, like the theme contrast warnings, because `valid
 It shows in the Warnings list, with no snackbar or banner, and it clears silently once the bar fits again. Step 1 alone
 writes no warning. **Bar with no date:** steps 2 and 4 don't apply (there's nothing to shorten or cut), so only step 3
 can write a warning, and it uses the size-only variant `warn_titlebar_fit_size` (§15.1), which doesn't mention the
-date and suggests `Use fewer or shorter slots.` If the bar still doesn't fit after step 3, side text ellipsizes as
-in the layout rules above.
+date and suggests `Use fewer or shorter slots.` If the bar still doesn't fit after step 3 (or step 3 was
+skipped), that is **step 4 for this bar**: side text other than the clock ellipsizes as in the layout rules above, and
+the same warning uses `fit_step_size_cut` (step 3 ran) or `fit_step_cut_only` (it didn't), with `%3$d` = 4.
 
 **Contrast.** Light text always gets the label shadow; dark text doesn't. With `auto` + `Label backdrop` on, or
 `scrim`, the 60 % scrim gives ≥ 5.7:1 for white (§12). With a custom backdrop, the launcher measures text vs backdrop.
@@ -953,10 +962,14 @@ Resources (character positions are 1-based, like line and column):
 <string name="fit_step_cut">the date was shortened and cut off with …</string>
 <!-- code, not strings.xml (status.json): size-only variant, for a bar with no {date}. Only step 3 can apply.
      %1$s = path of the bar's slots (elements[0].content.slots), %2$d = the shared slot width in dp (as above),
-     %3$d = 3, %4$s = fit_step_size_only. -->
+     %3$d = 3 or 4, %4$s = fit_step_size_only, fit_step_size_cut or fit_step_cut_only. -->
 <string name="warn_titlebar_fit_size">%1$s: the title bar doesn\'t fit in its %2$d dp on this phone, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use fewer or shorter slots.</string>
 <!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit_size; %1$s = medium or small -->
 <string name="fit_step_size_only">the text size went down to %1$s</string>
+<!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit_size, step 4 after step 3; %1$s = medium or small -->
+<string name="fit_step_size_cut">the text size went down to %1$s and slot text was cut off with …</string>
+<!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit_size, step 4 when step 3 was skipped (numeric or small size) -->
+<string name="fit_step_cut_only">slot text was cut off with …</string>
 <!-- code, not strings.xml (status.json): phone warning for an unknown theme string; %1$s = the value as written -->
 <string name="warn_theme_value">theme \"%1$s\" isn\'t supported by this Config Launcher, so home follows the system setting. Update the app, or check for a typo.</string>
 <string name="warnings_copied">Warnings copied.</string>
@@ -1379,8 +1392,9 @@ Long-press: the item sheet with the title, `Widget · from launcher.json`, then 
   *raises* the count: `2 widgets need your OK.` (`1 widget needs your OK.`) · buttons `Review` · `×`. `×` collapses it
   into the count chip below, and it isn't shown again until the count goes up. No snackbar is added. The §9 reload
   snackbar is unchanged.
-- **Count chip:** a 20 dp pill at the top end of the banner slot, `shield` icon + number, tap → review list. Shown while
-  the count is > 0. If the B-banner ▲ chip is also showing, this chip sits to its start (left in LTR).
+- **Count chip:** a 20 dp pill (48 dp touch area) at the end of the §6.1 **notice row**, `shield` icon + number, tap →
+  review list. Shown while the count is > 0. If the B-banner ▲ chip is also showing, this chip sits to its start (left in
+  LTR), 8 dp apart. It doesn't get a strip of its own: with a page label showing it costs no grid height (#173 L1).
 - **⋮ / menu badges:** the same number on the home long-press menu's `Widgets` item (`Widgets · 2 to review`), on the
   interim ⋮ menu (R10) and on Settings → `Widget permissions` once Settings exists. A ⋮ icon by itself only gets a dot, not
   a number, because a number on ⋮ doesn't say what it counts.
