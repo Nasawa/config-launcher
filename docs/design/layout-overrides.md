@@ -1,632 +1,511 @@
-# Design: layout overrides for windows, orientation and folds (`windowOverrides`, Q-A11)
+# Design: layout overrides for one device's changing window (`windowOverrides`, Q-A11)
 
-Status: **proposal**, 2026-10-26, revised the same day after Pragma's UX review (all blocking items, should-fix items
-and nits applied, except the AGENTS.md line, which is deferred to O1, and S1, which Christopher's Q1 answer replaces:
-§15), then updated with Christopher's answers to §12 (all six decided) and Pragma's re-review of 960f735 (N1, N2,
-S-a, S-c, S-d applied; N3 and S-b moot under strict main validation), then Pragma's re-review of 5348e14 (UX review
-cleared; `Show here` placement, the new-items snackbar rule and the `hidden_here_reason_no_fit` rename applied).
-Author: Archimedes. Docs only: nothing changes in `schema/` or app code until this
-is accepted and dev8 has shipped the §1.5 defaults.
-Builds on [#185](https://github.com/Nasawa/config-launcher/pull/185) (ux.md §1.5), which merged into `main` on
-2026-10-26. This doc was written against #185 at 7dd5842, which matches what merged in ux.md §1.5.
+Status: **proposal, re-scoped** on 2026-10-26 to **one device whose window changes**: rotation, fold and unfold, and
+multi-window resizing. This follows Christopher's steering (§13). The earlier versions of this doc, at 9a07171 and
+before, designed for one config shared by several devices. They went through Pragma's UX review and two re-reviews, and
+the UX review was cleared at 5348e14. This version cuts that cross-device machinery (§2), so **Pragma needs to
+re-review it** (§16). Author: Archimedes.
+
+Docs only: nothing changes in `schema/` or app code until this is accepted and dev8 has shipped the ux.md §1.5
+defaults. It builds on [#185](https://github.com/Nasawa/config-launcher/pull/185) (ux.md §1.5), which merged into `main`
+on 2026-10-26.
 
 **UI naming:** the base layout is called **main** in every string people see. An override layout shows its `label`,
 or its `id` when it has no label.
 
 Christopher decided Q-L1–Q-L6 on 2026-10-26: the ux.md §1.5 defaults stand, and the config should be able to change
-each one: "if the user wants to do weird stuff, we should provide the tools to facilitate it where possible." This
-doc turns Pragma's candidate (ux.md Q-A11, #185 1feae3f) into a schema and its rules. Where it differs from that
-candidate or from the §1.5 proposal text, the change is marked **(refined)** and the reason is given.
+them. This doc turns Pragma's candidate (ux.md Q-A11) into a schema and its rules, cut down to what one device needs as
+its window changes.
 
-## 0. Principle: you're editing the one config every device uses
+## 0. Principle: one config, one device, several window shapes
 
-In Christopher's words: **"You're editing the one config every device uses."**
-- Adding, removing, dock membership and folder membership are **global**: they change the config, so every device
-  sees them. **Remove is global.**
-- Only **position and size** are per layout (§5). An edit on one layout never moves anything on another.
-- **Any number of devices can share one config.**
-- **One device can switch between any number of configs**, but something **outside the launcher** does the switching,
-  for example a script that swaps the file. Swapping configs is just an ordinary reload (ARCHITECTURE §4), with nothing
-  special about it.
-- **`windowOverrides` only adapts one config to different windows. It never chooses which config is active.**
-- So **`when` has only window matchers** (§3.2): no weather, time of day, location, or anything like that. A matcher
-  that isn't about the window is out of scope for this key.
-
-This answers most "what happens on my other device?" questions: if it's about *what* is on home, it's the config and
-it's everywhere. If it's about *where* on this screen, it's the layout.
+In Christopher's words: **"The goal is ultimately to let an AI or system manage a launcher. If we're adding complexity
+without much foreseeable value, cut that thread. Functional, not one-size-fits-all."**
+- **A config describes one device's home.** `windowOverrides` adapts it to the shapes that device's window takes: turned
+  on its side, folded or unfolded, or resized in split screen or a freeform window. "Pushing a different config every
+  rotation is infeasible", so these shapes live in one file.
+- **Several devices sharing one config is allowed only in the sense that nothing stops it.** There's no machinery for
+  it and no guarantees about it. "Configs are cheap." For the same home on a tablet and a phone, the user's AI writes
+  two configs, or the user writes a translation layer to keep them in sync. The schema is strict and well-defined, so
+  that isn't hard.
+- **Switching configs happens outside the launcher**, for example a script that swaps the file. It's an ordinary
+  reload (ARCHITECTURE §4). `windowOverrides` never chooses which config is active.
+- **`when` has only window matchers** (§4.3): no device class, weather, time of day or location.
+- **What's on home is per config. Where it sits is per layout.** Adding, removing, dock membership, folder membership
+  and pages apply to every layout. Only position and size differ between layouts (§6).
 
 ## 1. Decisions in brief
 
-1. **Shape.** An optional top-level **`windowOverrides[]`** array. Each entry has an `id`, an optional `label` and
-   `requires`, a `when` matcher and override fields (§3). Entries apply in file order, and a later matching entry wins field by
-   field. A window that no entry matches uses the §1.5 defaults.
-2. **Versioning.** This takes the **Q-A10 route**: an optional root key on **`schemaVersion` 1**, with no bump. The release
-   that understands it is **FEATURE_LEVEL 5**. A phone below level 5 rejects a file that has the key (B2, last good
-   layout kept). After level 5, each entry carries its own `requires`, so later override fields degrade per entry
-   instead of rejecting the file (§7).
-3. **Positions.** **(refined)** An entry that sets `grid` defines its own *layout*. It can hold its own positions
-   (`positions`, keyed by item or element `id`). An item with no entry there inherits its **main spot** (`x`/`y`) when
-   that fits and is free, and is otherwise **skipped on that window**: a load-time warning, a snackbar when it's new,
-   and a listing in `Hidden here` (§5.4) so it can be brought back on the device. **Main stays strictly validated, as
-   today**: no overlaps, every spot inside the main grid. An item added on another layout that has no room on main
-   simply **has no main spot** (`x`/`y` left out), so main doesn't show it. **Adding is never refused, and saved
-   positions are never rewritten** (Christopher, Q1). A user edit writes only to the layout it was made in. When the
-   edit is on main, the same write first **pins** the item's old place in every other layout that was inheriting it
-   (`{"skipped": true}` where it wasn't shown). As a result, **an edit on one device never makes an item move on a
-   device that shows a different layout** (Pragma's constraint, §5). Placement never depends on file order.
-4. **A window change never writes.** Matching reads only window metrics and the file, and the overrides never feed back
-   into matching. The one field that changes the window, `orientationLock`, may be keyed on `deviceClass` only (§6).
-5. **Folds.** Every fold behaviour here is a **best guess, unverified on real hardware.** Christopher has no foldable.
-   The defaults are the conservative §1.5 ones (a flat hinge is ignored; half-folded puts home in one half). Each can
-   be overridden, and each is tested only on emulators that report a real `FoldingFeature` (§8). `posture: "folded"`
-   (the cover screen) has no public API to detect it, so it's deferred, with a heuristic ready (§8.3).
+1. **Shape.** An optional root array **`windowOverrides[]`**. Each entry has an `id`, an optional `label`, a `when`
+   matcher (`widthClass`, `orientation`, `posture`) and per-window fields (`grid` with `positions`, `cellCap`,
+   `dock.edge`, `fold.halfOpened`). Entries apply in file order, and a later matching entry wins field by field.
+2. **Two global fields, with no matcher:** root `orientationLock` and root `scale` (§5.4, §7).
+3. **Versioning.** This takes the **Q-A10 route**: optional root keys on **`schemaVersion` 1**. They're understood from
+   **FEATURE_LEVEL 5**, and an older app rejects the file (B2, last good layout kept, §8). `net.fetch` moves to level 6.
+4. **Positions.** An entry with `grid` is its own *layout* with a `positions` map. An item with no entry there inherits
+   its **main spot** when that fits and is free, and is otherwise **not shown on that layout**. It's then counted in a
+   load-time warning, announced by a snackbar when you rotate into the layout, and listed in `Hidden here` (§6.4).
+   - **Main stays strictly validated, as today.**
+   - An item added on an override layout that has no room on main **has no main spot** (§6.1). Christopher's Q1 still
+     holds: adding is never refused, and saved positions are never rewritten.
+   - An edit writes only to the active layout. A main edit also changes override layouts, but only for the items they
+     inherit (§6.2).
+5. **A window change never writes.** Matching reads only the window and the file.
+6. **Folds are a best guess, unverified on real hardware.** The conservative ux.md §1.5 defaults stand, and the half
+   that holds home can be overridden (§9).
 
-## 2. Example
+## 2. Cut and why
+
+| Cut | Why |
+|---|---|
+| `deviceClass` matcher | It existed to tell a phone's config from a tablet's in a shared file. On one device it never changes, except between a fold's cover and inner screens, and `widthClass` + `orientation` already tell those apart |
+| `orientationLock` keyed on `deviceClass` | The lock becomes one global root field. On one device there's nothing to key it on, and the "lock changes its own match" loop goes away with the matcher |
+| `heightClass` matcher | On one device it mostly mirrors `widthClass` after a rotate. No foreseeable use that `widthClass` + `orientation` + `posture` miss |
+| `minWidthDp`/`maxWidthDp`/`minHeightDp`/`maxHeightDp` | They were for picking one device among several ("only my 7-inch tablet") |
+| Cover-screen detection (`posture: "folded"`, slice O7) | There's no public API and only a heuristic. The cover screen is a compact window, and `widthClass` already matches it |
+| `posture: flat` and the generic `halfOpened` value | A flat inner screen is just a wide window (`widthClass`). `book` and `tabletop` cover the half-open cases |
+| `fold.flat` (`asTablet`/`asPhone`) | It's redundant: an entry matching the inner screen can set `grid`, `cellCap.enabled: false` and `dock.edge` directly |
+| `fold.halfOpened` values `top`/`bottom` and `warn_override_fold_side` | `start`/`end` now mean the first and second half in either hinge direction, so no value can clash with the hinge |
+| The 16-entry cap and its message | One device's distinct windows are few (3 width classes × 2 orientations × 3 postures), and matching is a linear scan. The cap only guarded against shared mega-files. The AGENTS.md line about it goes too |
+| Per-entry `requires`, `warn_override_level` | It let devices on older app versions share a file with newer ones. One device has one app version, and the agent can read the level from `status.json` |
+| The unknown-enum-value degrade (`warn_override_when_value`, `warn_override_value`) | Same reason: version skew between devices. An unknown value is a plain error now |
+| `scale` per entry | Icon size and label visibility are a person's preference, not a window's. The icon ladder already adapts the size to each window. It's now one root field |
+| Pins (copy-on-write into override layouts on a main edit) and the `{"skipped": true}` marker | They stopped one device's edit from moving items on another device. On one device, "landscape follows portrait except where you've placed things in landscape" is the simpler rule, and it's visible as soon as you rotate. This reverses Pragma's N1 (§16) |
+| `{"hidden": true}`, `Hide on this layout`, `hidden_here_reason_hidden` | Hiding an item on just one window shape has little foreseeable value. Move it, or remove it |
+| Snackbar trigger on load and reload | It mainly announced edits synced from another device. An agent's own edit is reported to it by `validate.py` and the warnings. The layout-switch trigger stays, because rotating is when people need to know |
+| `warn_override_unreachable` as a phone warning | It's kept as a `validate.py` info line only. The agent writing the file is who needs it |
+| `edit_layout_a11y_named`'s "screens that use it" wording | It was cross-device. It now reads `Changes here apply only to this layout.` |
+
+**Kept, and why:**
+- **Strict main validation.** It keeps placement independent of file order (§6.1).
+- **A resize never writes.**
+- **O4 read-only before O5.**
+- **The Android 16 lock caveat** (§7.3).
+- **Best-guess fold defaults** (§9).
+- **The optional main spot** (the "no main spot" relaxation). It's still needed on one device. Say landscape is
+  6 × 4 and portrait (main) is 4 × 5. An app added at column 5 in landscape has no matching cell in portrait. The only
+  other ways to handle that are to refuse the add (Christopher's Q1 says never) or to invent a second spot on main
+  (Pragma's S1, which Q1 rejected). Leaving `x`/`y` out costs one schema rule, one warning and one `Hidden here`
+  reason. On rotating to portrait the snackbar says `1 new item isn't shown on this screen.`, and `Show here` places
+  it with one tap.
+
+## 3. Example
 
 ```json
+"orientationLock": "system",
+"scale": { "icon": 1.15, "labels": "always" },
 "windowOverrides": [
-  { "id": "tablet-land", "label": "Tablet landscape", "when": { "deviceClass": "tablet", "orientation": "landscape" },
+  { "id": "landscape", "label": "Landscape", "when": { "orientation": "landscape" },
     "grid": { "columns": 6, "rows": 4 },
-    "positions": { "a-maps": { "x": 5, "y": 0 }, "a-camera": { "hidden": true } },
-    "cellCap": { "enabled": true, "maxWidthDp": 160 },
+    "positions": { "a-maps": { "x": 5, "y": 0 } },
     "dock": { "edge": "start" } },
-  { "id": "dock-top", "when": { "orientation": "portrait" }, "dock": { "edge": "top" } },
-  { "id": "fold-span", "when": { "posture": "halfOpened" }, "fold": { "halfOpened": "span" } },
-  { "id": "phone-lock", "when": { "deviceClass": "phone" }, "orientationLock": "landscape" },
-  { "id": "big-icons", "when": {}, "scale": { "icon": 1.15, "labels": "always" } }
+  { "id": "unfolded", "label": "Unfolded", "when": { "widthClass": "expanded" },
+    "grid": { "columns": 6, "rows": 6 }, "cellCap": { "maxWidthDp": 160 } },
+  { "id": "tabletop", "when": { "posture": "tabletop" }, "fold": { "halfOpened": "span" } }
 ]
 ```
 
-## 3. Schema shape
+## 4. Schema shape
 
-### 3.1 The array and its entries
-- `windowOverrides`: optional array, **0–16 entries**. If it's absent or empty, every window gets the §1.5 defaults.
-- Each entry is an object with strict keys (`x-` keys are allowed):
-
+### 4.1 Root keys (all optional, FEATURE_LEVEL 5)
 | Key | Type | Notes |
 |---|---|---|
-| `id` | id, **required** **(refined)** | Same pattern as other IDs, unique file-wide. Warnings, write targets and conflict replay (AQ-6) refer to the entry by `id`, never by index, because an agent may reorder the list |
-| `requires` | integer ≥ 1, optional | As on elements: above the phone's FEATURE_LEVEL, the entry is **skipped with a warning** before strict key checks (§7) |
-| `label` | string, 1–40 characters, optional | The name people see (edit bar, TalkBack, `Hidden here`, Settings). Falls back to `id` |
-| `when` | object, **required** | The matcher (§3.2). `{}` matches every window |
-| `grid` | `{columns, rows}`, both required, 2–12 | Atomic: both values come from the same entry. Defines a layout (§5) |
-| `positions` | object, id → position, max 2000 keys | Only allowed in an entry that also sets `grid` (§5.1) |
-| `cellCap` | `{enabled?, maxWidthDp?, maxAspect?}` | `enabled` (bool, default true on Medium/Expanded and false on Compact, as in §1.5) turns both the cap and centring on or off. `maxWidthDp` is 64–480 (default 144). `maxAspect` is 1.0–3.0 (default 1.25, the width : height bound in §1.5). **(refined: adds `maxAspect`, for the "aspect" request)** |
-| `dock` | `{edge}` | `auto` (the §1.5 rule) \| `bottom` \| `top` \| `start` \| `end` (§4.3) |
-| `scale` | `{icon?, labels?}` | `icon` is 0.5–2.0 × the 56 dp size (default 1). `labels` is `auto` \| `always` \| `never` (§4.4). **(refined: adds `labels`, for "label visibility")** |
-| `fold` | `{halfOpened?, flat?}` | `halfOpened`: `auto` \| `start` \| `end` \| `top` \| `bottom` \| `span`. `flat`: `asTablet` \| `asPhone` (§8). **(refined: names which half, where Pragma had `oneHalf`)** |
-| `orientationLock` | `portrait` \| `landscape` \| `system` | Only in an entry whose `when` uses `deviceClass` alone, or is `{}` (§6) |
+| `windowOverrides` | array of entries | If it's absent or empty, every window gets the ux.md §1.5 defaults |
+| `orientationLock` | `portrait` \| `landscape` \| `system` | Default `system` (§7) |
+| `scale` | `{icon?, labels?}` | `icon` is 0.5–2.0 × the 56 dp size (default 1). `labels` is `auto` \| `always` \| `never` (§5.4) |
 
-### 3.2 `when`: the matcher
-**Every key that's present must match.** An empty `when` matches every window. Matching uses the current window
-(`currentWindowMetrics`, as in §1.5) and never any override's output:
+### 4.2 An entry (strict keys; `x-` keys are allowed)
+| Key | Type | Notes |
+|---|---|---|
+| `id` | id, **required** | Same pattern as other IDs, unique file-wide. Warnings, queued writes and the snackbar's "already announced" set refer to the entry by `id`, never by index |
+| `label` | string, 1–40 characters, optional | The name people see (edit bar, TalkBack, `Hidden here`, Settings). Falls back to `id` |
+| `when` | object, **required** | The matcher (§4.3). `{}` matches every window |
+| `grid` | `{columns, rows}`, both required, 2–12 | Atomic: both values come from the same entry. Defines a layout (§6) |
+| `positions` | object, id → `{page?, x, y[, w, h]}`, at most 2000 keys | Only allowed in an entry that also sets `grid` (§6.1) |
+| `cellCap` | `{enabled?, maxWidthDp?, maxAspect?}` | `enabled` (bool, default true on Medium/Expanded and false on Compact, as in ux.md §1.5) turns both the cap and centring on or off. `maxWidthDp` is 64–480 (default 144). `maxAspect` is 1.0–3.0 (default 1.25) |
+| `dock` | `{edge}` | `auto` (the ux.md §1.5 rule) \| `bottom` \| `top` \| `start` \| `end` (§5.3) |
+| `fold` | `{halfOpened}` | `auto` \| `start` \| `end` \| `span` (§9) |
+
+### 4.3 `when`: the matcher
+**Every key that's present must match.** Matching uses the current window (`currentWindowMetrics`, as in ux.md §1.5)
+and never any override's output.
 
 | Key | Values | Computed from |
 |---|---|---|
 | `widthClass` | `compact` \| `medium` \| `expanded` | Window width: < 600, 600–839, ≥ 840 dp |
-| `heightClass` **(refined)** | `compact` \| `medium` \| `expanded` | Window height: < 480, 480–899, ≥ 900 dp |
-| `orientation` | `portrait` \| `landscape` | `landscape` when the window's width > height, otherwise `portrait` (a square window counts as portrait). This is the window's shape, not the device's rotation, so split screen follows the window |
-| `deviceClass` | `phone` \| `tablet` | The **display's** smallest side: the smaller of the two sides of `computeMaximumWindowMetrics`. Below 600 dp it's `phone`, otherwise `tablet`. It doesn't change on rotate or resize, only when the display does: a fold's cover screen is `phone` and its inner screen `tablet` |
-| `posture` | `flat` \| `halfOpened` \| `book` \| `tabletop` | `FoldingFeature` on this window (§8). `book` and `tabletop` are `halfOpened` with a vertical or horizontal hinge. A window with no `FoldingFeature` (any phone, tablet or cover screen) matches **none** of them. `folded` is reserved and not accepted at level 5 (§8.3) |
-| `minWidthDp`, `maxWidthDp`, `minHeightDp`, `maxHeightDp` **(refined)** | integer 0–10000, inclusive | Window size. For setups the classes don't cover, e.g. "only my 7-inch tablet" |
+| `orientation` | `portrait` \| `landscape` | `landscape` when the window's width > height, otherwise `portrait` (a square counts as portrait). It's the window's shape, so split screen follows the window |
+| `posture` | `book` \| `tabletop` | A half-open `FoldingFeature` on this window, with a vertical (`book`) or horizontal (`tabletop`) hinge (§9). Any other window matches neither |
 
-**Nothing else.** The matchers are about the window only (§0). Anything outside that, such as time, weather, location,
-battery or Wi-Fi, is out of scope, and an unknown `when` key is an error (strict keys).
+**Nothing else.** An unknown `when` key or value is an error (strict keys).
 
-### 3.3 Precedence
-1. Take every entry whose `when` matches and whose `requires` is ≤ FEATURE_LEVEL. An entry with an unsupported value
-   in `when` never matches (§7).
-2. Walk them in **file order**. For each **leaf** field (`cellCap.maxWidthDp`, `dock.edge`, `scale.icon`, …), the last
-   entry that sets it wins. `grid` is a single leaf: columns and rows always come from the same entry, together with
-   that entry's `positions`.
-3. Anything no matching entry sets keeps its §1.5 default.
-4. The **active layout** is the last matching entry that sets `grid`, or **base** (the root `grid` and the items'
-   own `x`/`y`) if none does.
+### 4.4 Precedence
+1. Take every entry whose `when` matches.
+2. Walk them in **file order**. For each **leaf** field (`cellCap.maxWidthDp`, `dock.edge`, …), the last entry that sets
+   it wins. `grid` is a single leaf: columns and rows always come from the same entry, with that entry's `positions`.
+3. Anything no matching entry sets keeps its ux.md §1.5 default.
+4. The **active layout** is the last matching entry that sets `grid`, or **main** (the root `grid` and the items' own
+   `x`/`y`) if none does.
 
-Why file order and not "most specific wins": it's what CSS-literate agents expect, it's one sentence long, and it
-lets a broad entry come first with narrow fixes after it. "Most specific" would need a scoring rule that nobody
-remembers, and ties would need breaking anyway.
+File order, not "most specific wins", because CSS-literate agents expect it and it takes one sentence to state.
 
-## 4. What each override field does
+## 5. What each field does
 
-### 4.1 `grid`
-It replaces columns × rows on the windows it matches. The §1.5 cell maths runs on the active grid. Positions are covered in §5.
+### 5.1 `grid`
+It replaces columns × rows on the windows it matches. The ux.md §1.5 cell maths runs on the active grid. Positions are
+covered in §6.
 
-### 4.2 `cellCap`
+### 5.2 `cellCap`
 - `enabled: false`: no cap and no centring. Cells fill the page area, as on Compact today.
 - `enabled: true` on Compact: the cap and centring apply there too.
-- `maxWidthDp` and `maxAspect` replace 144 and 1.25 in the §1.5 formulas. The `pitchH ≤ 1.5 × pitchW` bound stays
-  fixed, because it guards against cells too tall for one icon plus one label.
+- `maxWidthDp` and `maxAspect` replace 144 and 1.25 in the ux.md §1.5 formulas. The `pitchH ≤ 1.5 × pitchW` bound stays
+  fixed.
 
-### 4.3 `dock.edge`
-- `auto` is the §1.5 rule.
-- `bottom` is a bar at the content width, as today.
+### 5.3 `dock.edge`
+- `auto` is the ux.md §1.5 rule. `bottom` is a bar at the content width, as today.
 - `top` is a bar at the content width. Order from top to bottom: top row (`Apps`, `⋮`) → banner → notice row →
-  **dock** → page label or title bar → grid → page dots. The banner and notice row stay where people expect them, and
-  the dock stays inside `safeDrawing`, clear of the status bar. **While dragging with a top dock, the `Remove` and
-  `App info` targets move to the bottom of the page area**, so they aren't right beside the dock slots. TalkBack and
-  D-pad order follow the visual order above.
-- `start` and `end` are the §1.5 rail, with the top row at its head, mirrored in RTL.
-- In every case: inside `safeDrawing`, items in `dock[]` order (start to end, or top to bottom on a rail), and the
-  §1.5 slot shrink and scroll rules.
-- A drag drop index follows the bar's or rail's axis. The written `dock[]` index means the same thing on every edge.
-- When `fold.halfOpened` isn't `span`, the dock goes in the half that holds home. In tabletop mode with `auto` it stays
-  in the bottom half (§1.5).
+  **dock** → page label or title bar → grid → page dots. **While dragging with a top dock, the `Remove` and `App info`
+  targets move to the bottom of the page area.** TalkBack and D-pad order follow the visual order.
+- `start` and `end` are the ux.md §1.5 rail, with the top row at its head, mirrored in RTL.
+- In every case: inside `safeDrawing`, items in `dock[]` order, and the ux.md §1.5 slot shrink and scroll rules. A drag
+  drop index follows the bar's or rail's axis, and the written `dock[]` index means the same thing on every edge.
+- When `fold.halfOpened` isn't `span`, the dock goes in the half that holds home.
 
-### 4.4 `scale`
+### 5.4 `scale` (root, global)
 - `icon` multiplies every step of the icon ladder (56 → 48 → 48, all × `icon`) on home tiles and folder tiles.
 - **"Fits" checks both axes** (Pragma B4): a step fits when the icon ≤ the cell's content width (`pitchW − 12 dp`)
   **and** icon + one label line ≤ the content height. The drawn icon is
-  `min(step size, content width, content height − label line when shown)`, so a large scale never cuts an icon or
-  overlaps a neighbour.
-- **Dock and rail:** icon = `min(56 × icon, slot − 16 dp)`. Slots never grow, so 7 items still fit (§1.5 slot rules).
-- **Touch targets never drop below 48 dp** (§12), whatever the scale: a cell or dock slot is at least 48 × 48 dp of hit
-  area even when the icon drawn is 28 dp.
-- `labels: never` hides home labels (TalkBack still reads them).
-- `labels: always` takes the label-hiding step off the ladder: the icon steps down to
-  `min(current step, max(32 dp, 40 × icon))` first. That never grows a small icon. If even that doesn't fit, labels
-  hide anyway, because **a label is whole or hidden, never cut** (§12). No warning is written, since a fit that depends
-  on the window can't write (§1.5).
-- The dock has no labels, so `labels` doesn't apply there.
-- `validate.py` prints an info line when `scale.icon` ≥ 1.5 in an entry whose active grid has ≥ 4 columns:
-  `Labels will likely be hidden on phones at this icon size.` It isn't a phone warning, because the result depends on
-  the window.
-- New L-check for Grace: `icon: 2` on s360 at font scale 1.3. Icons are whole and inside their cells, labels are whole
-  or hidden, and dock icons are ≤ slot − 16 dp.
+  `min(step size, content width, content height − label line when shown)`.
+- **Dock and rail:** icon = `min(56 × icon, slot − 16 dp)`. Slots never grow.
+- **Touch targets never drop below 48 dp**, whatever the scale.
+- `labels: never` hides home labels (TalkBack still reads them). `labels: always` first steps the icon down to
+  `min(current step, max(32 dp, 40 × icon))`. If even that doesn't fit, labels hide anyway, because **a label is whole
+  or hidden, never cut**. The dock has no labels.
+- `validate.py` prints an info line when `icon` ≥ 1.5 and any layout has ≥ 4 columns: `Labels will likely be hidden
+  in narrow windows at this icon size.`
+- L-check for Grace: `icon: 2` on s360 at font scale 1.3.
 
-### 4.5 `fold` and `orientationLock`
-See §8 and §6.
+## 6. Positions: which coordinates are drawn, and which an edit writes
 
-## 5. Positions: which coordinates are drawn, and which an edit writes
+**The rule:** an edit on an override layout changes only that layout. An edit on main changes main, and so changes
+every override layout **for the items it inherits from main** and for nothing else. "Landscape follows portrait except
+where you've placed things in landscape."
 
-**Pragma's constraint: an edit made on one device must never make an item move on another device.** More exactly:
-*an edit changes positions only in the layout it was made in. A window that uses a different layout (another device,
-or this device after a rotate or fold) shows no change.* Two windows that use the **same** layout (two phones in
-portrait) still move together, as they do today. That's sync, not a jump. Pragma confirmed this reading in review.
-
-### 5.1 How a layout places things
+### 6.1 How a layout places things
 - **Main** (the root `grid`) places each item at its **main spot**: its `page`/`x`/`y` (plus `w`/`h` for elements), as
-  today. **Main is validated strictly, as today:** every main spot inside the main grid, and no two overlapping. Both
-  are errors (§9.1).
-- **New: the main spot is optional in a file with `windowOverrides`.** A page item or grid-placed element may leave out
-  `x` and `y` together (an element keeps `page`, `w` and `h` as its default page and size). That's how an item added on
-  an override layout exists without a place on main (§5.2). Main doesn't show it: it's listed in `warn_main_hidden` and
-  in main's `Hidden here`. Without `windowOverrides`, `x` and `y` stay required (the existing `missing required "x"`).
-- **Override layout** (an entry with `grid`). Each grid-placed thing gets its place in this order:
-  1. **An entry in `positions`.** One of:
-     - `{"page"?, "x", "y"}`, plus `"w"`, `"h"` for elements. `page` defaults to the item's own page. It's validated
-       strictly against **this entry's grid**: outside it, or overlapping another `positions` entry on the same page,
-       is an error (§9.1).
-     - `{"hidden": true}`: **hidden on purpose**, by a person (`Hide on this layout`, §5.4) or an agent. Not counted in
-       `warn_override_hidden`.
-     - `{"skipped": true}`: **written by a pin** (§5.2), or by an Undo with no room (§5.2), where the item wasn't
-       shown. Counted in `warn_override_hidden` and listed in `Hidden here` as `Not placed on this layout`. Keeping it
-       apart from `hidden` means an item skipped by accident never becomes silently invisible (Pragma B2).
-  2. **Otherwise the main spot is inherited**, if the item has one, it fits this grid, and it doesn't overlap a step-1
-     entry.
-  3. **Otherwise the item is skipped on this layout:** not drawn, not moved, not written. It's counted in the load-time
-     `warn_override_hidden` (§9.2), triggers the new-items snackbar (§5.4) and is listed in `Hidden here`. Nothing in
-     the file is rewritten.
-  - **Placement doesn't depend on file order.** Explicit entries can't overlap each other, and main spots can't
-    overlap each other (both strict). So the only collision is an inherited main spot under an explicit entry, and
-    **the explicit entry always wins**. Reordering `items[]` or `elements[]`, by an Undo or by hand, never changes
-    what's shown. (This makes Pragma's N3 and S-b moot.)
-  - Skipped or disabled elements still reserve their effective cells in every layout, as today.
-- `validate.py` prints an info line per layout for each `skipped` and each `hidden` item, for each item an override
-  layout inherits, and for each item with no main spot.
-- **What stays shared across all layouts** (§0): which items exist, the pages and their order, folder contents,
-  `dock[]`, every element's `content`/`style`. Only places and sizes differ.
-- The phone keeps `positions` verbatim (canonical reformat, AQ-2). An agent may write it by hand, and `validate.py`
-  checks it.
+  today. **Main is validated strictly, as today:** every main spot is inside the main grid, and none overlap (§10.1).
+- **The main spot is optional in a file with `windowOverrides`.** A page item or grid-placed element may leave out
+  `x` and `y` together. An element keeps `page`, `w` and `h` as its default page and size. This is how an item added on
+  an override layout with no room on main exists (§6.2). Main doesn't show it: it's counted in `warn_main_hidden` and
+  listed in main's `Hidden here`. Without `windowOverrides`, `x` and `y` stay required.
+- **On an override layout** (an entry with `grid`), each grid-placed thing is placed by the first of these that
+  applies:
+  1. **Its `positions` entry**, `{"page"?, "x", "y"}`, plus `"w"`, `"h"` for elements. `page` defaults to the item's
+     own page. This is validated strictly against **this entry's grid**: outside the grid, or overlapping another
+     `positions` entry on the same page, is an error.
+  2. **Its inherited main spot**, if it has one, the spot fits this grid, and it doesn't overlap a step-1 entry.
+  3. **Otherwise it isn't shown on this layout.** It isn't drawn, moved or written. It's counted in
+     `warn_override_hidden` and listed in `Hidden here` (§6.4).
+- **Placement doesn't depend on file order.** Explicit entries can't overlap each other, and main spots can't overlap
+  each other. So the only possible collision is an inherited spot under an explicit entry, and **the explicit entry
+  wins**.
+- Skipped or disabled elements still reserve their effective cells, as today.
+- `validate.py` prints info lines per layout for the inherited items, the items that aren't shown, and the items with
+  no main spot.
+- **Shared by all layouts:** which items exist, the pages and their order, folder contents, `dock[]`, and every
+  element's `content`/`style`.
+- The phone keeps `positions` verbatim (canonical reformat, AQ-2). An agent may write it by hand.
 
-### 5.2 What a user edit writes
-Every edit (drag, `Move to…`, `Resize…`, the dock, `Add to home`, the widget picker, folders, Undo) is computed against
-the **active layout**: its grid and its occupancy, meaning the places from §5.1 including borrowed ones, plus reserved
-cells. It's one write (§4.3), replayed by ID at write time (§4.4). This applies to **app items, shortcuts and folders
-as well as elements**.
+### 6.2 What a user edit writes
+Every edit is computed against the **active layout**: its grid and its occupancy (the places from §6.1, including
+inherited ones, plus reserved cells). It's one write, replayed by ID at write time. This applies to app items,
+shortcuts, folders and elements.
 
-| Edit, made while… | …the main layout is active | …override layout `L` is active |
+| Edit | While main is active | While override layout `L` is active |
 |---|---|---|
-| Move / drag / `Move to…` / `Resize…` | Writes the item's main `page`/`x`/`y` (`w`/`h`). **Pin:** the same write adds, to every override layout with no `positions` entry for this item, the place it was borrowing *before* the edit, or `{"skipped": true}` if it wasn't shown there | Writes only `L.positions[id]`. Main and other layouts are untouched (they never borrow from `L`) |
-| `Add to home` (drawer) / widget picker / out of a folder | **Never refused** (Christopher, Q1). Writes the new item's main spot: the chosen cell, or the first free cell as ux.md §4.2 says (first free cell, otherwise a new page, otherwise `home_full` at 20 pages, which is the only limit). Every override layout inherits it if it fits and is free there, and otherwise skips it (§5.1). Nothing is written to any other layout, and no saved position is rewritten | On `L`: the chosen cell, or `L`'s first free cell by the same ux.md §4.2 rule (a new page if `L` is full; `home_full` at 20 pages). **If those same coordinates fit main and are free there**, they become the main spot, and `L` (and every other layout where they fit) inherits them. **Otherwise** the add writes `L.positions[id]` and **no main spot**, so main and the other layouts don't show it (warning, snackbar, `Hidden here`). Example: added at column 6 on a 6-column tablet layout, the item isn't shown on a 4-column phone, and the phone says `1 new item isn't shown on this screen.` |
-| `Remove from home` | Deletes the item or element and **every** `positions[id]` entry, in one write (as `pages[].overrides`, §16.7.1) | Same. Removal is file-wide: one item set, and people expect "remove from home" to mean home everywhere |
-| Into the dock / out of the dock | Membership is shared, so it's file-wide in every layout, and the `positions[id]` entries are deleted with it. This is the documented exception: the item changes kind, so it doesn't "jump" | Same |
-| **Folder creation** (drop an item on another) | In **every** layout the new folder takes the **target** item's place (its `positions` entry, borrowed spot or skipped state), and the dragged item leaves its place. In user terms (for ux.md): "Making a folder on the tablet makes it on the phone too, where the target app was." | Same |
-| Into an existing folder | As Remove for the moved item's places (folder membership is global, §0) | Same |
-| Undo of a remove (§16.7.1, and the same for app items) | Puts the object back at its old index **with its main spot and its `positions` entries**. **On the active layout:** old cells if free, otherwise the free-spot scan on its grid, written as a move on that layout (on main, a move of the main spot, with pins). `undo_element_moved` (`Put "%1$s" back on %2$s.`) shows only when it lands off its old cells there. **If the active layout has no room** (Pragma S-c): in a file with `windowOverrides`, it's restored anyway, skipped on this layout (no main spot on main; `{"skipped": true}` on `L`), and the snackbar is `Put "%1$s" back. It's in Hidden here until there's room.` (`undo_element_hidden`). `undo_element_no_room` is kept only for files without `windowOverrides`. **On every other layout:** a restored explicit entry or main spot whose cells are now taken becomes `{"skipped": true}` or no main spot, so strict validation still holds. Only the restored item's own places change, never another item's. No message for those: it's a restore, not a move | Same rules, with `L` as the active layout |
+| Move / drag / `Move to…` / `Resize…` | Writes the main spot. Override layouts that inherit it follow, by design | Writes only `L.positions[id]` |
+| `Add to home` / widget picker / out of a folder | **Never refused** (Christopher, Q1). The chosen cell, or the first free cell as in ux.md §4.2 (a new page if every page is full; `home_full` at 20 pages). Override layouts inherit it where it fits and is free | The chosen cell, or `L`'s first free cell by the same rule. **If those coordinates fit main and are free there**, they become the main spot, and `L` inherits it. **Otherwise** the add writes `L.positions[id]` and **no main spot**. Main then doesn't show the item: the rotate snackbar announces it, and it's listed in `Hidden here` |
+| `Remove from home` | Deletes the item and **every** `positions[id]` entry, in one write | Same |
+| Into or out of the dock | Membership is shared, so the change applies to every layout, and the `positions[id]` entries are deleted with it | Same |
+| **Folder creation** (drop an item on another) | On every layout, the folder takes the **target** item's place, and the dragged item leaves its place | Same |
+| Into an existing folder | As Remove, for the moved item's places | Same |
+| Undo of a remove | Puts the object back at its old index, **with its main spot and its `positions` entries**. **On the active layout:** its old cells if they're free, otherwise the free-spot scan, written as a move. `undo_element_moved` shows only when it lands off its old cells there. **If the active layout has no room** (Pragma S-c), in a file with `windowOverrides`: it's restored anyway, not shown on this layout (with no main spot on main, or no `L` entry on `L`), and the snackbar is `Put "%1$s" back. It's in Hidden here until there's room.` (`undo_element_hidden`). `undo_element_no_room` stays for files without `windowOverrides`. **On other layouts:** a restored `positions` entry or main spot whose cells are now taken is dropped. Only the restored item's places change | Same, with `L` as the active layout |
 
-**Pages are global.** Going past the last page creates a new empty page on every device, as today (ux.md §4.2).
-"An empty page is deleted when you leave edit mode" means **empty in the file**: no main item on it **and** no
-`positions[…].page` pointing at it. A page that's empty on this layout only is kept, so the phone never loses a page.
+**Pages are shared by all layouts.** Going past the last page creates a new empty page, as today (ux.md §4.2). "Empty"
+means empty in the file: no main item on it and no `positions[…].page` pointing at it.
 
 **Why this model** (rejected options in brackets):
-- **[Every edit writes the shared spot, the §1.5 proposal.]** A tablet *drag* of an existing item to column 6 makes it
-  vanish on the phone. That's exactly the cross-device jump Pragma rules out. (A tablet *add* at column 6 that the
-  phone doesn't show is different: the item is new, so nothing moved. Christopher chose that in Q1.)
-- **[Edits write main only, and override layouts are read-only.]** A phone edit would still move the item on a tablet
-  that borrows main positions. That's a jump.
-- **[Per-override maps with no pin.]** The same phone-edit jump for every borrowed item.
-- **Maps plus pin-on-main-edit** is the only option that makes the invariant total (Pragma agreed). It's also
-  compatible with "a resize never writes": pins and map entries are written only as part of an explicit user edit,
-  never because a window matched. Rotating or folding just switches which layout is read.
-- **Cost:** the file gains `positions` entries as people edit. That's bounded by items × grid overrides (≤ 2000 × 16;
-  in practice a few dozen), and agents see plain `{x, y}` objects. `validate.py` lists the borrowed items, so an agent
-  knows that a main edit by hand moves them there too. Hand edits are the agent's explicit choice; only phone edits pin.
+- **[Every edit writes the main spot.]** Dragging an item to column 5 in landscape would make it vanish in portrait.
+- **[Pins on main edits.]** That was the earlier design. It kept every layout frozen against main edits, at the cost of
+  a `skipped` marker and writes into every override layout. On one device, letting inherited items follow main is
+  simpler and shows up the moment you rotate. If that turns out to surprise people, pins can come back without
+  changing any existing file.
 
-### 5.3 Which layout am I editing? (Pragma B1)
-- **Edit bar:** on main, the title stays `Editing layout` (unchanged, no golden churn). On an override layout it's
-  `Editing layout · %1$s` (`edit_layout_title_named`), e.g. `Editing layout · Tablet landscape`, using `label`, else `id`.
-- **Rail mode** (§1.5 hides the edit-bar text there): the same text shows as a **chip in the notice row**. It gets its
-  own 48 dp row, **in edit mode only, and only while an override layout is active**. ux.md §1.5's rail bullet needs
-  amending to say so (§15).
-- **TalkBack on entering edit mode on an override layout:** `Editing the %1$s layout. Changes stay on screens that use
-  it. Double-tap Done when finished.` (`edit_layout_a11y_named`).
-- **A rotate, fold or resize that changes the active layout while in edit mode:** a 4 s snackbar, announced too:
-  `Now editing the %1$s layout.` (`edit_layout_switched`). On main, the name is `main` (`layout_name_main`), so it reads
-  `Now editing the main layout.`
+### 6.3 Which layout am I editing? (Pragma B1)
+- **Edit bar:** on main, the title stays `Editing layout`. On an override layout it's `Editing layout · %1$s`
+  (`edit_layout_title_named`), using `label`, else `id`.
+- **Rail mode:** the same text shows as a **chip in the notice row**, in edit mode only, and only while an override
+  layout is active. ux.md §1.5's rail bullet needs amending to say so (§16).
+- **TalkBack on entering edit mode on an override layout:** `Editing the %1$s layout. Changes here apply only to this
+  layout. Double-tap Done when finished.` (`edit_layout_a11y_named`).
+- **A rotate, fold or resize that changes the active layout while in edit mode:** a 4 s announced snackbar, `Now editing
+  the %1$s layout.` (`edit_layout_switched`). On main, the name is `main` (`layout_name_main`).
 
-### 5.4 Hidden here: finding and bringing back items (Pragma B3, N2)
-- **Count:** the items the active layout doesn't show: skipped, `{"skipped": true}`, `{"hidden": true}`, and on main the
-  items with no main spot.
+### 6.4 Hidden here: finding and bringing back items (Pragma B3, N2)
+- **Count:** the items the active layout doesn't show. On an override layout these are the items that don't fit or
+  whose spot is taken. On main, they're the items with no main spot.
 - **Entry points:**
-  - In edit mode on **any** layout, main included, when the count is > 0, the edit bar gets a button `Hidden here
-    (%d)` (`hidden_here_button`, plurals). In rail mode it lives in `⋮`.
-  - **Outside edit mode too** (Pragma N2): the home long-press menu gets `Hidden here (%d)` when the count is > 0. This
-    is available from O4, where edit mode is off on override layouts.
-- **New-items snackbar** (Pragma N2, rule decided in Pragma's re-review of 5348e14): a 6 s snackbar (announced) says `%1$d new items aren't shown on this
-  screen.` / `1 new item isn't shown on this screen.` (`hidden_here_load`, plurals), with the action `Show`
-  (`hidden_here_load_action`), which opens `Hidden here`.
-  - It fires on a load, a reload, and **switching to a layout** (rotate, fold, unfold, resize) that has items hidden
-    since this device last showed it. Unfolding or rotating into a layout is exactly when people need to know.
+  - In edit mode, when the count is > 0, the edit bar gets a `Hidden here (%d)` button (`hidden_here_button`,
+    plurals). In rail mode it's in `⋮`.
+  - **Outside edit mode**, the home long-press menu gets `Hidden here (%d)` when the count is > 0. This is available
+    from O4.
+- **Rotate snackbar** (Pragma N2; the rule is from Pragma's re-review of 5348e14, minus the load and reload triggers):
+  a 6 s announced snackbar, `%1$d new items aren't shown on this screen.` / `1 new item isn't shown on this screen.`
+  (`hidden_here_load`, plurals). Its action is `Show` (`hidden_here_load_action`), which opens `Hidden here`.
+  - It fires on **switching to a layout** (rotate, fold, unfold, resize) that has items hidden since this device last
+    showed it. That includes the first layout shown after the app starts.
   - It counts each **newly hidden item once**. The device keeps, per layout `id` (or main), the set of item ids it has
     already announced. The snackbar counts only hidden items not in that set, and adds them when it shows. An item
     leaves the set when that layout shows it again. So the same set never fires twice, and an item that's hidden again
     later is announced again. The first time a device shows a layout, every hidden item there counts as new.
-  - `{"hidden": true}` items never count.
-  - The set is device-local UI state (app-private), **never written to the file**. The window still never writes, and
-    Q-A12 holds.
+  - The set is device-local UI state (app-private), **never written to the file**. The window still never writes.
   - **While a drag is in progress it's held**, and it shows when the drag ends or is cancelled. In edit mode, after a
     layout switch, it follows the `Now editing the %1$s layout.` snackbar rather than replacing it.
 - **The sheet** is titled `Not shown on this layout` (`hidden_here_title`). Each row is the item's label with one reason
   (Pragma S-a):
   - `Doesn't fit this grid` (`hidden_here_reason_no_fit`): its spot is outside this grid;
   - `Its spot is used by "%1$s"` (`hidden_here_reason_taken`): its inherited main spot is under an explicit entry;
-  - `Not placed on this layout` (`hidden_here_reason_pinned`): `{"skipped": true}`, or no main spot on main;
-  - `Hidden on this layout` (`hidden_here_reason_hidden`): `{"hidden": true}`.
-  - Each row has the action `Show here` (`hidden_here_show`).
-  - TalkBack reads a row as `<Label>, <reason>, Show here, button`, e.g. `Maps, its spot is used by Camera, Show here,
-    button`.
+  - `Not placed on this layout` (`hidden_here_reason_unplaced`): it has no main spot (main only).
+  - Each row has the action `Show here` (`hidden_here_show`). TalkBack reads a row as
+    `<Label>, <reason>, Show here, button`.
 - **`Show here`** places the item at the first free cell, scanning row-major from the **page on screen**, then the
   pages after it, then the pages before it. If no page has room, it goes on a new page at the end, as `Add to home`
   does (ux.md §4.2). Only at 20 full pages is the row disabled with `No room`; activating it announces `home_full`. If
-  the item lands on a page other than the one on screen, the sheet closes and home scrolls to that page (Pragma's
-  re-review of 5348e14). On an override layout it writes `L.positions[id]`. On main it writes the main spot as a main
-  move, **with pins**, so a layout that wasn't showing it gets `{"skipped": true}` and nothing changes there.
-- **Long-press on an override layout** gets `Hide on this layout` (`hide_on_layout`), which writes
-  `{"hidden": true}` into `L.positions[id]`. It isn't offered on main: hiding there is `drawer.hidden` or Remove.
-- **In O4:** on main, `Show here` works (it's a main edit, with pins). On an override layout, the sheet shows without
-  `Show here` (§10.1).
+  the item lands on a page other than the one on screen, the sheet closes and home scrolls to that page. On an override
+  layout it writes `L.positions[id]`. On main it writes the main spot.
+- **In O4:** `Show here` works on main. On an override layout the sheet shows without it (§11.1).
 
-### 5.5 Rotating, folding or resizing mid-edit
-- **A drag in progress is cancelled** (§1.5), with no write and no copy: the item springs back.
-- **Edit mode stays on** and now edits the layout that's active after the change, with the §5.3 switch snackbar.
-- **An open `Move to…`, `Resize…` or `Hidden here` sheet closes without writing if the active layout changed.** Its
-  ranges belonged to the old grid. The snackbar (announced) is `Screen size changed, so nothing was moved.`
-  (`edit_sheet_closed_layout_changed`). If only chrome changed (the same layout), the sheet stays open.
-- **Queued (debounced) writes** carry their target layout's entry `id` (or main). At replay they write to that layout,
-  even if the window has moved on. If that entry is gone by then (an agent deleted it) or the target is taken, nothing
-  is written and the existing `move_element_taken` snackbar shows.
+### 6.5 Rotating, folding or resizing mid-edit
+- **A drag in progress is cancelled** (ux.md §1.5), with no write: the item springs back.
+- **Edit mode stays on** and now edits the layout that's active after the change, with the §6.3 switch snackbar.
+- **An open `Move to…`, `Resize…` or `Hidden here` sheet closes without writing if the active layout changed.** The
+  announced snackbar is `Screen size changed, so nothing was moved.` (`edit_sheet_closed_layout_changed`). If only
+  chrome changed, the sheet stays open.
+- **Queued (debounced) writes** carry their target layout's entry `id` (or main), and write there at replay. If that
+  entry is gone or the target cell is taken, nothing is written and `move_element_taken` shows.
 - **Undo after a rotate:** the Undo snackbar survives the change. Its scan runs on the layout that's active **when Undo
   is tapped**.
-- **Reserved cells:** the hatch marks only cells held by **disabled or unknown-type elements** (and elements above the
-  FEATURE_LEVEL) on this layout. Items skipped because they don't fit have no cells on this layout, and items skipped
-  by overlap sit under the item that holds those cells, so neither is hatched: they're in `Hidden here`.
-  - Hatch: 45° lines in white at 16 % (the same as the cell outlines).
-  - TalkBack: `Reserved, column %1$d, row %2$d` (`cell_reserved_a11y`).
-  - A drop there is refused with the shake, or the red outline under reduced motion.
+- **Reserved cells:** a hatch marks only cells held by disabled or unknown-type elements: 45° lines in white at 16 %.
+  TalkBack reads `Reserved, column %1$d, row %2$d` (`cell_reserved_a11y`). A drop there is refused with the shake, or a
+  red outline under reduced motion. Items that aren't shown have no cells on that layout.
 
-## 6. Orientation lock
+## 7. Orientation lock (root `orientationLock`)
 
-### 6.1 Rule
-- `orientationLock` is allowed only in an entry whose `when` is `{}` or contains **only `deviceClass`**. Anything else
-  is a validation error (§9.1). `deviceClass` comes from the display, so the lock can't change it, and the rule can't
-  flip itself.
-- The effective lock is the last such matching entry. `system` (the default) = `SCREEN_ORIENTATION_UNSPECIFIED`, which
-  is today's behaviour. `portrait` = `USER_PORTRAIT` and `landscape` = `USER_LANDSCAPE`: both directions, honouring the
-  user's auto-rotate for the 180° flip.
-- **A landscape-only phone** is `{ "when": { "deviceClass": "phone" }, "orientationLock": "landscape" }`.
-- Applying it:
-  - `setRequestedOrientation` is called in `onCreate` **before the first frame**, from the config already in memory
-    or `last-good.json` (no extra storage). This avoids a portrait flash and then a rotation.
-  - A reload that changes the lock calls it again, and the Activity recreates with the §1.5 state kept.
-  - A fold re-evaluates it (cover vs inner changes `deviceClass`). That isn't a loop, because the lock never folds.
+### 7.1 Rule
+- `orientationLock` is one global root field, with no matcher. `system` (the default) is
+  `SCREEN_ORIENTATION_UNSPECIFIED`, today's behaviour. `portrait` is `USER_PORTRAIT` and `landscape` is
+  `USER_LANDSCAPE`: both directions of it, honouring the user's auto-rotate for the 180° flip.
+- `setRequestedOrientation` is called in `onCreate` **before the first frame**, from the config already in memory or
+  `last-good.json`. A reload that changes it calls it again, and the Activity recreates with the ux.md §1.5 state kept.
+- **Scope** (Pragma S9): the **home activity** only: home, the drawer, folders, and the item and Pages sheets. First
+  run, Settings, the detail view and system pickers follow the system.
 
-**Scope** (Pragma S9): the lock applies to the **home activity** only: home, the drawer, folders, and the item and
-Pages sheets. First run, Settings, the §6.2 detail view and system pickers (SAF, the role request) follow the system.
-They're full-screen forms, and first run has no config anyway. A reload that changes the lock recreates the Activity
-and keeps the drawer's search text (the §1.5 state rule).
+### 7.2 Entries the lock makes unreachable
+- Matching always reads the real window, because split screen and freeform ignore the lock.
+- `validate.py` prints an info line for an entry whose `orientation` contradicts the lock: `windowOverrides[%1$d]
+  ("%2$s") only applies in split screen or a freeform window, because orientationLock is %3$s.` There's no phone
+  warning.
 
-### 6.2 "A lock removes the variants that can no longer match": only statically
-- The phone never removes entries. Matching always reads the real window, because a locked device can still show other
-  shapes: in split screen and freeform the window's shape ignores the lock, and on large screens the OS may ignore the
-  lock entirely (§6.3).
-- So the lock prunes at **validation**: an entry whose `when` contradicts the lock that's sure to apply with it is
-  reported as unreachable outside multi-window. Example: the lock is `portrait` for `phone`, and an entry has
-  `{"deviceClass": "phone", "orientation": "landscape"}`. That gives `validate.py` an info line and the phone's load-time
-  `warn_override_unreachable`, file-derived and the same on every device. It's a warning, not an error, because split
-  screen can still reach it.
+### 7.3 ⚠ Technically limited: Android 16+ large screens
+- For apps **targeting API 36+**, Android **ignores `setRequestedOrientation` on displays with smallest width
+  ≥ 600 dp**: tablets, a fold's inner screen, and desktop windowing. The opt-out property lasts only until target 37.
+- The app targets 35 today, so the lock works everywhere **for now**. Play will require target 36.
+- **Recommended:** document the lock as **reliable on phone-sized screens only**, including a fold's cover screen. Don't
+  use the opt-out property. On load, if the lock isn't `system` and this display would ignore it (API ≥ 36, target
+  ≥ 36, sw ≥ 600), write `warn_orientation_lock_ignored`.
 
-### 6.3 ⚠ Technically limited: Android 16+ large screens
-- For apps **targeting API 36+**, Android **ignores `screenOrientation` and `setRequestedOrientation` on displays with
-  smallest width ≥ 600 dp**: tablets, a fold's inner screen, and desktop windowing.
-  - Games are exempt. The user can re-enable the app's request in the per-app aspect-ratio settings.
-  - The `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` opt-out exists only until target 37.
-- The app targets 35 today (`app/build.gradle.kts`), so the lock works everywhere **for now**. It stops working on
-  `tablet` when the app's target moves to 36, which Play will require.
-- **Recommended:**
-  - Document `orientationLock` as **reliable on `phone` only**.
-  - Don't use the opt-out property: it's temporary, and the launcher is adaptive anyway.
-  - On load, if a lock for `tablet` (or for `{}` on a tablet) applies to this device and the device would ignore it
-    (API ≥ 36 and target ≥ 36, display ≥ sw600), write the phone-only `warn_orientation_lock_ignored`, marked
-    `checked on this device`. It's derived from the device and the file at load, like Q-A12, never from the window.
-- A phone's cover screen is < 600 dp, so the lock holds there.
+## 8. Versioning and how old phones fail
 
-## 7. Versioning and how old phones fail
+**The Q-A10 route** (optional root keys, `schemaVersion` 1), not `schemaVersion` 2.
+- **FEATURE_LEVEL 5** means the app understands `windowOverrides`, `orientationLock` and `scale`. `Elements.FEATURE_LEVEL`
+  and `validate.py` go to 5 in O1. **`net.fetch` moves from its proposed level 5 to 6**, and the docs that say "net.fetch,
+  level 5" are updated in O1.
+- **Apps at FEATURE_LEVEL 4 or below (including dev8):** the root keys are strict, so the file is **B2: rejected,
+  with the last good layout kept**, via the existing `unknown key "…"` error. Nothing is written. Once the app updates,
+  the file loads. This is acceptable pre-release (Christopher, Q3). Older `validate.py` gives the same error.
+- **Level-5 `validate.py`** prints an info line when any of these keys is present: `windowOverrides, orientationLock and
+  scale need Config Launcher feature level 5 or later; older versions reject this file.`
+- **Later additions** (a new matcher or field) take the same route: the next feature level understands them, and
+  older apps reject the file. With one device and one app version that's enough, so there's no per-entry `requires`
+  (§2).
+- **Why not `schemaVersion` 2:** the outcome is the same, plus a migration path and a second schema to maintain. And
+  this change is purely additive.
+- **Why not an `elements[]` type:** layouts change where every item sits, and they aren't something drawn.
 
-**Choice: the Q-A10 route** (an optional root key, `schemaVersion` 1), **not** `schemaVersion` 2.
-- **FEATURE_LEVEL 5** = "understands `windowOverrides`".
-  - `Elements.FEATURE_LEVEL` and `validate.py`'s `FEATURE_LEVEL` go to 5 in slice O1.
-  - **`net.fetch` moves from its proposed level 5 to 6.** It's unshipped, and a level-5 phone that meets a
-    `requires: 5` card using `net.fetch` still skips just that card through the unknown-`kind` path (Q-A7), so nothing
-    breaks.
-  - The docs and schema descriptions that say "net.fetch, level 5" are updated in O1.
-- **Old phones (FEATURE_LEVEL ≤ 4, including dev8):**
-  - The root keys are strict, so a file with `windowOverrides` is **B2: the whole file is rejected and the last working
-    layout is kept**.
-  - The error is the existing `unknown key "windowOverrides"` at the root, and the banner and error view are as in §6.
-  - The old phone writes nothing and the file is untouched. When the app updates, it loads.
-  - This is the same as Q-A10's `theme` and acceptable pre-release.
-  - **`validate.py` from before level 5** gives the same error, so CI on an old checkout fails loudly too.
-  - test-plan O0 already expects this.
-- **Level-5 `validate.py`** prints an info line whenever the key is present: `windowOverrides needs Config Launcher
-  feature level 5 or later; older versions reject this file.`
-- **Why not `schemaVersion` 2:**
-  - It gives old phones the same outcome (rejection), with a migration path, B8 upgrade notices and a second schema
-    file to maintain, forever.
-  - v2 is reserved for breaking changes (widgets.md §5), and this is purely additive.
-- **Why not an `elements[]` type** (an old phone would skip it gracefully):
-  - Override layouts with `positions` are edited by the phone and change where every item sits. An old phone ignoring
-    them while editing base would silently diverge.
-  - An element is something drawn, and this isn't.
-  - Rejecting is the honest failure here.
-- **After level 5, per entry:**
-  - An entry with `requires` > FEATURE_LEVEL is skipped with `warn_override_level`, before strict key checks. That's how
-    later fields (say a level-7 `scale.title`) avoid B2 on level-5 phones.
-  - `validate.py` computes the needed `requires` and checks it.
-  - Inside an entry with `requires` ≤ level, unknown keys are errors (B2), like the known element types.
-- **Unknown enum strings** (Q-A10 style):
-  - In `validate.py`/CI, every bad value is an error.
-  - On the phone, a wrong JSON type or an out-of-range number is B2 with the same message.
-  - An **unknown string** doesn't reject the file:
-    - in `when`, the entry never matches (`warn_override_when_value`);
-    - in a field, that field keeps its default (`warn_override_value`).
-  - This lets a level-6 value (`posture: "folded"`) degrade on a level-5 phone without a `requires`.
+## 9. Folds (⚠ every behaviour unverified on real hardware)
 
-## 8. Folds (⚠ every behaviour unverified on real hardware)
+Christopher has no foldable, so these are Archimedes' best guesses. **The defaults are the conservative ux.md §1.5
+ones, they can be overridden, and they're tested only on emulators that report a real `FoldingFeature`**: the
+*7.6" Fold-in with outer display*, *Pixel Fold* and *Pixel 9 Pro Fold* AVDs, with posture driven from *Virtual
+sensors → Posture* and the hinge angle slider. They aren't tested with `wm size`, which reports no hinge. No fold
+question goes to Christopher.
 
-Christopher has no foldable, so these are Archimedes' best guesses. **The defaults are the conservative §1.5 ones,
-every one can be overridden, and each is tested only on emulators that report a real `FoldingFeature`**:
-- Android Studio's *7.6" Fold-in with outer display*, *Pixel Fold* and *Pixel 9 Pro Fold* AVDs, plus the resizable AVD;
-- posture driven from the Extended Controls *Virtual sensors → Posture* (closed, half-open, open) and the hinge angle
-  slider;
-- **not** with `wm size`, which reports no hinge. Run 2's fold points were only that.
-
-No question about folds goes to Christopher.
-
-### 8.1 `posture` matcher
-- It needs the `androidx.window:window` dependency: `WindowInfoTracker.windowLayoutInfo(activity)`, collected in the
-  Activity and passed into the pure geometry as data.
-- `flat` = `FoldingFeature.state == FLAT`.
-- `halfOpened` = `HALF_OPENED`. `book` = `HALF_OPENED` with a `VERTICAL` orientation, and `tabletop` = with a
-  `HORIZONTAL` one.
-- A `FoldingFeature` is only reported when the window overlaps the hinge. So a split-screen window on one half sees no
-  posture, which is correct: it isn't straddling anything.
-
-### 8.2 `fold` fields and their defaults
-- **`fold.flat`:**
-  - **Default `asTablet`**: a flat hinge is ignored, as in §1.5.
-  - `asPhone` applies the **Compact-width rules** to the window: no cap, full-width chrome, `auto` dock as on a phone,
-    drawer columns = `grid.columns`.
-  - It never changes what `when` sees (`widthClass` is still the real one), so it can't loop.
-  - Why `asTablet` is the default: the inner screen *is* tablet-sized, and the §1.5 rules were designed for it.
+- **`posture`** needs `androidx.window:window` (`WindowInfoTracker.windowLayoutInfo`), collected in the Activity and
+  passed into the pure geometry as data. `book` is `HALF_OPENED` with a vertical hinge, and `tabletop` is with a
+  horizontal one. A `FoldingFeature` is only reported when the window overlaps the hinge.
+- **Unfolded flat:** the hinge is ignored (ux.md §1.5). The inner screen is a medium or expanded window, so
+  `widthClass` matches it.
+- **Cover screen:** a compact window, matched by `widthClass: "compact"`. It needs no detection.
 - **`fold.halfOpened`** applies only while `isSeparating` is true:
-  - **Default `auto`**: book uses the start half, tabletop puts the grid on top with the dock below (§1.5).
-  - `start`, `end`, `top` and `bottom` choose the half. A value that doesn't fit the hinge direction (`top` in book
-    posture) falls back to `auto`, and `validate.py` warns when the entry's `when` makes the clash certain (e.g.
-    `posture: "book"`).
-  - `span` ignores the hinge and lays out over the whole window. Cells may sit under the hinge, and on a device whose
-    hinge **occludes** (`occlusionType == FULL`, dual-screen) that content is hidden. That's the user's choice, and it's
-    documented, not prevented.
-  - Why the conservative default: one half is guaranteed to show everything. `span` is the "weird stuff" knob.
-- The half chosen is laid out "as if it were the window" (§1.5), so `widthClass`/`heightClass` for *chrome* come from
-  the half. `when` still matches the **whole window**, so choosing a half can't change which entries match.
-- **No write on fold or unfold, ever.** The page is kept by `id`, and the rest follows §1.5.
+  - **`auto`** (the default): book uses the start half, and tabletop puts the grid on top with the dock below (ux.md
+    §1.5).
+  - `start` is the first half: the reading-start side in book, the top in tabletop. `end` is the other half.
+  - `span` ignores the hinge and lays out over the whole window. On a hinge that **occludes** (`occlusionType ==
+    FULL`), content under it is hidden. That's documented, not prevented.
+- The chosen half is laid out "as if it were the window", so the chrome rules come from the half. `when` still matches
+  the **whole window**, so choosing a half can't change which entries match.
+- **No write on fold or unfold, ever.** The page is kept by `id`.
 
-### 8.3 ⚠ Hard: `posture: "folded"` (the cover screen). **Deferred, heuristic ready.**
-- The cover screen reports **no `FoldingFeature`**, so `windowLayoutInfo` can't tell it from an ordinary phone.
-- The API that would say so (`DeviceStateManager` / `DeviceState` foldable properties) is a **`@SystemApi`**, so the
-  app can't call it.
-- **Heuristic** (only if Christopher or a user ever needs it):
-  - `folded` = the device has `PackageManager.FEATURE_SENSOR_HINGE_ANGLE` (API 30+; treated as false on API 29) **and**
-    this window has no `FoldingFeature` **and** the display's smallest side is < 600 dp.
-  - Known false results: flip phones whose cover screen hosts no launcher, and devices without the hinge sensor
-    feature flag.
-  - Emulator-testable (the foldable AVDs declare the sensor).
-- **Recommendation:** don't accept `folded` at level 5. The way to say "the cover screen" is
-  `{"deviceClass": "phone"}`, which matches it already (and ordinary phones too, which for one person's files is the
-  same thing). Add `folded` with the heuristic in slice O7 only if asked. Level-5 phones treat it as an unknown `when`
-  value (§7).
+## 10. Validation and warnings
 
-## 9. Validation and warnings
-
-### 9.1 Errors (`validate.py`/CI always; phone B2 for type and range errors, as in §7)
-These are path-based, in the existing `Validator.kt` style. The existing generic messages are reused for type, range,
-missing keys and unknown keys (`unknown key "x"`, `missing required "id"`, `… must be an integer from 2 to 12`,
-duplicate IDs). New messages:
+### 10.1 Errors (`validate.py`/CI always; B2 on the phone)
+The existing generic messages are reused for type, range, missing keys, unknown keys and duplicate IDs. New messages:
 
 | Path | Message |
 |---|---|
-| `windowOverrides` | `windowOverrides has %1$d entries; the maximum is 16. Combine entries that share the same "when".` (a person on the phone only meets it as B2) |
 | `windowOverrides[i].label` | `%1$s must be 1 to 40 characters.` |
-| `windowOverrides[i].when.widthClass` / `.heightClass` | `%1$s must be compact, medium or expanded.` |
-| `….when.orientation` | `%1$s must be portrait or landscape.` |
-| `….when.deviceClass` | `%1$s must be phone or tablet.` |
-| `….when.posture` | `%1$s must be flat, halfOpened, book or tabletop.` |
-| `….when.minWidthDp` … | `%1$s must be a whole number from 0 to 10000.` / `minWidthDp is larger than maxWidthDp, so this entry never applies.` |
-| `….orientationLock` | `%1$s must be portrait, landscape or system.` |
-| `….orientationLock` (keyed wrong) | `%1$s can only be used when "when" is empty or has only deviceClass, because the lock itself changes the window's shape and size.` |
-| `pages[p].items[i]` / `elements[e]` (main spot) | Unchanged: strict, as today. It must be inside the main grid and must not overlap (the existing messages) |
+| `….when.widthClass` | `%1$s must be compact, medium or expanded.` |
+| `….when.orientation` / `orientationLock` | `%1$s must be portrait or landscape.` / `%1$s must be portrait, landscape or system.` |
+| `….when.posture` | `%1$s must be book or tabletop.` |
+| `pages[p].items[i]` / `elements[e]` (main spot) | Unchanged and strict: inside the main grid, with no overlap (the existing messages) |
 | `pages[p].items[i]` / `elements[e]` with only one of `x`, `y` | `%1$s needs both x and y, or neither (no spot on the main layout).` |
-| `pages[p].items[i]` / `elements[e]` with neither `x` nor `y`, in a file without `windowOverrides` | The existing `missing required "x"` |
+| `pages[p].items[i]` / `elements[e]` with neither, in a file without `windowOverrides` | The existing `missing required "x"` |
 | `….positions` without `grid` | `%1$s needs a grid in the same entry; positions belong to that grid.` |
-| `….positions.<id>` | `x %2$d + w %3$d is outside this entry's grid (%4$d columns)` / `y … (%4$d rows)` (the existing wording, scoped to the entry) |
+| `….positions.<id>` | `x %2$d + w %3$d is outside this entry's grid (%4$d columns)` / `y … (%4$d rows)` |
 | `….positions.<id>` overlap | `overlaps %2$s on page "%3$s" in this entry's grid` |
-| `….positions.<id>.page` | `page "%2$s" doesn't exist` |
-| `….positions.<id>` (bad keys) | `hidden and skipped can't be combined with each other or with page, x, y, w or h` / `w and h are only for elements` |
+| `….positions.<id>.page` / `w`, `h` on an item | `page "%2$s" doesn't exist` / `w and h are only for elements` |
 | `….dock.edge` | `%1$s must be auto, bottom, top, start or end.` |
 | `….cellCap.maxWidthDp` / `.maxAspect` | `%1$s must be a whole number from 64 to 480.` / `%1$s must be a number from 1 to 3.` |
-| `….scale.icon` / `.labels` | `%1$s must be a number from 0.5 to 2.` / `%1$s must be auto, always or never.` |
-| `….fold.halfOpened` / `.flat` | `%1$s must be auto, start, end, top, bottom or span.` / `%1$s must be asTablet or asPhone.` |
+| `scale.icon` / `scale.labels` | `%1$s must be a number from 0.5 to 2.` / `%1$s must be auto, always or never.` |
+| `….fold.halfOpened` | `%1$s must be auto, start, end or span.` |
 
-### 9.2 Phone warnings (`status.json` `warnings`, the Warnings list; no banner, no snackbar)
-These are code, not `strings.xml`, as in ux.md §15.1. Every count in them has a singular form (`1 item isn't`, `1 entry`),
-and the code picks it. They're **all computed at load or reload from the file (Q-A12), never
-from the window.** Each override entry is checked at load **as if** it were active: its grid, its `positions`, what
-it borrows and what's skipped. So every device writes the same list, except `warn_orientation_lock_ignored`, which is checked on this device.
-Each warning names the entry by index **and** `id`:
+### 10.2 Phone warnings (`status.json` `warnings`; no banner)
+These are in code, as in ux.md §15.1, and every count has a singular form. They're computed at load or reload from the
+file (Q-A12), never from the window: each override entry is checked **as if** it were active. The one exception is
+`warn_orientation_lock_ignored`, which also reads the display and API level.
 
 | Code | Text |
 |---|---|
-| `warn_override_hidden` (one per entry) | `windowOverrides[%1$d] ("%2$s"): %3$d items aren't shown on windows that use its %4$d × %5$d grid (%6$s): they don't fit it, their spot is used by an item placed there, or they weren't placed there. Give them positions there, or change the grid.` With a count of 1: `… 1 item isn't shown …`. `%6$s` = the first 3 ids, then `and %d more`. **Counts skipped items and `{"skipped": true}` pins.** Only `{"hidden": true}` (chosen on purpose) isn't counted |
-| `warn_main_hidden` (one, for main) | `Main layout: %1$d items have no spot on the main layout (%2$s), so windows that use it don't show them. Give them x and y, or use Show here on the phone.` With a count of 1: `… 1 item has no spot …`. These are items added on another layout where main had no room |
-| `warn_override_position_id` | `windowOverrides[%1$d] ("%2$s").positions: "%3$s" doesn't match any item, so it was ignored.` (kept, as with `pages[].overrides`) |
-| `warn_override_level` | `windowOverrides[%1$d] ("%2$s") needs feature level %3$d, but this Config Launcher supports up to %4$d, so it was skipped. It stays in the file. Update the app to use it.` |
-| `warn_override_when_value` | `windowOverrides[%1$d] ("%2$s").when.%3$s "%4$s" isn't supported by this Config Launcher, so this entry never applies. Update the app, or check for a typo.` |
-| `warn_override_value` | `windowOverrides[%1$d] ("%2$s").%3$s "%4$s" isn't supported by this Config Launcher, so the default is used. Update the app, or check for a typo.` |
-| `warn_override_unreachable` | `windowOverrides[%1$d] ("%2$s") only applies in split screen here, because the orientation lock from windowOverrides[%3$d] keeps the full screen %4$s.` |
-| `warn_orientation_lock_ignored` (checked on this device) | `windowOverrides[%1$d] ("%2$s"): this tablet ignores app orientation locks (Android 16 and later), so home rotates freely. Checked on this tablet.` |
-| `warn_override_fold_side` | `windowOverrides[%1$d] ("%2$s").fold.halfOpened "%3$s" doesn't fit a %4$s hinge, so the default half is used.` (only when `when.posture` makes the clash certain) |
+| `warn_override_hidden` (one per entry) | `windowOverrides[%1$d] ("%2$s"): %3$d items aren't shown on windows that use its %4$d × %5$d grid (%6$s), because they don't fit it or their spot is used by an item placed there. Give them positions there, or change the grid.` `%6$s` = the first 3 ids, then `and %d more` |
+| `warn_main_hidden` | `Main layout: %1$d items have no spot on the main layout (%2$s), so windows that use it don't show them. Give them x and y, or use Show here on the phone.` These are items added on another layout where main had no room |
+| `warn_override_position_id` | `windowOverrides[%1$d] ("%2$s").positions: "%3$s" doesn't match any item, so it was ignored.` |
+| `warn_orientation_lock_ignored` | `orientationLock "%1$s": this screen ignores app orientation locks (Android 16 and later), so home rotates freely here.` |
 
-The **title-bar fit check** (Q-A12) runs on a synthetic portrait window at `smallestScreenWidthDp`, so it applies the
-entries that would match **that** window (with no posture). A `cellCap` override can therefore change the checked
-content width, and the result is still file-derived.
+The **title-bar fit check** (Q-A12) runs on a synthetic portrait window at `smallestScreenWidthDp` and applies the
+entries that would match that window, so a `cellCap` override can change the content width it checks.
 
-## 10. Staging after dev8 (PR-sized slices for Sprite)
+## 11. Staging after dev8 (PR-sized slices for Sprite)
 
-Each slice is mergeable on its own. Strict keys keep any field from a later slice rejected (B2/CI error) until that
-slice lands, so a half-built release never ignores something silently.
+Strict keys keep any field from a later slice rejected until that slice lands.
 
 | Slice | Contents | Tests |
 |---|---|---|
-| **O1** schema + matcher | `windowOverrides` in the schema, `Validator.kt` and `validate.py` (entries, `id`, `requires`, `when` with all level-5 keys, the §7 unknown-value rule); FEATURE_LEVEL → 5 and `net.fetch` → 6 in the docs; pure `resolve(entries, WindowContext) → Resolved` (leaf merge); `cellCap` and `scale` wired into `HomeGeometry`; warnings `_level`, `_when_value`, `_value` | Fixtures valid/invalid; resolver unit tests; O3, O7, O8; L1 (no write on rotate) |
-| **O2** dock edge | `dock.edge` (top bar, start/end rail), the drag index on both axes, insets, RTL | O4; L5/L6 rerun with each edge |
-| **O3** orientation lock | The `deviceClass`-only rule, the lock before the first frame, `warn_override_unreachable`, `warn_orientation_lock_ignored` | O5 (landscape-only phone on an emulator), a tablet AVD at API 36 with a test build targeting 36 |
-| **O4** grid layouts, read-only | `grid` + `positions` + `label` parse and validate; optional main spot; §5.1 placement (entry → inherit → skip); `warn_override_hidden`, `_position_id`, `warn_main_hidden`; **pins on every main edit** (Pragma N1: main is still editable in O4, so without pins a phone drag would move items on a tablet layout); the read-only behaviour in §10.1; `Hidden here` from the home long-press menu and the edit bar (`Show here` on main only); the new-items snackbar (§5.4) | O1, O2; **O9**; rotate between layouts, hash unchanged; §10.1 copy and TalkBack; O12 for main |
-| **O5** edits on any layout | §5.2 writes on override layouts and `hidden`; adds with no main spot; Undo with no room (`undo_element_hidden`); folder placement; global pages; Undo across layouts; queued writes keyed by entry `id`; §5.3 naming (edit bar, rail chip, announcements); §5.4 `Hidden here` with `Show here` and `Hide on this layout`; §5.5 rotate-mid-edit rules and reserved-cell hatching; the Settings `Grid` hint (§13) | New O9–O13 (below) |
-| **O6** folds | `androidx.window`, the `posture` matcher, `fold.flat`, `fold.halfOpened`, `warn_override_fold_side`; with `span`, grid focus runs straight across the hinge in reading order | O6 on foldable AVDs with posture simulation only |
-| **O7** (only if asked) | The `posture: "folded"` heuristic (§8.3) | Foldable AVD closed vs a normal phone AVD |
+| **O1** schema + matcher | `windowOverrides` (`id`, `label`, `when`), root `scale`, the validators, FEATURE_LEVEL → 5 and `net.fetch` → 6 in the docs; pure `resolve(entries, WindowContext) → Resolved` (leaf merge); `cellCap` and `scale` in `HomeGeometry` | Fixtures valid and invalid; resolver unit tests; L1 (no write on rotate); the `icon: 2` L-check |
+| **O2** dock edge | `dock.edge` (top bar, start/end rail), the drag index on both axes, insets, RTL | L5/L6 rerun with each edge |
+| **O3** orientation lock | Root `orientationLock`, the lock before the first frame, the `validate.py` unreachable line, `warn_orientation_lock_ignored` | A landscape-only phone emulator; a tablet AVD at API 36 with a test build targeting 36 |
+| **O4** grid layouts, read-only | `grid` + `positions` parse and validate; the optional main spot; §6.1 placement; `warn_override_hidden`, `_position_id`, `warn_main_hidden`; §11.1 read-only behaviour; `Hidden here` from the long-press menu and the edit bar (`Show here` on main only); the rotate snackbar | Rotate between layouts with the file hash unchanged; O9; O12 on main; §11.1 copy and TalkBack |
+| **O5** edits on any layout | §6.2 writes on override layouts, including adds with no main spot; Undo with no room; folder placement; queued writes keyed by entry `id`; §6.3 naming; `Show here` everywhere; §6.5 mid-edit rules and reserved-cell hatching; the Settings `Grid` hint (§14) | O9b, O10–O13 |
+| **O6** folds | `androidx.window`, the `posture` matcher, `fold.halfOpened`; with `span`, focus runs straight across the hinge | Foldable AVDs with posture simulation only |
 
-New test-plan checks for Grace (the O-table in #185):
-- **O9 (no cross-layout jump):** with base 4 × 5 and a `tablet-land` 6 × 4 layout, drag on the phone, then load on the
-  tablet: tablet places unchanged; pins written. The reverse: tablet drag, phone unchanged.
-- **O10:** a rotate mid-`Move to…` closes the sheet with no write; a rotate mid-drag cancels it.
-- **O9b (add never refused):** add at column 6 on the tablet's 6-column layout. The phone (4 columns) doesn't show it,
-  writes `warn_main_hidden` and lists it in `Hidden here`. No other position in the file changes.
+New test-plan checks for Grace:
+- **O9 (layouts stay apart):** main 4 × 5 (portrait) and `landscape` 6 × 4. Drag in landscape, then rotate: portrait is
+  unchanged. Drag an item in portrait that landscape inherits: landscape follows. An item with a landscape entry
+  doesn't move.
+- **O9b (add never refused):** add at column 5 in landscape, then rotate to portrait. Portrait doesn't show it, says `1
+  new item isn't shown on this screen.`, lists it in `Hidden here`, and writes `warn_main_hidden`. No other position
+  changes.
+- **O10:** a rotate mid-`Move to…` closes the sheet with no write, and a rotate mid-drag cancels the drag.
 - **O11:** Undo after a rotate scans the layout that's active when Undo is tapped.
-- **O12 (Hidden here):** a main edit pins `skipped` on the tablet layout; the tablet's count and `warn_override_hidden`
-  include it; `Show here` places it; `Hide on this layout` removes it from the count.
-- **O13 (layout name):** the edit bar, the rail chip and TalkBack name the layout; a rotate across layouts in edit
+- **O12 (Hidden here):**
+  - Rotating into a layout with a new hidden item shows the snackbar once, and rotating back and forth doesn't repeat
+    it. It's held during a drag.
+  - `Show here` scans the page on screen, then the later pages, then the earlier pages, then adds a new page. At 20
+    full pages it's disabled.
+- **O13 (layout name):** the edit bar, the rail chip and TalkBack name the layout, and a rotate across layouts in edit
   mode announces `Now editing the … layout.`
-- **L-check:** `scale.icon: 2` on s360 at font scale 1.3 (§4.4).
 
-### 10.1 What O4 (read-only) shows (Pragma B5)
+### 11.1 What O4 (read-only) shows (Pragma B5)
 While an override layout with `grid` is active and O5 hasn't shipped:
 - **Long-press menu:** `Edit layout` is shown **disabled**, with the reason `Not editable here yet`
   (`layout_readonly_reason`).
 - **Long-press-drag** doesn't start a drag. It shows the snackbar `The %1$s layout can't be edited here yet. Change it in
   launcher.json.` (`layout_readonly`).
 - **Disabled, with the reason `Not editable here yet`:** the drawer's `Add to home`, `Move to…`, `Move to dock`,
-  `Add to folder…` and `Remove from home`. TalkBack keeps them listed as `<action>, Not editable here yet` and announces
-  the `layout_readonly` snackbar text on activation, as in the §16.7.2 `No room` pattern.
-- **Still available:** `Hide` (`drawer.hidden`) and `App info`, since they carry no coordinates.
-- **Rotating into an override layout while in edit mode** leaves edit mode, with the same snackbar. Rotating back
-  doesn't re-enter it.
-- **`Hidden here`** (§5.4) is reachable from the home long-press menu, with no `Show here` on an override layout.
-- **Main stays editable in O4, and every main edit pins** (Pragma N1), so a phone edit never moves anything on a tablet
-  layout.
+  `Add to folder…` and `Remove from home`. TalkBack lists them as `<action>, Not editable here yet` and announces
+  `layout_readonly` on activation.
+- **Still available:** `Hide` (`drawer.hidden`) and `App info`.
+- **Rotating into an override layout while in edit mode** leaves edit mode, with the same snackbar.
+- **`Hidden here`** is reachable from the long-press menu, without `Show here`.
+- **Main stays editable.** Override layouts follow main for the items they inherit (§6), as they will after O5.
 
-## 11. Hard parts (flagged, not dropped)
+## 12. Hard parts (flagged, not dropped)
 
 | Hard part | Approach |
 |---|---|
-| Edits under several layouts without cross-device jumps | Per-layout `positions` plus pin-on-main-edit (§5). Pins ship in O4 with the first override grids (Pragma N1); editing on override layouts is the largest slice (O5), so O4 ships them read-only first |
-| Orientation lock on ≥ sw600 under target 36+ | The OS ignores it. Documented as phone-only, with the `warn_orientation_lock_ignored` load-time warning; no opt-out property (§6.3) |
-| `posture: "folded"` | No public API. Deferred, with the hinge-sensor heuristic ready (§8.3); use `deviceClass: "phone"` |
-| Fold behaviour in general | Unverified on hardware. Conservative defaults, every one overridable, emulator-only tests with a real `FoldingFeature` (§8) |
-| `span` over an occluding hinge | Allowed and documented; content under the hinge may be hidden (§8.2) |
-| The lock's first frame | Apply it in `onCreate` from the config in memory or last-good, before `setContent` (§6.1) |
-| Class flapping near 600/840 dp while resizing | It can switch layouts, so items may appear or disappear while dragging a window edge. No writes; a drag is cancelled. Accepted |
-| Agents editing main positions by hand | Borrowed places follow the hand edit (only phone edits pin). `validate.py` info lines list the borrowed items per entry |
+| Edits with several layouts on one device | A per-layout `positions` map, with main inherited where it fits (§6). Override editing is the largest slice (O5), so O4 ships override layouts read-only first |
+| A main edit changes inherited items on other layouts | By design (§6.2), and visible on rotate. Pins can return later with no change to existing files |
+| Orientation lock on screens ≥ sw600 at target 36+ | The OS ignores it. It's documented as reliable on phone-sized screens, with `warn_orientation_lock_ignored` (§7.3) |
+| Fold behaviour | Unverified on hardware. Conservative defaults, overridable, and emulator-only tests (§9) |
+| `span` over an occluding hinge | Allowed and documented (§9) |
+| The lock's first frame | Applied in `onCreate` from the config in memory or last-good (§7.1) |
+| Class flapping near 600/840 dp while resizing | It can switch layouts mid-resize. Nothing is written, and a drag is cancelled. Accepted |
 
-## 12. Christopher's answers: **decided** (2026-10-26)
+## 13. Christopher's answers: **decided**
 
-Pragma agreed with all six, and Christopher answered them, in his own words where quoted. None were about folds:
-Archimedes picks those (§8).
+**Re-scope, 2026-10-26**, in his words: "The goal is ultimately to let an AI or system manage a launcher. If we're
+adding complexity without much foreseeable value, cut that thread. Functional, not one-size-fits-all. Configs are
+cheap: if the user wants the same config on a tablet and a phone, their AI can do it, or they write a translation layer
+to keep them in sync. Allowing different layouts for a single device makes sense, since turning your device is common
+and pushing a different config every rotation is infeasible." (§0, §2)
 
-1. **Adding on a layout: decided, never refused.** "The item goes into the active layout's spot. Every other layout
-   uses the inherited base spot if it fits there. If it doesn't fit, it isn't shown on that layout": load-time warning,
-   `skipped`, and listed in `Hidden here`. Saved positions are never rewritten. The "refused if the phone is full" rule
-   is dropped. With main strictly validated, "uses the inherited base spot if it fits" means: when the add's
-   coordinates fit main and are free there, they're the main spot; otherwise the item has no main spot (§5.2). Pragma's S1 (giving other layouts their own first free spot) and `add_no_room_main` with it (§5.1,
-   §5.2). In earlier words: "Anything that doesn't fit the smaller grid is simply not shown on that screen, and you get
-   a warning when the config loads. Its saved position is never moved or rewritten."
-2. **Remove and other global changes: decided.** "You're editing the one config every device uses" (§0). Add, remove,
-   dock membership and folder membership are global, and only position and size are per layout. Remove is global.
-   `Hide on this layout` covers "not on this screen".
-3. **Older app versions reject override files: decided, fine pre-release** (§7).
-4. **Orientation lock reliable on phones only (Android 16+): decided, accepted** (§6.3).
-5. **Read-only first: decided.** Ship O4 (custom grids shown, not editable, §10.1), then O5 (editing).
-6. **Icon scale: decided,** `scale.icon` 0.5–2× (28–112 dp), with tap areas never below 48 dp (§4.4).
+The earlier answers, as they stand after the re-scope:
+1. **Adding is never refused: decided, kept.** "The item goes into the active layout's spot. Every other layout uses
+   the inherited base spot if it fits there. If it doesn't fit, it isn't shown on that layout." With main strictly
+   validated, that means an add on an override layout becomes the main spot when it fits and is free there, and
+   otherwise the item has no main spot (§6.2). Saved positions are never rewritten.
+2. **Global changes: decided, reworded.** "You're editing the one config" now means one config for one device: add,
+   remove, dock and folder membership apply to every layout, and only position and size are per layout.
+3. **Older app versions reject these files: decided, fine pre-release** (§8).
+4. **Orientation lock reliable on phones only (Android 16+): decided, accepted.** The lock is now global (§7).
+5. **Read-only first: decided.** O4, then O5.
+6. **Icon scale: decided,** 0.5–2×, now a global root field (§5.4).
 
-## 13. Settings `Grid` on an override layout (Pragma S3)
-- When an override layout with `grid` is active, ux.md §8's `Grid` pickers still change **main**. A helper line goes
-  under them: `This screen uses the %1$s layout (%2$d × %3$d) from launcher.json. These pickers change the main
-  layout.` (`settings_grid_override_hint`).
-- **Out of scope:** editing an override layout's grid from Settings. Agents edit `windowOverrides[].grid` in the file.
+## 14. Settings `Grid` on an override layout (Pragma S3)
+- When an override layout with `grid` is active, ux.md §8's `Grid` pickers still change **main**, and a helper line goes
+  under them: `This screen uses the %1$s layout (%2$d × %3$d) from launcher.json. These pickers change the main layout.`
+  (`settings_grid_override_hint`).
+- Out of scope: editing an override layout's grid from Settings.
 
-## 14. Phone-UI strings (`strings.xml`, Pragma's table)
-Pragma's table had 16 strings. `add_no_room_main` is dropped, because adding is never refused (Christopher, Q1).
-Pragma's re-review adds 5 (N2, S-a, S-c), for **20**.
-§9.2 warnings stay in code (as in ux.md §15.1). Every string people see on the phone gets a `strings.xml` id:
+## 15. Phone-UI strings (`strings.xml`)
+These are the 20 strings Pragma reviewed, minus `hide_on_layout` and `hidden_here_reason_hidden` (cut, §2). Changed:
+`hidden_here_reason_pinned` is renamed `hidden_here_reason_unplaced` (same text), and `edit_layout_a11y_named` is
+reworded. That leaves **18**:
 
 | ID | Text |
 |---|---|
 | `edit_layout_title_named` | `Editing layout · %1$s` |
-| `edit_layout_a11y_named` | `Editing the %1$s layout. Changes stay on screens that use it. Double-tap Done when finished.` |
+| `edit_layout_a11y_named` | `Editing the %1$s layout. Changes here apply only to this layout. Double-tap Done when finished.` |
 | `edit_layout_switched` | `Now editing the %1$s layout.` |
 | `layout_name_main` | `main` |
 | `edit_sheet_closed_layout_changed` | `Screen size changed, so nothing was moved.` |
 | `hidden_here_button` (plurals) | `Hidden here (%d)` |
 | `hidden_here_title` | `Not shown on this layout` |
 | `hidden_here_reason_no_fit` | `Doesn't fit this grid` |
-| `hidden_here_reason_hidden` | `Hidden on this layout` |
 | `hidden_here_reason_taken` | `Its spot is used by "%1$s"` |
-| `hidden_here_reason_pinned` | `Not placed on this layout` |
+| `hidden_here_reason_unplaced` | `Not placed on this layout` |
 | `hidden_here_load` (plurals) | `%1$d new items aren't shown on this screen.` / `1 new item isn't shown on this screen.` |
 | `hidden_here_load_action` | `Show` |
-| `undo_element_hidden` | `Put "%1$s" back. It's in Hidden here until there's room.` |
 | `hidden_here_show` | `Show here` |
-| `hide_on_layout` | `Hide on this layout` |
+| `undo_element_hidden` | `Put "%1$s" back. It's in Hidden here until there's room.` |
 | `layout_readonly_reason` | `Not editable here yet` |
 | `layout_readonly` | `The %1$s layout can't be edited here yet. Change it in launcher.json.` |
 | `cell_reserved_a11y` | `Reserved, column %1$d, row %2$d` |
@@ -635,23 +514,20 @@ Pragma's re-review adds 5 (N2, S-a, S-c), for **20**.
 Reused unchanged: `No room`, `home_full`, `move_element_taken`, `undo_element_moved`, `undo_element_back`, and
 `undo_element_no_room` (files without `windowOverrides` only).
 
-## 15. Follow-ups once accepted (not now)
-- **Pragma (ux.md):**
-  - §1.5: replace "Placement on a window uses that window's grid … the phone then skips that item" and "valid as long
-    as each position fits the largest grid" with §5 here (main stays strict; an item may have no main spot);
-  - §4.2: `Add to home` is never refused short of `home_full` (§5.2);
-  - add §0 ("the one config every device uses", switching configs from outside the launcher) near the top of §1.5;
-  - §1.5 rail bullet: the edit-mode layout chip in the notice row (§5.3);
-  - §4.2: pages are global, and "empty" means empty in the file (§5.2);
-  - folders: "Making a folder on the tablet makes it on the phone too, where the target app was.";
-  - §8: the `Grid` helper line (§13);
-  - add the §14 strings.
-- **Grace (test-plan):** O9 in O4, O9b, O12 (including the new-items snackbar and the long-press entry), O13, the `icon: 2` L-check, and the emulator-only fold note on O6.
+## 16. Review status and follow-ups
+- **Pragma must re-review the re-scope.** In particular:
+  - cutting pins reverses N1, so main edits now reach the items override layouts inherit (§6.2);
+  - the snackbar no longer fires on load or reload (N2 trimmed, §6.4);
+  - `Hide on this layout` and the `hidden` reason are cut;
+  - `edit_layout_a11y_named` is reworded, and `hidden_here_reason_pinned` is renamed `hidden_here_reason_unplaced`.
+- **Once accepted, Pragma (ux.md):**
+  - §1.5: replace "the same columns × rows on every device" and the multi-device placement wording with §0 and §6 here;
+  - §4.2: `Add to home` is never refused short of `home_full`, and pages are shared by all layouts;
+  - §1.5's rail bullet: the edit-mode layout chip;
+  - §8: the `Grid` helper line;
+  - add the §15 strings.
+- **Grace (test-plan):** O9, O9b, O10–O13, the `icon: 2` L-check, and the emulator-only fold note on O6. Drop O7.
 - **Archimedes:**
-  - ARCHITECTURE §19 entry;
+  - an ARCHITECTURE §19 entry;
   - the schema and `validate.py` text in O1;
-  - the `net.fetch` → level 6 renumbering in ux.md §17, the schema descriptions and dynamic-widgets.md.
-- **Sprite, in O1 (deferred from Pragma's nit):** one line in `templates/config-folder/AGENTS.md`, the layout-editing
-  guide for agents: "`windowOverrides` holds at most 16 entries; combine entries that share the same `when`." It goes
-  in with the feature, not now. The root `AGENTS.md` is about developing this repo, and documenting a key that no
-  shipped build accepts would lead agents into B2.
+  - the `net.fetch` → level 6 renumbering.
