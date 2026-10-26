@@ -35,7 +35,38 @@ object Consent {
     /** What this phone remembers for one widget id. Never written to the synced folder. */
     data class Entry(val ceiling: Set<String> = emptySet(), val off: Boolean = false, val alwaysAllow: Set<String> = emptySet(),
                      /** #142: when this phone first saw the card in launcher.json (epoch ms), for `Added in launcher.json · <time>`. */
-                     val seen: Long? = null)
+                     val seen: Long? = null,
+                     /** #142: the card's lines and look at the last load, to log narrowing and layout changes (§17.6). */
+                     val lines: List<String>? = null, val look: Int? = null,
+                     /** #142: when the card last changed in launcher.json (epoch ms), for `Changed in launcher.json · <time>`. */
+                     val changed: Long? = null,
+                     /** #142: the last [HISTORY_MAX] consent-relevant changes on this phone, oldest first. Kept through Forget. */
+                     val history: List<Event> = emptyList())
+
+    /** One history row (§17.6). [arg] is the capability line or the site, when the event has one. */
+    data class Event(val at: Long, val kind: Kind, val arg: String? = null) {
+        enum class Kind(val key: String) {
+            Allowed("allowed"), TurnedOff("turnedOff"), TurnedOn("turnedOn"), Forgotten("forgotten"),
+            Always("always"), SiteRemoved("siteRemoved"), NoLonger("noLonger"), Layout("layout");
+            companion object { fun of(k: String?) = entries.firstOrNull { it.key == k } }
+        }
+    }
+
+    const val HISTORY_MAX = 5
+
+    /**
+     * What the card looks like apart from where it sits: everything but `page`/`x`/`y` and the capabilities. The span
+     * (`w`/`h`) counts (§17.2: a span change is cosmetic, a quiet `Layout changed in launcher.json` row). Hashed in a
+     * key-sorted form, so the same card re-serialised with its keys in another order isn't a change (Grace #164 review).
+     */
+    fun look(card: JsonObject): Int = sorted(JsonObject(card.filterKeys { it !in setOf("page", "x", "y", "capabilities") })).toString().hashCode()
+
+    /** [e] with every object's keys sorted (arrays keep their order: it's meaningful). */
+    private fun sorted(e: kotlinx.serialization.json.JsonElement): kotlinx.serialization.json.JsonElement = when (e) {
+        is JsonObject -> JsonObject(e.toSortedMap().mapValues { (_, v) -> sorted(v) })
+        is JsonArray -> JsonArray(e.map(::sorted))
+        else -> e
+    }
 
     /**
      * `source` as scheme + host: a bare host means https (dynamic-widgets.md §4 "Normalising source"). Scheme and host

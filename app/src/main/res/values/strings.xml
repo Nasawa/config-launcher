@@ -249,4 +249,68 @@
     <string name="cap_open_ask">Open links when you tap it, asking you each time</string>
     <!-- %1$s = http://host -->
     <string name="cap_http_note_link">Links to %1$s aren\'t private. Others on your network could see or change them. Only allow this if you trust this network. You\'re choosing a less secure connection.</string>
+
+    <!-- #142 S3-C.2: banner, chip, badges, review list and widget detail (ux.md §17.13, exact copy) -->
+    <plurals name="b9_widgets_review">
+        <item quantity="one">%d widget needs your OK.</item>
+        <item quantity="other">%d widgets need your OK.</item>
+    </plurals>
+    <string name="b9_review">Review</string>
+    <string name="b9_dismiss_a11y">Dismiss</string>
+    <plurals name="chip_review_a11y">
+        <item quantity="one">Widget permissions, %d needs your OK</item>
+        <item quantity="other">Widget permissions, %d need your OK</item>
+    </plurals>
+    <plurals name="menu_widgets_review">
+        <item quantity="one">Widgets · %d to review</item>
+        <item quantity="other">Widgets · %d to review</item>
+    </plurals>
+    <string name="menu_dot_a11y">New widget permissions to review</string>
+    <string name="review_title">Widget permissions</string>
+    <string name="review_section_needs">Needs your OK (%1$d)</string>
+    <string name="review_section_allowed">Allowed (%1$d)</string>
+    <string name="review_section_off">Turned off (%1$d)</string>
+    <string name="review_row_where">Page %1$d · %2$d × %3$d</string>
+    <string name="review_row_new">New: %1$s</string>
+    <string name="review_noun_data">data</string>
+    <string name="review_noun_apps">apps</string>
+    <string name="review_noun_links">links</string>
+    <string name="review_source_file">in launcher.json · %1$s</string>
+    <string name="author_inline">%1$s · says \"%2$s\"</string>
+    <string name="chip_show">Show</string>
+    <string name="chip_open">Open</string>
+    <string name="review_empty">No dashboard widgets yet.</string>
+    <string name="detail_changed_file">Changed in launcher.json · %1$s</string>
+    <string name="detail_status_allowed">Allowed</string>
+    <string name="detail_history">History</string>
+    <string name="history_entry">%1$s · %2$s</string>
+    <string name="history_allowed">Allowed</string>
+    <string name="history_turned_off">Turned off</string>
+    <string name="history_turned_on">Turned on</string>
+    <string name="history_no_longer">No longer asks: %1$s</string>
+    <string name="history_layout">Layout changed in launcher.json</string>
+    <string name="detail_approved">Approved on this phone:</string>
+    <string name="detail_not_used">not used now</string>
+    <string name="detail_turn_off">Turn off</string>
+    <string name="detail_allow">Allow</string>
+    <string name="turned_off_snack">\"%1$s\" turned off.</string>
+    <string name="detail_forget">Forget approval</string>
+    <string name="detail_forget_a11y">Forget approval for %1$s. Can\'t be undone.</string>
+    <string name="forget_title">Forget approval for \"%1$s\"?</string>
+    <string name="forget_body">It stays off. Next time you allow it, you\'ll be asked about everything again.</string>
+    <string name="forget_confirm">Forget</string>
+    <string name="forget_cancel">Cancel</string>
+    <string name="forget_snack">Approval forgotten.</string>
+    <string name="history_forgotten">Approval forgotten</string>
+    <string name="history_always">Always allowed %1$s</string>
+    <string name="history_site_removed">No longer always allowed: %1$s</string>
+    <string name="detail_always_header">Always allowed sites</string>
+    <string name="detail_site_remove">Remove</string>
+    <string name="detail_site_remove_a11y">Remove %1$s</string>
+    <string name="site_removed_snack">%1$s removed.</string>
+    <string name="widget_sheet_source_file">Widget · from launcher.json</string>
+    <string name="widget_action_permissions">Permissions</string>
+    <string name="card_a11y">%1$s, widget</string>
+    <!-- #162 (§17.13, Pragma): the card changed or left the file while its prompt was open, or Allow was refused. -->
+    <string name="consent_changed_snack">\"%1$s\" changed. Review it again.</string>
 </resources>

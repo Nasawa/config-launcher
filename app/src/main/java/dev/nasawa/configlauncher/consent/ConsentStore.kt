@@ -48,7 +48,17 @@ class ConsentStore(private val dir: File?, private val clock: () -> Long = Syste
             val id = (e["id"] as JsonPrimitive).content
             val lines = Consent.lines(e)
             var cur = next[id] ?: Consent.Entry()
-            if (cur.seen == null) cur = cur.copy(seen = clock())
+            val now by lazy { clock() }
+            if (cur.seen == null) cur = cur.copy(seen = now)
+            // #142: quiet history for a narrowed or restyled card (§17.2, §17.6); a broadened one prompts instead.
+            val look = Consent.look(e)
+            val before = cur.lines
+            if (before == null) cur = cur.copy(lines = lines, look = look)
+            else if (before != lines || cur.look != look) {
+                val events = (before - lines.toSet()).map { Consent.Event(now, Consent.Event.Kind.NoLonger, it) }
+                    .ifEmpty { if (before == lines) listOf(Consent.Event(now, Consent.Event.Kind.Layout)) else emptyList() }
+                cur = cur.copy(lines = lines, look = look, changed = now).logged(events)
+            }
             val (s, _) = Consent.state(lines, cur)
             val silent = lines.filterNot(Consent::needsOk).toSet()
             if (s == Consent.State.Allowed && !cur.ceiling.containsAll(silent)) cur = cur.copy(ceiling = cur.ceiling + silent)
@@ -56,6 +66,10 @@ class ConsentStore(private val dir: File?, private val clock: () -> Long = Syste
         }
         if (next != entries) { entries = next; save() }
     }
+
+    private fun Consent.Entry.logged(events: List<Consent.Event>) =
+        if (events.isEmpty()) this else copy(history = (history + events).takeLast(Consent.HISTORY_MAX))
+    private fun Consent.Entry.logged(kind: Consent.Event.Kind, arg: String? = null) = logged(listOf(Consent.Event(clock(), kind, arg)))
 
     /**
      * `Allow`: union the lines the user was [shown] into the ceiling and turn the widget on. Refused (false, nothing
@@ -66,23 +80,47 @@ class ConsentStore(private val dir: File?, private val clock: () -> Long = Syste
         val card = Consent.cards(current).firstOrNull { (_, e) -> (e["id"] as? JsonPrimitive)?.content == id }?.second ?: return false
         if (Consent.lines(card) != shown) return false
         val cur = entries[id] ?: Consent.Entry()
-        update(id, cur.copy(ceiling = cur.ceiling + shown, off = false))
+        update(id, cur.copy(ceiling = cur.ceiling + shown, off = false).logged(Consent.Event.Kind.Allowed))
         return true
     }
 
     /** `Turn off`: sticky, keeps the ceiling, so `Allow` restores without a prompt while the file stays within it. */
-    @Synchronized fun turnOff(id: String) = update(id, (entries[id] ?: Consent.Entry()).copy(off = true))
+    @Synchronized fun turnOff(id: String) {
+        val cur = entries[id] ?: Consent.Entry()
+        if (!cur.off) update(id, cur.copy(off = true).logged(Consent.Event.Kind.TurnedOff))
+    }
 
-    /** `Undo` on the Turn off snackbar, and `Allow` when nothing is missing: back on with the same ceiling. */
-    @Synchronized fun turnOn(id: String) { entries[id]?.let { update(id, it.copy(off = false)) } }
+    /** `Allow` on the detail page when nothing is missing: back on with the same ceiling. */
+    @Synchronized fun turnOn(id: String) {
+        entries[id]?.takeIf { it.off }?.let { update(id, it.copy(off = false).logged(Consent.Event.Kind.TurnedOn)) }
+    }
 
-    /** `Forget approval` (widget detail): clears the ceiling and the Always-allow sites; the widget stays off. */
-    @Synchronized fun forget(id: String) = update(id, Consent.Entry(off = true, seen = entries[id]?.seen))
+    /** `Forget approval` (widget detail): clears the ceiling and the Always-allow sites; the widget stays off. History stays. */
+    @Synchronized fun forget(id: String) {
+        val cur = entries[id] ?: Consent.Entry()
+        update(id, cur.copy(ceiling = emptySet(), alwaysAllow = emptySet(), off = true).logged(Consent.Event.Kind.Forgotten))
+    }
 
     /** Q-D5 "Always allow <host>" ticked on a tap confirm: [origin] is the canonical scheme + host. */
     @Synchronized fun alwaysAllow(id: String, origin: String) {
         val cur = entries[id] ?: Consent.Entry()
-        update(id, cur.copy(alwaysAllow = cur.alwaysAllow + origin))
+        if (origin !in cur.alwaysAllow) update(id, cur.copy(alwaysAllow = cur.alwaysAllow + origin).logged(Consent.Event.Kind.Always, origin))
+    }
+
+    /** `Remove` under `Always allowed sites`: taps to [origin] ask again. */
+    @Synchronized fun removeAlways(id: String, origin: String) {
+        val cur = entries[id] ?: return
+        if (origin in cur.alwaysAllow) update(id, cur.copy(alwaysAllow = cur.alwaysAllow - origin).logged(Consent.Event.Kind.SiteRemoved, origin))
+    }
+
+    /**
+     * `Undo` on the Turn off and site-removed snackbars: put back the approval as it was in [before], and drop the
+     * [undone] history row. What the file changed meanwhile (lines, look, times) is kept.
+     */
+    @Synchronized fun undo(id: String, before: Consent.Entry, undone: Consent.Event.Kind) {
+        val cur = entries[id] ?: return
+        val history = if (cur.history.lastOrNull()?.kind == undone) cur.history.dropLast(1) else cur.history
+        update(id, cur.copy(ceiling = before.ceiling, off = before.off, alwaysAllow = before.alwaysAllow, history = history))
     }
 
     @Synchronized fun isAlwaysAllowed(id: String, origin: String): Boolean = origin in entries[id]?.alwaysAllow.orEmpty()
@@ -98,8 +136,15 @@ class ConsentStore(private val dir: File?, private val clock: () -> Long = Syste
         root?.get("widgets")?.jsonObject?.mapValues { (_, v) ->
             val o = v.jsonObject
             fun set(k: String) = o[k]?.jsonArray?.map { it.jsonPrimitive.content }?.toSet().orEmpty()
-            Consent.Entry(set("ceiling"), o["off"]?.jsonPrimitive?.booleanOrNull == true, set("alwaysAllow"),
-                o["seen"]?.jsonPrimitive?.content?.toLongOrNull())
+            fun long(k: String) = (o[k] as? JsonPrimitive)?.content?.toLongOrNull()
+            Consent.Entry(set("ceiling"), o["off"]?.jsonPrimitive?.booleanOrNull == true, set("alwaysAllow"), long("seen"),
+                (o["lines"] as? JsonArray)?.map { it.jsonPrimitive.content }, long("look")?.toInt(), long("changed"),
+                (o["history"] as? JsonArray).orEmpty().mapNotNull { h ->
+                    val ho = h as? JsonObject ?: return@mapNotNull null
+                    val k = Consent.Event.Kind.of((ho["kind"] as? JsonPrimitive)?.content) ?: return@mapNotNull null
+                    val at = (ho["at"] as? JsonPrimitive)?.content?.toLongOrNull() ?: return@mapNotNull null
+                    Consent.Event(at, k, (ho["arg"] as? JsonPrimitive)?.content)
+                })
         }?.toMutableMap() ?: mutableMapOf()
     } catch (_: Exception) {
         // An unreadable store asks again rather than guessing: every card that needs OK waits.
@@ -117,6 +162,12 @@ class ConsentStore(private val dir: File?, private val clock: () -> Long = Syste
                     put("off", e.off)
                     put("alwaysAllow", JsonArray(e.alwaysAllow.sorted().map { JsonPrimitive(it) }))
                     e.seen?.let { put("seen", it) }
+                    e.lines?.let { l -> put("lines", JsonArray(l.map { JsonPrimitive(it) })) }
+                    e.look?.let { put("look", it) }
+                    e.changed?.let { put("changed", it) }
+                    if (e.history.isNotEmpty()) put("history", JsonArray(e.history.map { h ->
+                        buildJsonObject { put("at", h.at); put("kind", h.kind.key); h.arg?.let { put("arg", it) } }
+                    }))
                 }
             }))
         }.toString().toByteArray(Charsets.UTF_8)

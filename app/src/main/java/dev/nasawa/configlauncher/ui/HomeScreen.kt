@@ -98,6 +98,19 @@ fun HomeScreen(vm: HomeViewModel) {
     fun consentTiles(pageId: String) = ConsentUi.tiles(ui.load.config, consentReport, pageId)
     var consentOpen by remember { mutableStateOf<ConsentUi.Opened?>(null) }
     var updateHint by remember { mutableStateOf(false) }
+    var widgetSheet by remember { mutableStateOf<WidgetSheetFor?>(null) }
+    var changedSnack by remember { mutableStateOf<String?>(null) }
+    // #142 S3-C.2 (§17.4, §17.6): the review list, one widget's detail, and B9's "dismissed at" count.
+    val reviewCount = ConsentUi.count(consentReport)
+    var reviewOpen by remember { mutableStateOf(false) }
+    var detailFor by remember { mutableStateOf<String?>(null) }
+    // Persisted (Grace #164 review): a rotation, theme change or process death doesn't bring a dismissed B9 back.
+    var b9DismissedAt by remember { mutableIntStateOf(vm.store.prefs.b9DismissedAt) }
+    LaunchedEffect(b9DismissedAt) { if (vm.store.prefs.b9DismissedAt != b9DismissedAt) vm.store.prefs.b9DismissedAt = b9DismissedAt }
+    LaunchedEffect(reviewCount, ui.load.origin) {
+        b9DismissedAt = ConsentUi.B9.follow(reviewCount, b9DismissedAt, fromFile = ui.load.origin == dev.nasawa.configlauncher.store.Origin.FILE)
+    }
+    fun openPrompt(id: String) { consentOpen = consent?.let { cs -> ConsentUi.open(ui.load.config, consentReport, cs::entry, id) } }
     var drawerSheet by remember { mutableStateOf<InstalledApp?>(null) }
     var hiddenSheet by remember { mutableStateOf(false) }
     // ux.md §14 R3/R8: one Undo snackbar at a time (folder removed, app hidden).
@@ -244,7 +257,11 @@ fun HomeScreen(vm: HomeViewModel) {
                     val hint = stringResource(R.string.a11y_open_drawer_hint)
                     TextButton({ drawerOpen = true }, Modifier.semantics { onClick(label = hint) { drawerOpen = true; true } }) { Text(stringResource(R.string.apps)) }
                     Box {
-                        TextButton({ menuOpen = true }) { Text("⋮") }
+                        // §17.4: a ⋮ icon by itself only gets a dot, never a number.
+                        val dotSaid = stringResource(R.string.menu_dot_a11y)
+                        TextButton({ menuOpen = true }) {
+                            BadgedBox(badge = { if (reviewCount > 0) Badge(Modifier.semantics { contentDescription = dotSaid }) }) { Text("⋮") }
+                        }
                         DropdownMenu(menuOpen, { menuOpen = false }) {
                             // #79: on/off and slot preset; hidden when the file's title bar is one this version can't show.
                             if (TitleBarEdits.state(ui.load.config) != TitleBarEdits.State.Unavailable)
@@ -281,14 +298,26 @@ fun HomeScreen(vm: HomeViewModel) {
                                 DropdownMenuItem({ Text(stringResource(if (agentAction == AgentDocs.MenuAction.ADD) R.string.agent_docs_add else R.string.agent_docs_update)) },
                                     { menuOpen = false; runAgentUpdate(false) })
                             }
+                            // §17.4: `Widget permissions`, or `Widgets · N to review` while some wait (R10 interim ⋮ item).
+                            if (consent != null) DropdownMenuItem({ Text(if (reviewCount > 0) pluralStringResource(R.plurals.menu_widgets_review, reviewCount, reviewCount) else stringResource(R.string.review_title)) },
+                                { menuOpen = false; reviewOpen = true })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_reload)) }, { menuOpen = false; vm.store.pollNow() })
                             if (!isHome) DropdownMenuItem({ Text(stringResource(R.string.home_role_button)) }, { menuOpen = false; becomeHome() })
                         }
                     }
                 }
                 }
+                // The banner slot. §17.4: the count chip is a pill at its top end, beside the banners rather than a row of its own.
+                val b9 = ConsentUi.B9.visible(reviewCount, b9DismissedAt, otherBanner = ui.load.conflict || ui.load.issue != null)
+                Row(Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
                 if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
+                // B9 is the lowest-priority notice: only when no other banner is up. `×` collapses it to the chip.
+                if (b9) B9Banner(reviewCount, onReview = { b9DismissedAt = reviewCount; reviewOpen = true }, onDismiss = { b9DismissedAt = reviewCount })
                 ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
+                }
+                if (!b9 && reviewCount > 0) ReviewCountChip(reviewCount) { reviewOpen = true }
+                }
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
                 // ux.md §1 / §14 R4: Home on home leaves edit mode (saving first), closes drawer and folder, goes to page 1.
@@ -323,7 +352,9 @@ fun HomeScreen(vm: HomeViewModel) {
                     userScrollEnabled = drag.dragged == null,
                 ) { index ->
                     pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true },
-                        tiles = consentTiles(it.id), onTile = { t -> if (t.reason == ConsentUi.Reason.Update) updateHint = true else consentOpen = consent?.let { cs -> ConsentUi.open(ui.load.config, consentReport, cs::entry, t.id ?: "") } }) }
+                        tiles = consentTiles(it.id), onTile = { t -> if (t.reason == ConsentUi.Reason.Update) updateHint = true else openPrompt(t.id ?: "") },
+                        live = ConsentUi.live(ui.load.config, consentReport, it.id),
+                        onWidgetLong = { s -> widgetSheet = s }, onPermissions = { id -> detailFor = id }) }
                 }
                 if (pages.size > 1) PageDots(pages.size, pager.settledPage)
                 // ux.md §1.3: page label → page list → jump. Nothing is written.
@@ -338,6 +369,12 @@ fun HomeScreen(vm: HomeViewModel) {
                         onDismiss = { vm.store.engine.dismissMergeUndo() })
                 }
                 if (agentSnack) AgentDocsSnackbar { agentSnack = false }
+                changedSnack?.let { t ->
+                    // #142: Allow was refused because the card changed while the sheet was open. Polite live region (TalkBack).
+                    LaunchedEffect(t) { kotlinx.coroutines.delay(SHORT_SNACK_MS); if (changedSnack == t) changedSnack = null }
+                    // Over the review list or detail page when one is open (they're full-screen dialogs), else here.
+                    if (!reviewOpen && detailFor == null) Snackbar(Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite }) { Text(t) }
+                }
                 undoSnack?.let { u ->
                     UndoSnackbar(u, onUndo = {
                         undoSnack = null
@@ -381,11 +418,12 @@ fun HomeScreen(vm: HomeViewModel) {
             }, onDismiss = { drawerSheet = null })
         }
 
-        if (homeMenu) HomeMenuSheet(ui.layout.pages.size, onAction = { a ->
+        if (homeMenu) HomeMenuSheet(ui.layout.pages.size, reviewCount, onAction = { a ->
             homeMenu = false
             when (a) {
                 HomeAction.EDIT_LAYOUT -> editing = true
                 HomeAction.PAGES -> pageList = true
+                HomeAction.WIDGETS_REVIEW -> reviewOpen = true
                 HomeAction.RELOAD -> vm.store.pollNow()
                 // No Settings screen yet: the settings live in the ⋮ menu, so open that (gap, noted).
                 HomeAction.SETTINGS -> menuOpen = true
@@ -419,18 +457,61 @@ fun HomeScreen(vm: HomeViewModel) {
         consentOpen?.let { o ->
             // #158 review: the sheet is a snapshot. If a poll changes the card's fingerprint while it's open, it closes
             // (visibly) rather than changing under the user's finger, and Allow approves only the lines that were shown.
-            if (consent == null || !ConsentUi.current(o, consentReport)) { LaunchedEffect(o) { consentOpen = null }; return@let }
+            if (consent == null || !ConsentUi.current(o, consentReport)) {
+                // #162: the card changed or left the file; say so (consent_changed_snack) as the sheet closes.
+                LaunchedEffect(o) {
+                    consentOpen = null
+                    changedSnack = res.getString(R.string.consent_changed_snack, consentText(o.prompt.title) ?: o.prompt.id)
+                }
+                return@let
+            }
             val installed by vm.installedApps.collectAsStateWithLifecycle()
             ConsentSheet(o.prompt, appLabel = { pkg -> installed.firstOrNull { it.packageName == pkg }?.label?.let(Labels::clean) ?: pkg },
                 onAllow = {
                     consentOpen = null
-                    if (consent.allow(o.prompt.id, o.lines, vm.store.engine.state.value.config)) {
+                    // The engine checks the shown lines against the file it has loaded now; a changed card is refused.
+                    if (vm.store.engine.allowConsent(o.prompt.id, o.lines)) {
                         scope.launch(kotlinx.coroutines.Dispatchers.IO) { vm.store.engine.consentChanged() }
-                    }
+                    } else changedSnack = res.getString(R.string.consent_changed_snack, consentText(o.prompt.title) ?: o.prompt.id)
                 },
                 onDismiss = { consentOpen = null })
         }
         if (updateHint) UpdateHintSheet { updateHint = false }
+        widgetSheet?.let { w ->
+            WidgetItemSheet(w.name, w.live != null, reason = w.tile?.takeIf { it.placement.w == 1 && it.placement.h == 1 }?.reason, onAction = { a ->
+                widgetSheet = null
+                when (a) {
+                    ConsentUi.SheetAction.EDIT_LAYOUT -> editing = true
+                    ConsentUi.SheetAction.PERMISSIONS -> detailFor = w.live?.id
+                    ConsentUi.SheetAction.REVIEW -> w.tile?.let { t -> if (t.reason == ConsentUi.Reason.Update) updateHint = true else openPrompt(t.id ?: "") }
+                }
+            }, onDismiss = { widgetSheet = null })
+        }
+        if (reviewOpen && consent != null) ReviewScreen(ConsentUi.review(ui.load.config, consentReport, consent.entries()),
+            onNeeds = { id -> openPrompt(id) }, onOpen = { id -> detailFor = id }, onDismiss = { reviewOpen = false },
+            notice = changedSnack.takeIf { detailFor == null })
+        detailFor?.let { id ->
+            val st = consentReport.firstOrNull { it.id == id }
+            val d = if (consent == null || st == null) null else ConsentUi.detail(ui.load.config, st, consent.entry(id))
+            if (consent == null || d == null) { LaunchedEffect(id) { detailFor = null }; return@let }
+            val installed by vm.installedApps.collectAsStateWithLifecycle()
+            fun changed() { scope.launch(kotlinx.coroutines.Dispatchers.IO) { vm.store.engine.consentChanged() } }
+            DetailScreen(d, appLabel = { pkg -> installed.firstOrNull { it.packageName == pkg }?.label?.let(Labels::clean) ?: pkg },
+                // Undo puts back a snapshot; with none (no entry yet) there's nothing safe to put back, so no Undo is offered.
+                onTurnOff = {
+                    val before = consent.entry(id)
+                    consent.turnOff(id); changed()
+                    before?.let { b -> { consent.undo(id, b, dev.nasawa.configlauncher.consent.Consent.Event.Kind.TurnedOff); changed() } }
+                },
+                onAllow = { if (d.allowNeedsNoPrompt) { consent.turnOn(id); changed() } else openPrompt(id) },
+                onForget = { consent.forget(id); changed() },
+                onRemoveSite = { o ->
+                    val before = consent.entry(id)
+                    consent.removeAlways(id, o)
+                    before?.let { b -> { consent.undo(id, b, dev.nasawa.configlauncher.consent.Consent.Event.Kind.SiteRemoved) } }
+                },
+                onDismiss = { detailFor = null }, notice = changedSnack)
+        }
         if (titleBarSheet) TitleBarSheet(TitleBarEdits.state(ui.load.config),
             onToggle = { on -> TitleBarEdits.toggle(vm.store.engine.state.value.config, on)?.let(vm.store::edit) },
             onPick = { slot, choice ->
@@ -607,7 +688,8 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
 
 @Composable
 private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit,
-                     tiles: List<ConsentUi.Tile> = emptyList(), onTile: (ConsentUi.Tile) -> Unit = {}) {
+                     tiles: List<ConsentUi.Tile> = emptyList(), onTile: (ConsentUi.Tile) -> Unit = {},
+                     live: List<ConsentUi.Live> = emptyList(), onWidgetLong: (WidgetSheetFor) -> Unit = {}, onPermissions: (String) -> Unit = {}) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = grid.rows
     Column(Modifier.fillMaxSize().padding(8.dp)) {
@@ -627,7 +709,7 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
         }
         // §1.1: long-press on empty space opens the home menu. Detected on the whole grid (#75: the gutters between
         // cells count too); a press that lands on an occupied cell is the tile's own long-press.
-        val occupied by rememberUpdatedState(byCell.keys + tiles.flatMap { it.placement.cells() })
+        val occupied by rememberUpdatedState(byCell.keys + tiles.flatMap { it.placement.cells() } + live.flatMap { it.placement.cells() })
         val onEmpty by rememberUpdatedState(onEmptyLong)
         BoxWithConstraints(Modifier.weight(1f).onGloballyPositioned { drag.gridRect = it.boundsInRoot() }.pointerInput(grid) {
             detectTapGestures(onLongPress = { pos ->
@@ -641,7 +723,13 @@ private fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: 
             val ch = maxHeight / rows
             tiles.forEach { t ->
                 val p = t.placement
-                ConsentTile(t, onReview = { onTile(t) }, modifier = Modifier.offset(cw * p.x, ch * p.y).size(cw * p.w, ch * p.h))
+                ConsentTile(t, onReview = { onTile(t) }, modifier = Modifier.offset(cw * p.x, ch * p.y).size(cw * p.w, ch * p.h),
+                    onLongPress = { onWidgetLong(WidgetSheetFor(t, null)) })
+            }
+            live.forEach { l ->
+                val p = l.placement
+                LiveCardTarget(l, onLongPress = { onWidgetLong(WidgetSheetFor(null, l)) }, onPermissions = { onPermissions(l.id) },
+                    modifier = Modifier.offset(cw * p.x, ch * p.y).size(cw * p.w, ch * p.h))
             }
         }
     }
@@ -703,4 +791,9 @@ private fun FolderIcon(r: ResolvedItem, apps: InstalledApps) {
             }
         }
     }
+}
+
+/** Which widget the long-press sheet is for: a consent [tile] or a [live] card (exactly one is set). */
+data class WidgetSheetFor(val tile: ConsentUi.Tile?, val live: ConsentUi.Live?) {
+    val name: String get() = consentText(tile?.title ?: live?.title) ?: tile?.id ?: live?.id ?: ""
 }

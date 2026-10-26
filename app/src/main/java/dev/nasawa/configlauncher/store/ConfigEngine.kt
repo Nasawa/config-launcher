@@ -521,6 +521,12 @@ class ConfigEngine(
     fun consentReport(): List<dev.nasawa.configlauncher.consent.Consent.Status> =
         statusConfig?.let { c -> consent?.report(c) }.orEmpty()
 
+    /**
+     * #142 `Allow` from the prompt: approves [shown] only while the card in the file the engine has loaded right now
+     * still has exactly that fingerprint (Archimedes, #158). The caller passes what the user saw, never the file.
+     */
+    fun allowConsent(id: String, shown: List<String>): Boolean = consent?.allow(id, shown, state.value.config) == true
+
     /** #138: re-emit status.json after the UI changed an approval (Allow, Turn off, Undo, Forget approval). */
     suspend fun consentChanged() = mutex.withLock { pollWidgetsLocked(force = true); emitStatus() }
 

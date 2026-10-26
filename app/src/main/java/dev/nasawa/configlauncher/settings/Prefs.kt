@@ -43,6 +43,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("labelBackdrop", false)
         set(v) = sp.edit { putBoolean("labelBackdrop", v) }
 
+    /** #142 §17.4: the review count when B9 was last dismissed; B9 isn't shown again until the count goes above it. */
+    var b9DismissedAt: Int
+        get() = sp.getInt("b9DismissedAt", 0)
+        set(v) = sp.edit { putInt("b9DismissedAt", v) }
+
     /** §18.2: restore the B6 Use file / Keep mine prompt instead of the automatic merge (default off). */
     var askBeforeMerging: Boolean
         get() = sp.getBoolean("askBeforeMerging", false)
