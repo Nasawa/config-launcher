@@ -258,7 +258,8 @@ fun HomeScreen(vm: HomeViewModel) {
                 // #75: the edit bar takes the top row's place at the same height, so the grid doesn't jump under the finger.
                 Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
                 if (editing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.editing_layout), color = Color.White, modifier = Modifier.weight(1f))
+                    // #182: on the wallpaper like Done, so white with the label shadow (and the scrim with Label backdrop on).
+                    Box(Modifier.weight(1f)) { WallpaperText(stringResource(R.string.editing_layout), backdrop) }
                     WallpaperTextButton(leaveEdit, backdrop) { Text(stringResource(R.string.done)) }
                 } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (ui.load.reconnectable) stringResource(R.string.source_folder, ui.load.sourceName.removePrefix("Folder: ")) else stringResource(R.string.source_app_storage), style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
@@ -581,7 +582,7 @@ fun HomeScreen(vm: HomeViewModel) {
                 text = {
                     LazyVerticalGrid(GridCells.Fixed(4)) {
                         items(folder.children, key = { it.item.id }) { c ->
-                            with(drag) { Tile(c, vm.apps, Modifier.tile(c, canDrag = false, onClick = { openFolder = null; onOpen(c) }, onLongClick = { openFolder = null; onLong(c) }, actions = a11y(c, TilePlace.FOLDER))) }
+                            with(drag) { Tile(c, vm.apps, Modifier.tile(c, canDrag = false, onClick = { openFolder = null; onOpen(c) }, onLongClick = { openFolder = null; onLong(c) }, actions = a11y(c, TilePlace.FOLDER)), onWallpaper = false) }
                         }
                     }
                 },
@@ -633,7 +634,7 @@ fun HomeScreen(vm: HomeViewModel) {
                 LazyVerticalGrid(GridCells.Fixed(4), Modifier.weight(1f).padding(8.dp), state = gridState) {
                     items(shown, key = { it.key }) { app ->
                         val ri = ResolvedItem(AppItem("drawer", app.packageName, app.activityName), app)
-                        with(drag) { Tile(ri, vm.apps, Modifier.tile(ri, canDrag = false, onClick = { drawerOpen = false; launchApp(app) }, onLongClick = { drawerSheet = app })) }
+                        with(drag) { Tile(ri, vm.apps, Modifier.tile(ri, canDrag = false, onClick = { drawerOpen = false; launchApp(app) }, onLongClick = { drawerSheet = app }), onWallpaper = false) }
                     }
                 }
             }
@@ -650,8 +651,8 @@ private fun MergeSnackbar(n: dev.nasawa.configlauncher.store.MergeNotice, onUndo
     Snackbar(
         // TalkBack reads the long form (§9.1); Undo stays a separate action button.
         Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite },
-        action = onUndo?.let { u -> { TextButton(u) { Text(androidx.compose.ui.res.stringResource(dev.nasawa.configlauncher.R.string.merge_undo)) } } },
-        dismissAction = { TextButton(onDismiss) { Text("✕") } },
+        action = onUndo?.let { u -> { TextButton(u, colors = snackbarActionColors()) { Text(androidx.compose.ui.res.stringResource(dev.nasawa.configlauncher.R.string.merge_undo)) } } },
+        dismissAction = { TextButton(onDismiss, colors = snackbarActionColors()) { Text("✕") } },
     ) { Text(text, Modifier.semantics { contentDescription = spoken }) }
 }
 
@@ -783,11 +784,17 @@ internal fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragCont
     }
 }
 
+/**
+ * One app or folder cell. [onWallpaper]: true on home (grid, dock), where the label is white with the label shadow
+ * and the `Label backdrop` scrim (§12.1, it doesn't follow the theme); false on a themed surface (the drawer sheet,
+ * the folder dialog), where it's the home theme's `onSurface` with no shadow or scrim, so it reads in light mode (#182).
+ */
 @Composable
-fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onClick: (() -> Unit)? = null) {
+fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onWallpaper: Boolean = true, onClick: (() -> Unit)? = null) {
     val label = Labels.clean(r.title)
-    val style = MaterialTheme.typography.labelSmall
-    val backdrop = LocalLabelBackdrop.current
+    val style = TileLabel.style(MaterialTheme.typography.labelSmall, onWallpaper)
+    val labelColor = TileLabel.color(onWallpaper, MaterialTheme.colorScheme)
+    val backdrop = onWallpaper && LocalLabelBackdrop.current
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
     BoxWithConstraints(
         modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(4.dp).alpha(if (r.missing || r.app?.paused == true) 0.4f else 1f),
@@ -804,7 +811,7 @@ fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, sh
             if (r.item is FolderItem) FolderIcon(r, apps) else AppIconImage(r.app, apps, TileLabel.ICON_DP)
             if (whole) Text(
                 label, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-                style = style, color = Color.White,
+                style = style, color = labelColor,
                 modifier = Modifier.widthIn(max = TileLabel.MAX_WIDTH_DP.dp).then(LabelBackdrop.modifier(backdrop)),
             )
         }
@@ -815,6 +822,13 @@ fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, sh
 object TileLabel {
     const val ICON_DP = 48
     const val MAX_WIDTH_DP = 76
+
+    /** White on the wallpaper (§12.1); the theme's `onSurface` on the drawer sheet and in the folder dialog. */
+    fun color(onWallpaper: Boolean, scheme: androidx.compose.material3.ColorScheme): Color = if (onWallpaper) Color.White else scheme.onSurface
+
+    /** The label shadow on the wallpaper only; a themed surface gets plain text. */
+    fun style(base: androidx.compose.ui.text.TextStyle, onWallpaper: Boolean): androidx.compose.ui.text.TextStyle =
+        if (onWallpaper) base.copy(shadow = LabelShadow.shadow) else base
 
     /** The height one whole label line needs at this font scale, the Label backdrop's 2 dp top and bottom included. */
     @Composable

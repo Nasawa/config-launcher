@@ -31,8 +31,8 @@ fun UndoSnackbar(u: UndoSnack, onUndo: () -> Unit, onDismiss: () -> Unit) {
     Snackbar(
         // TalkBack reads the same text (R3).
         Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite },
-        action = { TextButton(onUndo) { Text(stringResource(R.string.merge_undo)) } },
-        dismissAction = { TextButton(onDismiss) { Text("✕") } },
+        action = { TextButton(onUndo, colors = snackbarActionColors()) { Text(stringResource(R.string.merge_undo)) } },
+        dismissAction = { TextButton(onDismiss, colors = snackbarActionColors()) { Text("✕") } },
     ) { Text(u.text) }
 }
 

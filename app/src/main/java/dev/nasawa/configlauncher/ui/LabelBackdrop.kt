@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
@@ -44,3 +46,16 @@ fun WallpaperTextButton(onClick: () -> Unit, backdrop: Boolean, modifier: Modifi
             Row(LabelBackdrop.modifier(backdrop), verticalAlignment = Alignment.CenterVertically, content = content)
         }
     }
+
+/** Plain text on the wallpaper (the edit bar's `Editing layout`): drawn like [WallpaperTextButton]'s label (#182). */
+@Composable
+fun WallpaperText(text: String, backdrop: Boolean, modifier: Modifier = Modifier) =
+    Text(text, modifier.then(LabelBackdrop.modifier(backdrop)), color = OnWallpaperButton.content,
+        style = LocalTextStyle.current.copy(shadow = LabelShadow.shadow))
+
+/**
+ * Snackbar `Undo` and `✕`: `inversePrimary` on the `inverseSurface` container in both themes (#182, Grace). A bare
+ * `TextButton` would use `primary`, which is 2.05:1 in light and 1.32:1 in dark there.
+ */
+@Composable
+fun snackbarActionColors() = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.inversePrimary)
