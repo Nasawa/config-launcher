@@ -533,6 +533,12 @@ class ConfigEngine(
     fun consentReport(): List<dev.nasawa.configlauncher.consent.Consent.Status> =
         statusConfig?.let { c -> consent?.report(c) }.orEmpty()
 
+    /**
+     * #142 `Allow` from the prompt: approves [shown] only while the card in the file the engine has loaded right now
+     * still has exactly that fingerprint (Archimedes, #158). The caller passes what the user saw, never the file.
+     */
+    fun allowConsent(id: String, shown: List<String>): Boolean = consent?.allow(id, shown, state.value.config) == true
+
     /** #138: re-emit status.json after the UI changed an approval (Allow, Turn off, Undo, Forget approval). */
     suspend fun consentChanged() = mutex.withLock { pollWidgetsLocked(force = true); emitStatus() }
 
@@ -563,10 +569,18 @@ class ConfigEngine(
         widgetReader.reload(source, t).also { _widgetData.value = widgetReader.snapshots(); emitStatus() }
     }
 
+    private val _warnings = MutableStateFlow<List<String>>(emptyList())
+    /**
+     * #159 (ux.md §15): the status.json `warnings` lines, in the same order and text. The on-phone Warnings list
+     * reads this, so the phone and the agent always see the same thing (consent and widget-data warnings included).
+     */
+    val warnings: StateFlow<List<String>> = _warnings.asStateFlow()
+
     private fun emitStatus() {
         val (result, errors, hash) = statusResult ?: return
         val report = if (result == "ok") consentReport() else emptyList()
         val warnings = if (result == "ok") statusWarnings + phoneWarnings() + report.mapNotNull { it.warning } + widgetReader.warnings(dataTargets()) else statusWarnings
+        _warnings.value = warnings
         val consentMap = if (consent == null) null else report.associate { it.id to (it.state.key to it.warning) }
         val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${warnings.hashCode()}|$backupError|$conflictFiles|$consentMap"
         if (key == lastStatusKey) return

@@ -3,7 +3,9 @@ package dev.nasawa.configlauncher.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,6 +28,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,7 +42,7 @@ import dev.nasawa.configlauncher.consent.ConsentUi.Line
 fun consentText(s: String?): String? = s?.let { Labels.clean(it) }?.takeIf { it != "?" || s.trim() == "?" }
 
 @Composable
-private fun reasonText(r: ConsentUi.Reason) = stringResource(when (r) {
+internal fun reasonText(r: ConsentUi.Reason) = stringResource(when (r) {
     ConsentUi.Reason.NeedsOk -> R.string.tile_needs_ok
     ConsentUi.Reason.NeedsOkAgain -> R.string.tile_needs_ok_again
     ConsentUi.Reason.Off -> R.string.tile_off
@@ -48,7 +51,7 @@ private fun reasonText(r: ConsentUi.Reason) = stringResource(when (r) {
 
 /** 24 dp shield outline (§17.3); no icon library in the app, so it's drawn. */
 @Composable
-private fun Shield(color: Color, shadow: Boolean = false) = Canvas(Modifier.size(24.dp)) {
+internal fun Shield(color: Color, iconSize: androidx.compose.ui.unit.Dp = 24.dp, shadow: Boolean = false) = Canvas(Modifier.size(iconSize)) {
     val w = size.width; val h = size.height
     val p = Path().apply {
         moveTo(w * 0.5f, h * 0.08f); lineTo(w * 0.85f, h * 0.22f); lineTo(w * 0.85f, h * 0.48f)
@@ -66,7 +69,7 @@ private fun Shield(color: Color, shadow: Boolean = false) = Canvas(Modifier.size
  * 1 dp dashed white 40 % outline; shield, title (not at 1×1 or 2×1), reason (not at 1×1). One TalkBack node.
  */
 @Composable
-fun ConsentTile(tile: ConsentUi.Tile, onReview: () -> Unit, modifier: Modifier = Modifier) {
+fun ConsentTile(tile: ConsentUi.Tile, onReview: () -> Unit, modifier: Modifier = Modifier, onLongPress: () -> Unit = {}) {
     val reason = reasonText(tile.reason)
     // title is optional (#160): an untitled card is named by its id, on screen and in TalkBack.
     val title = consentText(tile.title) ?: tile.id
@@ -82,7 +85,7 @@ fun ConsentTile(tile: ConsentUi.Tile, onReview: () -> Unit, modifier: Modifier =
                 drawRoundRect(outline, cornerRadius = CornerRadius(r, r),
                     style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))))
             }
-            .clickable(onClickLabel = review, onClick = onReview)
+            .combinedClickable(onClickLabel = review, onClick = onReview, onLongClick = onLongPress)
             .clearAndSetSemantics {
                 contentDescription = said
                 onClick(label = review) { onReview(); true }
@@ -98,6 +101,49 @@ fun ConsentTile(tile: ConsentUi.Tile, onReview: () -> Unit, modifier: Modifier =
             Shield(Color.White, shadow = true)
             if (title != null && !(p.h == 1 && p.w <= 2)) Text(title, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, style = shadowed)
             if (!(p.w == 1 && p.h == 1)) Text(reason, color = Color(0xB3FFFFFF), fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, style = shadowed)
+        }
+    }
+}
+
+/**
+ * A live card's cells (#142 S3-C.2). The #140 renderer draws its content here; until then it's an empty target that
+ * keeps the cells from opening the home menu, with the long-press sheet and the `Permissions` TalkBack action (§17.7).
+ * No tap action, so TalkBack doesn't offer a "double-tap to activate" that does nothing (Grace #164 review).
+ */
+@Composable
+fun LiveCardTarget(live: ConsentUi.Live, onLongPress: () -> Unit, onPermissions: () -> Unit, modifier: Modifier = Modifier) {
+    val name = consentText(live.title) ?: live.id
+    val said = stringResource(R.string.card_a11y, name)
+    val permissions = stringResource(R.string.widget_action_permissions)
+    Box(modifier.fillMaxSize().pointerInput(onLongPress) { detectTapGestures(onLongPress = { onLongPress() }) }.clearAndSetSemantics {
+        contentDescription = said
+        onLongClick { onLongPress(); true }
+        customActions = listOf(CustomAccessibilityAction(permissions) { onPermissions(); true })
+    })
+}
+
+/**
+ * The widget long-press sheet (§17.3): name, `Widget · from launcher.json`, then `Review` or `Permissions`, `Edit layout`.
+ * [reason] is shown when the tile is too small to draw it (1×1): §17.3 "title and reason … on long-press".
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WidgetItemSheet(name: String, live: Boolean, reason: ConsentUi.Reason? = null, onAction: (ConsentUi.SheetAction) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+            Text(name, style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.widget_sheet_source_file), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            reason?.let { Text(reasonText(it), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp)) }
+            Spacer(Modifier.height(12.dp))
+            ConsentUi.sheetActions(live).forEach { a ->
+                TextButton({ onAction(a) }, Modifier.fillMaxWidth()) {
+                    Text(stringResource(when (a) {
+                        ConsentUi.SheetAction.REVIEW -> R.string.widget_action_review
+                        ConsentUi.SheetAction.PERMISSIONS -> R.string.widget_action_permissions
+                        ConsentUi.SheetAction.EDIT_LAYOUT -> R.string.action_edit_layout
+                    }), Modifier.fillMaxWidth())
+                }
+            }
         }
     }
 }
@@ -204,7 +250,7 @@ private fun LineList(header: String, lines: List<Line>, appLabel: (String) -> St
 }
 
 @Composable
-private fun lineText(l: Line, appLabel: (String) -> String): String = when (l.kind) {
+internal fun lineText(l: Line, appLabel: (String) -> String): String = when (l.kind) {
     Line.Kind.ShowFile -> stringResource(R.string.cap_show_file, l.arg ?: "")
     Line.Kind.Reload -> stringResource(R.string.cap_reload)
     Line.Kind.OpenApp -> stringResource(R.string.cap_open_app, appLabel(l.arg ?: ""))

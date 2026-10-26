@@ -194,7 +194,7 @@ Copy: sheet title `Pages`; untitled row and label `Page %1$d`; TalkBack `%1$s, p
 
 | Item | Spec |
 |---|---|
-| Open / close | Swipe up from home, or tap `Apps` (§1.4). Close: swipe down at the top of the list, Back, or Home |
+| Open / close | Swipe up from home, or tap `Apps` (§1.4). It opens **at full height in one motion**, with no half-height stop (§2.1). Close: swipe down at the top of the list, Back (incl. predictive back), or Home |
 | Search | Field at top, hint `Search apps`. **Opening the drawer focuses the field and shows the keyboard** (Q-C2, search-first). Scrolling the list hides the keyboard, and tapping the field brings it back. Swipe-down or Back with the keyboard up hides the keyboard first; a second Back closes the drawer (§18.2). Setting `Open keyboard with drawer` (default on) turns auto-open off, e.g. for wall displays. A swipe up from home that's still in motion must not drop the first keystroke: focus is requested when the open animation starts. |
 | Search: accessibility | With TalkBack on, the field gets accessibility focus and is announced `Search apps, edit box`, but the **keyboard is not shown automatically**, because it would cover half the list during exploration. Double-tap the field to type. Results update a polite live region: `5 apps` / `No apps match "xyz".` With reduced motion, the keyboard appears without waiting for the drawer animation |
 | Search: hardware keyboard | With a physical keyboard attached, the field is focused, the on-screen keyboard stays hidden (system default), and typing filters immediately. `Enter` launches the first result. `↓`/`Tab` moves focus into the results, `↑` at the first result returns to the field. `Esc` clears a non-empty query, then closes the drawer. Arrow focus shows a 2 dp focus ring |
@@ -205,6 +205,30 @@ Copy: sheet title `Pages`; untitled row and label `Page %1$d`; TalkBack `%1$s, p
 | Hidden apps | Package names in `drawer.hidden[]`. Not shown in the list or search. Long-press a drawer app → `Hide` (one write). Hidden apps are listed in **Settings → Hidden apps**, where `Unhide` is one write (interim: drawer ⋮ → `Hidden apps`, §14). The `Hide` snackbar has `Undo`. A hidden app placed explicitly on a page still shows and launches there |
 | Long-press app | `Add to home` (first free cell, page 1 onward, else a new page), `Hide`, `App info`. Dragging out of the drawer to home is **later** (§14); `Add to home` covers the MVP. Work apps offer `Add to home` only when **Include work apps in config** is on |
 | Menu `⋮` | Folder mode: `Choose folder` / `Use phone storage`, `Reload layout`, `Set as home app`, `Hidden apps`, `Agent instructions (AGENTS.md)`, `Add`/`Update agent instructions`, `Include hidden apps in apps.json` (checkbox, default off, §7.2), `Ask before merging`, `Open keyboard with drawer`, `Label backdrop`, `Include work apps in config` (only when a work profile exists). App-only: hides folder-only items (AGENTS.md, apps.json). Home menu `Settings` opens the same menu (§14 R10) |
+
+### 2.1 Height, system bars and motion (A51 half-sheet report)
+- **Full height, one motion.** The drawer is a primary destination, not a transient sheet. A swipe up or `Apps`
+  opens it straight to full height. There is **no half-height (partially expanded) stop**: a half sheet adds a second
+  drag and hides rows. If it stays a Material `ModalBottomSheet`, it uses `skipPartiallyExpanded = true` so the
+  partial state doesn't exist. A plain full-screen overlay with its own drag-to-dismiss is equally fine. Either way,
+  the interactive follow-the-finger open from §1.4 settles at full height or springs back, never in between.
+- **Edge-to-edge.** The app runs edge-to-edge (`enableEdgeToEdge`). The drawer's background and scrim draw **under**
+  the status bar and the nav bar. System bar insets go into the **grid's `contentPadding`** (`WindowInsets.safeDrawing`,
+  or `statusBars` + `navigationBars`), not outer padding, so rows scroll under the bars while the **last row and the
+  scroll end sit fully above the nav bar** in both gesture and 3-button navigation. The search row is padded below
+  the status bar. In landscape, the display cutout inset is applied too (`safeDrawing` covers it), so no tile or the
+  `⋮` sits under a cutout.
+- **Keyboard.** The search field stays pinned at the top and visible while the keyboard is up (`imePadding` on the
+  search area), and the grid's bottom `contentPadding` is `WindowInsets.ime.union(WindowInsets.navigationBars)`
+  (the larger of the keyboard and nav bar insets), so the last result can be scrolled above the keyboard.
+- **Close.** Swipe down closes only when the list is **scrolled to the top** (nested scroll: a downward drag first
+  scrolls the list back to the top, and only an overscroll past the top drags the drawer down). Back and predictive back
+  close it (keyboard first, §2). Home and launching an app close it too (§1.4).
+- **Motion.** Open and close durations follow the system animator duration scale. With "Remove animations"
+  (scale 0, reduced motion) the drawer uses the §1.4 150 ms fade instead of sliding.
+- **The nav-bar overlap is a bug either way.** Whatever the height, a drawer row, the last row or the scroll end
+  hidden under the nav bar (or the status bar or a cutout) is a defect, not a layout choice. Test it on the A51 in
+  gesture and 3-button modes, in portrait and landscape.
 
 ---
 
@@ -705,7 +729,7 @@ follows the device's `Label backdrop` setting; an explicit `none`, `scrim` or cu
 full width whenever the bar fits, and only the overflow ladder below may shorten the date. **The clock never shortens
 or truncates.** The centre gets the remaining width: **at least 50 % when the sides leave that much**,
 centred. When fixed sides leave less, centring is given up and the centre takes what's left between them, ellipsizing
-at the end (the `{page}` slot doesn't go below 32 dp, so its ▾ and tap target stay; #152. Only step 1 of the overflow ladder below takes it under that). Other side slots ellipsize
+at the end (the `{page}` slot doesn't go below 32 dp, so its ▾ and tap target stay; #152. Only step 1 of the overflow ladder below takes its visible width under that, to 24 dp, and step 1 also sets its touch area). Other side slots ellipsize
 before the centre does. Adjacent **non-empty** slots always have an **8 dp minimum gap** between them, reserved before
 the text is laid out (like the ▾ width), so text never runs together (`11:20 AM` `Very…`); an empty slot takes no gap. **Default size is `small`, 14 sp (Q-T3)**: it matches
 the §1.3 page label and status-bar text, and at 200 % font (28 sp) it still fits one line and costs one grid row at most
@@ -716,11 +740,17 @@ from size + padding, and grid rows share the rest. Never overlaps icons.
 large text and the One UI font, a long date is about 200 dp, the clock about 75 dp and `{page}` 32 dp, plus two 8 dp
 gaps, in a bar of about 285 dp. When the clock, the date, the `{page}` minimum and the gaps don't fit (other side text
 has already ellipsized), the phone applies these steps **in order and stops at the first one that fits**:
-1. **`{page}` shrinks to the ▾ alone.** The page text is hidden, and the ▾ (12 dp + 4 dp) stays. The slot keeps its
-   **48 dp touch area**, which may overlap the 8 dp gap but never the neighbouring text. TalkBack still reads the page
-   name (`Home, Pages, button`). With one page there's no ▾ and no action, so the page text is simply hidden, and
-   TalkBack still reads it. The 32 dp `{page}` minimum gives way to this step.
-2. **The date shortens, in steps** (re-measuring after each one), using the `DateTimeFormatter` letters §15.1 allows:
+1. **`{page}` shrinks to the ▾ alone.** The page text is hidden, and the slot's **visible** width drops to a 24 dp ▾
+   (#167). The **touch area** aims for 48 dp:
+   - Next to a neighbour that **isn't tappable**, it may extend over that neighbour (its gap and text).
+   - Next to a **tappable** neighbour, it stops at the midpoint of the gap between them on that side.
+   - If that leaves it under 48 dp, it keeps **at least 32 dp** (the #152 minimum still holds for the touch area), and
+     it **never takes touch area from another tappable target**.
+   (In this release no other title-bar slot is tappable, §15 #78, so in practice it extends to 48 dp.) TalkBack still
+   reads the page name (`Home, Pages, button`). With one page there's no ▾ and no action, so the page text is simply
+   hidden, and TalkBack still reads it. This step overrides only the 32 dp **visible** `{page}` minimum, not the
+   touch-area minimum.
+2. **The date shortens, in steps** (re-measuring after each one; skipped when the bar has no `{date}`), using the `DateTimeFormatter` letters §15.1 allows:
    - Full text runs become short ones: `EEEE` → `EEE` (`Sunday` → `Sun`), `MMMM` → `MMM` (`October` → `Oct`).
    - Then the weekday run (`E…`) is dropped, together with the literal separator next to it (`EEE, MMM d` → `MMM d`).
    - Plain `{date}` (the locale medium date, title-bar.md) has no pattern to edit, so it steps from the medium to the
@@ -736,7 +766,10 @@ runs again on every layout change: rotation, a font-scale or display-size change
 Whenever step 2 or later is in use, `status.json` gets the phone-only warning `warn_titlebar_fit` (§15.1). It's
 marked `checked on this phone`, like the theme contrast warnings, because `validate.py` can't know the phone's width.
 It shows in the Warnings list, with no snackbar or banner, and it clears silently once the bar fits again. Step 1 alone
-writes no warning.
+writes no warning. **Bar with no date:** steps 2 and 4 don't apply (there's nothing to shorten or cut), so only step 3
+can write a warning, and it uses the size-only variant `warn_titlebar_fit_size` (§15.1), which doesn't mention the
+date and suggests `Use fewer or shorter slots.` If the bar still doesn't fit after step 3, side text ellipsizes as
+in the layout rules above.
 
 **Contrast.** Light text always gets the label shadow; dark text doesn't. With `auto` + `Label backdrop` on, or
 `scrim`, the 60 % scrim gives ≥ 5.7:1 for white (§12). With a custom backdrop, the launcher measures text vs backdrop.
@@ -788,6 +821,15 @@ that has warnings, it's reachable from Settings (interim: the ⋮ menu) → `Con
 list** dialog:
 - Header `1 warning` / `N warnings` (`warnings_header`), then one `▲ <path>: <message>` line per warning, the same text
   as `status.json` (phone-only theme warnings included). The list scrolls, and ▲ is a glyph, not colour alone.
+- **Same lines as `status.json`, all of them (#159).** That includes the widget consent warnings (`warn_consent_pending`,
+  `warn_consent_again`, `warn_consent_off`) and the widget data warnings (`warn_data_missing`, later
+  `warn_cert_changed`), in the same order as `status.json` `warnings`, and `N` in `Layout loaded · N warnings` counts
+  them. The phone and the agent must never see different lists. A consent line is plain text here, with no `Review`
+  action: approving stays on the tile, B9 and the review list (§17). Consent lines **stay** in this list after the
+  #142 badge and the B9 banner exist. **Wiring (Archimedes):** `ConfigEngine` owns the list. It computes the full
+  list once per load (`statusWarnings` + `phoneWarnings` + consent report + widget data) with a pure function inside
+  the engine, so it's testable, exposes that list as state, and writes the same list to `status.json`. `HomeScreen`
+  only reads that state and never calls a second function from the UI.
 - Buttons `Copy` and `Close`. `Copy` puts the file name, header and every line on the clipboard and **keeps the dialog
   open**. No snackbar. For about 2 s the button changes to a check icon + `Copied` (`warnings_copy_done`, same width,
   so nothing shifts), then goes back to `Copy`. TalkBack announces `Warnings copied.` (`warnings_copied`, a polite
@@ -847,7 +889,8 @@ Showing the last working layout.`). Warnings never raise a banner.
 | Pattern letter run too long (`a`) | Error | `elements[0].content.slots.end: aa is too long. Use at most 1, like a.` |
 | Unclosed quote in a pattern | Error | `elements[0].content.slots.start: A ' quote isn't closed. Add a closing ' after the text.` |
 | Low contrast | Warning | `elements[0].style.color: contrast 2.1:1 on the backdrop (4.5:1 recommended). Shown anyway.` |
-| Bar too wide for this phone (overflow ladder step 2 or later, phone-only) | Warning | `elements[0].content.slots.end: the title bar doesn't fit this phone's 285 dp width, so fit step 2 of 4 was used: the date was shortened. Checked on this phone. Use a shorter date, like {date:d MMM}.` |
+| Bar too wide for this phone (overflow ladder step 2 or later, phone-only) | Warning | `elements[0].content.slots.end: the title bar doesn't fit in its 285 dp on this phone, so fit step 2 of 4 was used: the date was shortened. Checked on this phone. Use a shorter date, like {date:d MMM}.` |
+| Bar too wide, **no date** in the bar (step 3, phone-only) | Warning | `elements[0].content.slots: the title bar doesn't fit in its 285 dp on this phone, so fit step 3 of 4 was used: the text size went down to medium. Checked on this phone. Use fewer or shorter slots.` |
 
 Resources (character positions are 1-based, like line and column):
 ```xml
@@ -897,17 +940,24 @@ Resources (character positions are 1-based, like line and column):
 <string name="theme_dark">dark theme</string>
 <!-- code, not strings.xml (status.json): validator error for the top-level theme key (§12.1, Q-A10) -->
 <string name="err_theme">%1$s must be system, light or dark.</string>
-<!-- code, not strings.xml (status.json): phone warning for an unknown theme string; %1$s = the value as written -->
 <!-- code, not strings.xml (status.json): overflow ladder (§15 Layout). %1$s = path of the slot holding the date
-     (elements[0].content.slots.end), %2$d = the bar's width in dp, %3$d = the last step used (2, 3 or 4),
+     (elements[0].content.slots.end), %2$d = the shared slot width in dp: the bar's width minus its padding (the
+     width the slots and gaps share, e.g. 285 on the A51), %3$d = the last step used (2, 3 or 4),
      %4$s = what was done: fit_step_date, fit_step_size or fit_step_cut. Phone-only, like warn_contrast_theme. -->
-<string name="warn_titlebar_fit">%1$s: the title bar doesn\'t fit this phone\'s %2$d dp width, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use a shorter date, like {date:d MMM}.</string>
+<string name="warn_titlebar_fit">%1$s: the title bar doesn\'t fit in its %2$d dp on this phone, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use a shorter date, like {date:d MMM}.</string>
 <!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit, step 2 -->
 <string name="fit_step_date">the date was shortened</string>
 <!-- code, not strings.xml (status.json): step 3; %1$s = medium or small -->
 <string name="fit_step_size">the date was shortened and the text size went down to %1$s</string>
 <!-- code, not strings.xml (status.json): step 4 (used whether or not step 3 ran) -->
 <string name="fit_step_cut">the date was shortened and cut off with …</string>
+<!-- code, not strings.xml (status.json): size-only variant, for a bar with no {date}. Only step 3 can apply.
+     %1$s = path of the bar's slots (elements[0].content.slots), %2$d = the shared slot width in dp (as above),
+     %3$d = 3, %4$s = fit_step_size_only. -->
+<string name="warn_titlebar_fit_size">%1$s: the title bar doesn\'t fit in its %2$d dp on this phone, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use fewer or shorter slots.</string>
+<!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit_size; %1$s = medium or small -->
+<string name="fit_step_size_only">the text size went down to %1$s</string>
+<!-- code, not strings.xml (status.json): phone warning for an unknown theme string; %1$s = the value as written -->
 <string name="warn_theme_value">theme \"%1$s\" isn\'t supported by this Config Launcher, so home follows the system setting. Update the app, or check for a typo.</string>
 <string name="warnings_copied">Warnings copied.</string>
 <string name="warnings_copy_done">Copied</string>
