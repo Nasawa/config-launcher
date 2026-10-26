@@ -1,0 +1,136 @@
+name: Screen matrix
+# Pre-release screen matrix: docs/test-plan-screen-matrix.md. One emulator per shard; screen sizes, densities,
+# font scales, night mode and rotation are varied inside it with adb (scripts/screen-matrix/points.tsv).
+# Not on every push: runs on demand, on pre-release tags (v*-dev*, v*-rc*), and when a PR gets the
+# `screen-matrix` label. About 125 runner-minutes for the full matrix (estimate; see the test plan).
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: 'Shards, comma-separated: small-a,small-b,phones,tablets,fold (or all)'
+        default: all
+        type: string
+      points:
+        description: 'Only points whose id matches this regex (e.g. ^p411-a51-)'
+        default: '.'
+        type: string
+  push:
+    tags: ['v*-dev*', 'v*-rc*']
+  pull_request:
+    types: [labeled]
+permissions:
+  contents: read
+concurrency:
+  group: screen-matrix-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  plan:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'screen-matrix'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - id: plan
+        env:
+          SHARDS: ${{ inputs.shards || 'all' }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          all_ = [
+              {"shard": "small-a", "api": 29, "target": "default", "arch": "x86"},
+              {"shard": "small-b", "api": 29, "target": "default", "arch": "x86"},
+              {"shard": "phones", "api": 35, "target": "google_apis", "arch": "x86_64"},
+              {"shard": "tablets", "api": 35, "target": "google_apis", "arch": "x86_64"},
+              {"shard": "fold", "api": 36, "target": "google_apis", "arch": "x86_64"},
+          ]
+          want = {s.strip() for s in os.environ["SHARDS"].split(",") if s.strip()}
+          inc = [s for s in all_ if "all" in want or s["shard"] in want]
+          if not inc:
+              raise SystemExit(f"no shard matches {sorted(want)}")
+          print("matrix=" + json.dumps({"include": inc}))
+          PY
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: screen-matrix-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  shard:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: screen-matrix-apk
+          path: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Matrix shard ${{ matrix.shard }} on API ${{ matrix.api }}
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        env:
+          POINTS: ${{ inputs.points || '.' }}
+          SHARD: ${{ matrix.shard }}
+        with:
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.arch }}
+          ram-size: 4096M
+          disable-animations: true
+          # One line: the runner executes each script line in its own sh.
+          script: bash scripts/screen-matrix.sh --shard "$SHARD" --points "$POINTS" --apk apk --out "screen-matrix-out/$SHARD"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: screen-matrix-${{ matrix.shard }}
+          path: screen-matrix-out/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  summary:
+    needs: [plan, shard]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: screen-matrix-*
+          path: results
+          merge-multiple: true
+      - name: Merge results (fails on any blocking check)
+        run: |
+          mkdir -p results/all
+          for d in results/*/*/; do [ -f "$d/meta.txt" ] && cp -r "$d" results/all/; done
+          set +e
+          python3 scripts/screen_matrix_check.py summarize results/all > /dev/null
+          rc=$?
+          set -e
+          cat results/all/summary.md >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: screen-matrix-summary
+          path: results/all/summary.md
+          if-no-files-found: ignore
