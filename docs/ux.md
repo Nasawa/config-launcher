@@ -729,7 +729,7 @@ follows the device's `Label backdrop` setting; an explicit `none`, `scrim` or cu
 full width whenever the bar fits, and only the overflow ladder below may shorten the date. **The clock never shortens
 or truncates.** The centre gets the remaining width: **at least 50 % when the sides leave that much**,
 centred. When fixed sides leave less, centring is given up and the centre takes what's left between them, ellipsizing
-at the end (the `{page}` slot doesn't go below 32 dp, so its ▾ and tap target stay; #152. Only step 1 of the overflow ladder below takes it under that). Other side slots ellipsize
+at the end (the `{page}` slot doesn't go below 32 dp, so its ▾ and tap target stay; #152. Only step 1 of the overflow ladder below takes its visible width under that, to 24 dp, and step 1 also sets its touch area). Other side slots ellipsize
 before the centre does. Adjacent **non-empty** slots always have an **8 dp minimum gap** between them, reserved before
 the text is laid out (like the ▾ width), so text never runs together (`11:20 AM` `Very…`); an empty slot takes no gap. **Default size is `small`, 14 sp (Q-T3)**: it matches
 the §1.3 page label and status-bar text, and at 200 % font (28 sp) it still fits one line and costs one grid row at most
@@ -740,11 +740,17 @@ from size + padding, and grid rows share the rest. Never overlaps icons.
 large text and the One UI font, a long date is about 200 dp, the clock about 75 dp and `{page}` 32 dp, plus two 8 dp
 gaps, in a bar of about 285 dp. When the clock, the date, the `{page}` minimum and the gaps don't fit (other side text
 has already ellipsized), the phone applies these steps **in order and stops at the first one that fits**:
-1. **`{page}` shrinks to the ▾ alone.** The page text is hidden, and the ▾ (12 dp + 4 dp) stays. The slot keeps its
-   **48 dp touch area**, which may overlap the 8 dp gap but never the neighbouring text. TalkBack still reads the page
-   name (`Home, Pages, button`). With one page there's no ▾ and no action, so the page text is simply hidden, and
-   TalkBack still reads it. The 32 dp `{page}` minimum gives way to this step.
-2. **The date shortens, in steps** (re-measuring after each one), using the `DateTimeFormatter` letters §15.1 allows:
+1. **`{page}` shrinks to the ▾ alone.** The page text is hidden, and the slot's **visible** width drops to a 24 dp ▾
+   (#167). The **touch area** aims for 48 dp:
+   - Next to a neighbour that **isn't tappable**, it may extend over that neighbour (its gap and text).
+   - Next to a **tappable** neighbour, it stops at the midpoint of the gap between them on that side.
+   - If that leaves it under 48 dp, it keeps **at least 32 dp** (the #152 minimum still holds for the touch area), and
+     it **never takes touch area from another tappable target**.
+   (In this release no other title-bar slot is tappable, §15 #78, so in practice it extends to 48 dp.) TalkBack still
+   reads the page name (`Home, Pages, button`). With one page there's no ▾ and no action, so the page text is simply
+   hidden, and TalkBack still reads it. This step overrides only the 32 dp **visible** `{page}` minimum, not the
+   touch-area minimum.
+2. **The date shortens, in steps** (re-measuring after each one; skipped when the bar has no `{date}`), using the `DateTimeFormatter` letters §15.1 allows:
    - Full text runs become short ones: `EEEE` → `EEE` (`Sunday` → `Sun`), `MMMM` → `MMM` (`October` → `Oct`).
    - Then the weekday run (`E…`) is dropped, together with the literal separator next to it (`EEE, MMM d` → `MMM d`).
    - Plain `{date}` (the locale medium date, title-bar.md) has no pattern to edit, so it steps from the medium to the
@@ -760,7 +766,10 @@ runs again on every layout change: rotation, a font-scale or display-size change
 Whenever step 2 or later is in use, `status.json` gets the phone-only warning `warn_titlebar_fit` (§15.1). It's
 marked `checked on this phone`, like the theme contrast warnings, because `validate.py` can't know the phone's width.
 It shows in the Warnings list, with no snackbar or banner, and it clears silently once the bar fits again. Step 1 alone
-writes no warning.
+writes no warning. **Bar with no date:** steps 2 and 4 don't apply (there's nothing to shorten or cut), so only step 3
+can write a warning, and it uses the size-only variant `warn_titlebar_fit_size` (§15.1), which doesn't mention the
+date and suggests `Use fewer or shorter slots.` If the bar still doesn't fit after step 3, side text ellipsizes as
+in the layout rules above.
 
 **Contrast.** Light text always gets the label shadow; dark text doesn't. With `auto` + `Label backdrop` on, or
 `scrim`, the 60 % scrim gives ≥ 5.7:1 for white (§12). With a custom backdrop, the launcher measures text vs backdrop.
@@ -881,6 +890,7 @@ Showing the last working layout.`). Warnings never raise a banner.
 | Unclosed quote in a pattern | Error | `elements[0].content.slots.start: A ' quote isn't closed. Add a closing ' after the text.` |
 | Low contrast | Warning | `elements[0].style.color: contrast 2.1:1 on the backdrop (4.5:1 recommended). Shown anyway.` |
 | Bar too wide for this phone (overflow ladder step 2 or later, phone-only) | Warning | `elements[0].content.slots.end: the title bar doesn't fit this phone's 285 dp width, so fit step 2 of 4 was used: the date was shortened. Checked on this phone. Use a shorter date, like {date:d MMM}.` |
+| Bar too wide, **no date** in the bar (step 3, phone-only) | Warning | `elements[0].content.slots: the title bar doesn't fit this phone's 285 dp width, so fit step 3 of 4 was used: the text size went down to medium. Checked on this phone. Use fewer or shorter slots.` |
 
 Resources (character positions are 1-based, like line and column):
 ```xml
@@ -930,9 +940,9 @@ Resources (character positions are 1-based, like line and column):
 <string name="theme_dark">dark theme</string>
 <!-- code, not strings.xml (status.json): validator error for the top-level theme key (§12.1, Q-A10) -->
 <string name="err_theme">%1$s must be system, light or dark.</string>
-<!-- code, not strings.xml (status.json): phone warning for an unknown theme string; %1$s = the value as written -->
 <!-- code, not strings.xml (status.json): overflow ladder (§15 Layout). %1$s = path of the slot holding the date
-     (elements[0].content.slots.end), %2$d = the bar's width in dp, %3$d = the last step used (2, 3 or 4),
+     (elements[0].content.slots.end), %2$d = the shared slot width in dp: the bar's width minus its padding (the
+     width the slots and gaps share, e.g. 285 on the A51), %3$d = the last step used (2, 3 or 4),
      %4$s = what was done: fit_step_date, fit_step_size or fit_step_cut. Phone-only, like warn_contrast_theme. -->
 <string name="warn_titlebar_fit">%1$s: the title bar doesn\'t fit this phone\'s %2$d dp width, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use a shorter date, like {date:d MMM}.</string>
 <!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit, step 2 -->
@@ -941,6 +951,13 @@ Resources (character positions are 1-based, like line and column):
 <string name="fit_step_size">the date was shortened and the text size went down to %1$s</string>
 <!-- code, not strings.xml (status.json): step 4 (used whether or not step 3 ran) -->
 <string name="fit_step_cut">the date was shortened and cut off with …</string>
+<!-- code, not strings.xml (status.json): size-only variant, for a bar with no {date}. Only step 3 can apply.
+     %1$s = path of the bar's slots (elements[0].content.slots), %2$d = the shared slot width in dp (as above),
+     %3$d = 3, %4$s = fit_step_size_only. -->
+<string name="warn_titlebar_fit_size">%1$s: the title bar doesn\'t fit this phone\'s %2$d dp width, so fit step %3$d of 4 was used: %4$s. Checked on this phone. Use fewer or shorter slots.</string>
+<!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit_size; %1$s = medium or small -->
+<string name="fit_step_size_only">the text size went down to %1$s</string>
+<!-- code, not strings.xml (status.json): phone warning for an unknown theme string; %1$s = the value as written -->
 <string name="warn_theme_value">theme \"%1$s\" isn\'t supported by this Config Launcher, so home follows the system setting. Update the app, or check for a typo.</string>
 <string name="warnings_copied">Warnings copied.</string>
 <string name="warnings_copy_done">Copied</string>
