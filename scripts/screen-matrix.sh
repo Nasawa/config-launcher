@@ -149,6 +149,9 @@ run_point() {
 
   # Display + system settings for this point
   # Locale from shape keywords: rtl → ar-EG; longlabel/de → de-DE; enxa → en-XA; else en-US.
+  # API 35 CI images ignore `settings put system system_locales` for layoutDirection / app
+  # resources (meta recorded ar-EG while status bar + chrome stayed LTR English). Apply with
+  # cmd locale set-app-locales (API 33+) and, for RTL shapes, debug.force_rtl + SystemUI bounce.
   if echo "$shape" | grep -qi rtl; then
     loc=ar-EG
   elif echo "$shape" | grep -qiE 'longlabel|\bde\b'; then
@@ -158,7 +161,18 @@ run_point() {
   else
     loc=en-US
   fi
-  sh_ "settings put system system_locales $loc"
+  sh_ "settings put system system_locales $loc" >/dev/null 2>&1 || true
+  sh_ "cmd locale set-app-locales $PKG --locales $loc" >/dev/null 2>&1 || true
+  if echo "$shape" | grep -qi rtl; then
+    sh_ "settings put global debug.force_rtl 1" >/dev/null 2>&1 || true
+  else
+    sh_ "settings put global debug.force_rtl 0" >/dev/null 2>&1 || true
+  fi
+  # Bounce SystemUI so status-bar mirroring picks up force_rtl (best-effort on CI images).
+  if echo "$shape" | grep -qi rtl; then
+    sh_ "am crash com.android.systemui" >/dev/null 2>&1       || sh_ "pkill -f com.android.systemui" >/dev/null 2>&1       || true
+    pause 2
+  fi
   echo "locale=$loc" >> "$d/meta.txt"
   sh_ "wm size $size; wm density $dens; settings put system font_scale $fs; cmd uimode night $night"
   sh_ "settings put system accelerometer_rotation 0; settings put system user_rotation $rot"
@@ -226,6 +240,38 @@ run_point() {
   done
   echo "seed_ok=$seed_ok" >> "$d/meta.txt"
   echo "seed_attempts=$seed_attempt" >> "$d/meta.txt"
+  # Locale / RTL application probe (X4). set-app-locales survives pm clear; re-assert after seed start.
+  sh_ "cmd locale set-app-locales $PKG --locales $loc" >/dev/null 2>&1 || true
+  if echo "$shape" | grep -qi rtl; then
+    sh_ "settings put global debug.force_rtl 1" >/dev/null 2>&1 || true
+  else
+    sh_ "settings put global debug.force_rtl 0" >/dev/null 2>&1 || true
+  fi
+  # Recreate only when a non-default locale/RTL variant is in play (avoid doubling every point).
+  if [ "$seed_ok" -eq 1 ] && { [ "$loc" != en-US ] || echo "$shape" | grep -qi rtl; }; then
+    sh_ am force-stop "$PKG"
+    # Re-copy prefs after stop (belt-and-suspenders; pm clear is not used here).
+    sh_ "run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'" >/dev/null 2>&1 || true
+    sh_ "am start -W -n $PKG/.MainActivity" >> "$d/run.txt" 2>&1
+    pause 2
+    sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" >> "$d/run.txt" 2>&1
+    pause 2
+    dump "$d" home1
+  fi
+  app_loc=$(sh_ "cmd locale get-app-locales $PKG" 2>/dev/null | tr -d '\r' | tr '\n' ' ' | sed 's/[[:space:]]\+$//')
+  force_rtl=$(sh_ "settings get global debug.force_rtl" 2>/dev/null | tr -d '\r')
+  # layoutDir from the focused activity config (1 = RTL). Fall back to dumpsys package.
+  layout_dir=$(sh_ "dumpsys activity activities" 2>/dev/null | tr -d '\r' | grep -oE 'layoutDir=[01]' | head -1 | cut -d= -f2)
+  [ -n "$layout_dir" ] || layout_dir=$(sh_ "dumpsys activity top" 2>/dev/null | tr -d '\r' | grep -oE 'layoutDir=[01]' | head -1 | cut -d= -f2)
+  echo "app_locales=$app_loc" >> "$d/meta.txt"
+  echo "force_rtl=${force_rtl:-}" >> "$d/meta.txt"
+  echo "layout_dir=${layout_dir:-}" >> "$d/meta.txt"
+  {
+    echo "app_locales=$app_loc"
+    echo "force_rtl=$force_rtl"
+    echo "layout_dir=$layout_dir"
+    echo "want_locale=$loc"
+  } > "$d/locale.txt"
   if [ "$seed_ok" -ne 1 ]; then
     echo "home1 still not seeded after $seed_attempt attempts (first-run or missing Home/dock)" > "$d/seed-failed.txt"
     echo "partial=yes" >> "$d/meta.txt"
@@ -373,6 +419,8 @@ done 3< "$FIX/points.tsv"
 
 # Restore the emulator
 sh_ "wm size reset; wm density reset; settings put system font_scale 1.0; cmd uimode night no; settings put system user_rotation 0; settings put system system_locales en-US"
+sh_ "settings put global debug.force_rtl 0" >/dev/null 2>&1 || true
+sh_ "cmd locale set-app-locales $PKG --locales en-US" >/dev/null 2>&1 || true
 sh_ "cmd overlay disable --user 0 com.android.internal.display.cutout.emulation.tall" >/dev/null 2>&1 || true
 
 [ "$n" -gt 0 ] || { echo "no points matched (shard='$SHARD' points='$POINTS')" >&2; exit 2; }

@@ -631,6 +631,74 @@ def run_checks(d):
         f"requested {m.get('night', '?')}, applied {night_got or '?'}"
         + (f" via {m['night_via']}" if m.get('night_via') else ''), 'test plan §1 variants, §5 (API 29: #150)')
 
+    # X4 harness: locale / RTL layoutDirection really applied (API 35 ignores system_locales alone).
+    # Fail as harness error when an rtl / longlabel|de point did not take effect — do not score
+    # product L5/locale bugs off an LTR English dump that only recorded locale= in meta.
+    want_loc = (m.get('locale') or '').strip()
+    shape_l = (m.get('shape') or '').lower()
+    need_rtl = 'rtl' in shape_l or want_loc.lower().startswith('ar')
+    need_de = ('longlabel' in shape_l or re.search(r'\bde\b', shape_l) is not None
+               or want_loc.lower().startswith('de'))
+    app_loc = (m.get('app_locales') or '').strip()
+    force_rtl = (m.get('force_rtl') or '').strip()
+    layout_dir = (m.get('layout_dir') or '').strip()
+    if not any((app_loc, force_rtl, layout_dir)) and os.path.isfile(os.path.join(d, 'locale.txt')):
+        for ln in read(os.path.join(d, 'locale.txt')).splitlines():
+            if '=' in ln:
+                k, v = ln.split('=', 1)
+                if k == 'app_locales' and not app_loc: app_loc = v.strip()
+                if k == 'force_rtl' and not force_rtl: force_rtl = v.strip()
+                if k == 'layout_dir' and not layout_dir: layout_dir = v.strip()
+    # Hierarchy probe: system status-bar clock on the right half ⇒ RTL took effect.
+    sb_rtl = None
+    if h1 := home.get('home1'):
+        clocks = [n for n in h1 if n.pkg.startswith('com.android.systemui')
+                  and CLOCK_RE.match((n.text or n.desc or '').strip())]
+        if not clocks:
+            # Some images expose the clock without package; prefer y≈status-bar band.
+            clocks = [n for n in h1 if n.b[3] <= max(80, int((H or 0) * 0.06) or 80)
+                      and CLOCK_RE.match((n.text or '').strip())
+                      and 'configlauncher' not in (n.pkg or '')]
+        if clocks and (W or 0) > 0:
+            c = clocks[0]
+            sb_rtl = c.cx > (W / 2)
+    probed = bool(app_loc or force_rtl or layout_dir or sb_rtl is not None)
+    x4_rtl_failed = False
+    if need_rtl:
+        rtl_ok = (
+            layout_dir == '1'
+            or sb_rtl is True
+            or (force_rtl in ('1', 'true') and re.search(r'\bar\b|ar-', app_loc, re.I) is not None)
+        )
+        # force_rtl alone is not enough if layoutDir stayed 0 and status bar stayed LTR
+        if layout_dir == '0' and sb_rtl is False:
+            rtl_ok = False
+        if not probed:
+            x4 = None
+            x4d = f'requested {want_loc or "ar"}; no locale probe (old dump) — cannot verify'
+        else:
+            x4 = bool(rtl_ok)
+            x4d = (f'requested {want_loc or "ar"}; app_locales={app_loc or "?"}; '
+                   f'force_rtl={force_rtl or "?"}; layout_dir={layout_dir or "?"}; '
+                   f'status_bar_clock_rtl={sb_rtl}')
+        add('X4', 'Requested RTL locale/layoutDirection applied (harness)', x4, x4d,
+            'test plan §1 variants (API 33+ set-app-locales / debug.force_rtl; not system_locales alone)')
+        x4_rtl_failed = (x4 is False)
+    elif need_de:
+        de_ok = re.search(r'\bde\b|de-', app_loc, re.I) is not None
+        if not probed and not app_loc:
+            x4 = None
+            x4d = f'requested {want_loc or "de"}; no locale probe (old dump) — cannot verify'
+        else:
+            x4 = bool(de_ok)
+            x4d = f'requested {want_loc or "de"}; app_locales={app_loc or "?"}'
+        add('X4', 'Requested long-label locale applied (harness)', x4, x4d,
+            'test plan §1 variants (API 33+ set-app-locales for de-DE)')
+    else:
+        add('X4', 'Locale variant applied (harness)', None,
+            f'default locale {want_loc or "en-US"}; no rtl/longlabel probe',
+            'test plan §1 variants')
+
     # F1 cold start, crash and ANR.
     # am start -W often returns Status: timeout on software emulators even when MainActivity is up
     # (0 crashes / 0 ANRs); treat that as started when the Activity line is ours.
@@ -1139,12 +1207,18 @@ def run_checks(d):
             if head and is_rail_ok and rl is not None:
                 head_in = head.b[0] >= rl - 2 and head.b[2] <= rr + 2
             ok_l5 = bool(rail) and side_ok and width_ok and head_in and not ellip
-            add('L5', 'Dock placement (rail vs bottom)', ok_l5 if rail else False,
-                f'want rail; is_rail {rail}; side {side} (want {want_side}, rtl={rtl}); '
-                f'railW {panel_w_dp:.1f} dp (need ≥{need_w:.1f}); Apps near dock {apps_on_rail}; '
-                f'head_in {head_in} ellip {ellip}; dock {[n.b for n in dock[:3]]}; '
-                f'window {width_dp:.0f}×{height_dp:.0f} dp',
-                'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
+            if x4_rtl_failed:
+                add('L5', 'Dock placement (rail vs bottom)', None,
+                    f'skipped: harness X4 RTL locale/layoutDirection not applied '
+                    f'(side {side}, want {want_side}); not a product rail-side score',
+                    'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5', sev='advisory')
+            else:
+                add('L5', 'Dock placement (rail vs bottom)', ok_l5 if rail else False,
+                    f'want rail; is_rail {rail}; side {side} (want {want_side}, rtl={rtl}); '
+                    f'railW {panel_w_dp:.1f} dp (need ≥{need_w:.1f}); Apps near dock {apps_on_rail}; '
+                    f'head_in {head_in} ellip {ellip}; dock {[n.b for n in dock[:3]]}; '
+                    f'window {width_dp:.0f}×{height_dp:.0f} dp',
+                    'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
         elif want_bottom:
             add('L5', 'Dock placement (rail vs bottom)', rail is False,
                 f'want bottom; is_rail {rail}; dock {[n.b for n in dock[:3]]}; '
