@@ -284,9 +284,28 @@ line ≈ 16 dp at font 1.0 (≈ 17 dp at 1.3). The first step that fits wins; **
 2. **48 dp + label:** pitchH ≥ **76 dp** (48 + 16 + 12). Labels stay whole.
 3. **48 dp, label hidden:** pitchH ≥ **60 dp** (48 + 12). Labels are cleanly absent (still spoken by TalkBack), never
    clipped.
+4. **Touch-floor fallback** (Compact-height + rail, typically phone landscape ~800 × 360): when even step 3's clean
+   pitchH ≥ 60 can't fit — e.g. a 312 dp-tall page column after safeDrawing and the measured rail, with a 5-row file —
+   **do not drop rows**. Labels stay hidden whole. Shrink chrome before accepting tiles under 48:
+   - **Title bar:** on windows shorter than 480 dp, absorb style `padding.vertical` into the **48 dp** page-button
+     budget (`padV → 0`); keep horizontal padding. The `{page}` control stays a ≥ 48 dp touch target; bar text still
+     follows the §15 overflow ladder (ellipsize / size steps) on the content width. That ladder and
+     `warn_titlebar_fit` stay **load-time only** against a portrait bar at `smallestScreenWidthDp` (Q-A12) — never
+     re-run from this short landscape height.
+   - **Page dots:** stay as today (~20 dp with their 4 dp padding); not further shrunk.
+   - **Grid:** fills the rest. `pitchH` may sit at **≥ 48 dp** (below step 3's 60). Icons stay **48 dp** with labels
+     hidden (they may fill the cell; the 12 dp content-pad math no longer fits). On Medium/Expanded, the 1.25 : 1
+     aspect ceiling **wins over** the 64 dp preferred min cell when `1.25 · pitchH < 64`, so `pitchW` can be under 64.
+   - **Touch:** each cell's **whole area** is the hit target and must be **≥ 48 × 48 dp**; the 2 dp visual gap sits
+     **inside** that hit area (not outside it).
+   - **If even that can't reach rows × 48** (banner or notice row up, taller title text, etc.): still do not drop
+     rows and do **not** invent a window-metrics fit warning. Q-A12 must not be wired to the current window. The
+     touch-floor check (L16) fails until the extra chrome is gone or the window is taller; existing
+     `warn_titlebar_fit` / `warn_titlebar_fit_size` strings stay for the load-time title-bar ladder only.
 
 A short window that still has a bottom dock (e.g. t7-land before the rail lands, measured ~64.5 dp on #194) lands on
-step 3. The runtime ladder is what handles short windows. No extra title-bar step for landscape.
+step 3. Phone landscape with the rail lands on step 4 when height forces it. The runtime ladder is what handles short
+windows.
 
 **Centring is measured inside the safe area.** On Medium/Expanded the block is centred in the page area after
 `WindowInsets.safeDrawing` (system bars and cutouts). Left and right margins match within 1 px of that area; measuring
@@ -303,10 +322,16 @@ behaviour it always was, and the golden stays green without a re-baseline.
 
 **Content width for the rows above and below the grid.** On Medium and Expanded, the §6.1 banner, the notice row, the
 §1.3 page label, the §15 title bar and a bottom dock are centred on the grid block and use the **content width**: the
-wider of the block and 576 dp, but no wider than the page area. (fold-open: 576 of 841 dp; t10-land: 576 dp.) The title
-bar's overflow ladder runs on that width. Compact keeps the full width. The `status.json` fit warning is **not** checked
-against this width: it comes from a load-time check against a portrait bar at `smallestScreenWidthDp`, never from the
-window (§15 "Fit warnings", Q-A12).
+wider of the block and 576 dp, but no wider than the page area. (fold-open: 576 of 841 dp; t10-land: 576 dp.)
+- **`pageAreaW`** is the **measured** width of the page column after `WindowInsets.safeDrawing` and the rail's **actual**
+  measured width (the rail can grow past 80 dp with `Apps`/`Done`). Do **not** use `winW − 80` or
+  `LocalConfiguration.screenWidthDp` alone — wrap the page column in `BoxWithConstraints` / `onSizeChanged` so the same
+  value holds with or without the rail, in RTL, and with cutouts (Archimedes on #201).
+- **`blockW`** is **`columns × pitchW`** from the same `pitch()` result the grid uses — not a hard-coded `4 × 144`.
+  Otherwise chrome width and grid width drift apart when the file isn't 4 columns.
+The title bar's overflow ladder runs on that content width. Compact keeps the full width. The `status.json` fit warning
+is **not** checked against this width: it comes from a load-time check against a portrait bar at
+`smallestScreenWidthDp`, never from the window (§15 "Fit warnings", Q-A12).
 
 **Dock: bottom bar or side rail (Q-L3, Q-L4).**
 - **Rail** when the window is at least **1.4 : 1** (width ÷ height), **or** its height is **Compact** (< 480 dp).
@@ -349,7 +374,7 @@ dots and **snackbars** (§9) all live in the **page column** beside the rail —
 full-window width that includes the rail. The rail is a separate end-edge region like a dock. Chips sit at the end of
 the page column (toward the rail in both LTR and RTL). Snackbars sit at the bottom of the page column (where a bottom
 dock would be). On Medium/Expanded the content-width rule above still centres those chrome rows on the grid block
-**inside** the page column (page area = window minus the rail).
+**inside** the page column (`pageAreaW` measured as above).
 
 **Foldables (Q-L4, Q-L5).** What the postures look like: **folded**, it's a normal phone, using the small screen on
 the outside. **Flat open**, it's a small, nearly square tablet. **Half open like a book**, it stands on its edge with the
@@ -926,7 +951,7 @@ this table.
 ## 13. Build checklist (Sprite)
 
 - [ ] Home: pager + grid (`grid.columns/rows`, default 4 × 5, file allows 2–12) + dock (0–7), sizes from §1.1, wallpaper through.
-- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L15 in test-plan.md §20. dev8 builds the defaults only and still rejects any override key (O0); the config overrides after dev8 follow [`docs/design/layout-overrides.md`](design/layout-overrides.md) (Q-A11, slices O1–O6 / checks O9–O13).
+- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels; step 4 touch-floor on Compact-height + rail); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L16 in test-plan.md §20 (L16 = phone-land touch floor). dev8 builds the defaults only and still rejects any override key (O0); the config overrides after dev8 follow [`docs/design/layout-overrides.md`](design/layout-overrides.md) (Q-A11, slices O1–O6 / checks O9–O13).
 - [ ] Dimmed tiles and reconciliation (§1.2): not installed, unpublished shortcut, paused work apps, activity fallback, unplaced apps in the drawer only (`page` not offered in Settings), private space never placed. Never auto-delete.
 - [ ] Item sheet shows the real app name and package. Strip bidi and zero-width characters from labels at render.
 - [ ] Drawer: search (§2 match rules, focused with the keyboard up; TalkBack and hardware-keyboard rules, Back hides the keyboard first, `Open keyboard with drawer` setting), `drawer.sort` (label or installTime), `drawer.rules` groups, hidden apps section (package names), work tab.
