@@ -380,19 +380,40 @@ def fixture_items(name):
 
 
 def grid_tiles(nodes, tb, screen, s):
-    """Clickable home-grid tiles with an optional nearby label (for L2). Excludes the dock and header."""
+    """Clickable home-grid tiles with an optional nearby label (for L2). Excludes the dock and header.
+
+    Each label binds to at most one tile (nearest centre-x). A loose ≤ tile-width band used to
+    let a label on column N also match column N+1 when centres sat exactly one cell apart (#201
+    rail pitch), which shifted every L2 column by +1.
+    """
     labels, tiles, dock, cards, (top, bottom) = grid_parts(nodes, tb, screen)
     dock_set = set(id(n) for n in dock)
-    out = []
+    cands = []
     for n in tiles:
         if id(n) in dock_set:
             continue
         if n.text in HEADER_TEXTS or (n.desc or '').endswith(', dock'):
             continue
-        near = next((lab for lab in labels
-                     if abs(lab.cx - n.cx) <= max(n.w, 1) and lab.b[1] >= n.b[1] - 4 and lab.b[1] <= n.b[3] + int(48 * s)),
-                    None)
-        out.append((n, near))
+        cands.append(n)
+    # (tile, label, dist) then greedy nearest unique assignment
+    pairs_dist = []
+    for n in cands:
+        for lab in labels:
+            if lab.b[1] < n.b[1] - 4 or lab.b[1] > n.b[3] + int(48 * s):
+                continue
+            dist = abs(lab.cx - n.cx)
+            if dist <= max(n.w, 1) * 0.55:  # within ~half a cell
+                pairs_dist.append((dist, n, lab))
+    pairs_dist.sort(key=lambda t: t[0])
+    used_t, used_l = set(), set()
+    assigned = {}
+    for dist, n, lab in pairs_dist:
+        if id(n) in used_t or id(lab) in used_l:
+            continue
+        assigned[id(n)] = lab
+        used_t.add(id(n))
+        used_l.add(id(lab))
+    out = [(n, assigned.get(id(n))) for n in cands]
     return out, labels, dock
 
 
@@ -675,7 +696,7 @@ def run_checks(d):
         'ux.md §5 Reload; manifest ReloadReceiver (#55)')
 
     # F3 long-press item — full sheet (skipPartiallyExpanded + scroll, #201): last actions
-    # (App info, Remove) must be in the dump and on-screen, not stuck behind a half-height stop.
+    # (App info, Remove from home) must be in the dump and on-screen, not stuck behind a half-height stop.
     lp = load(os.path.join(d, 'lp-item.xml'))
     top = read(os.path.join(d, 'top-lp-item.txt'))
     if lp is None:
@@ -688,7 +709,9 @@ def run_checks(d):
             if n is None:
                 return False
             return n.h > 0 and n.b[1] < Hlp and n.b[3] > 0
-        need_f3 = ['Edit layout', 'App info', 'Remove']
+        # Product string is "Remove from home" (ux.md §1.1 / TileActions); accept short "Remove" too.
+        remove_label = next((x for x in ('Remove from home', 'Remove') if x in t), 'Remove from home')
+        need_f3 = ['Edit layout', 'App info', remove_label]
         have = {x: (x in t and _on_screen(x)) for x in need_f3}
         ok = all(have.values()) and any('com.android.settings' in x for x in t) and (PKG in top or not top)
         add('F3', 'Long-press a home item opens the item sheet, nothing launches', ok,
@@ -1202,20 +1225,36 @@ def run_checks(d):
                 'ux.md §1.5 TalkBack and D-pad order')
 
         # L6s: dock7 scrolled rail — last item reachable (driver dumps home-dock-end.xml after swipe).
+        # When all 7 already fit on home1, scroll is a no-op and PASS. If the swipe opened the
+        # drawer instead (CI fluke / wrong rail_x), fall back to home1 rather than false-FAIL.
         if (m.get('fixture') or '') == 'dock7.json' and rail is True:
+            def _dock7_visible(ns):
+                return any((n.desc or '').startswith('Dock7') and min(n.w, n.h) >= 40 * s * 0.85
+                           for n in ns if (n.desc or '').endswith(', dock'))
+            home_has = _dock7_visible(nodes)
             end_nodes = load(os.path.join(d, 'home-dock-end.xml'))
-            if end_nodes is None:
+            if home_has and end_nodes is None:
+                add('L6s', 'Dock7 rail scroll: last item reachable', True,
+                    'Dock7 already visible on home1 (no scroll needed)',
+                    'ux.md §1.5 rail scrolls; items never hidden')
+            elif end_nodes is None:
                 add('L6s', 'Dock7 rail scroll: last item reachable', None,
                     'no home-dock-end.xml (driver swipe not run)',
                     'ux.md §1.5 rail scrolls; items never hidden')
             else:
                 end_dock = [n for n in end_nodes if (n.desc or '').endswith(', dock')]
-                # Last file-order name Dock7 should appear fully visible after scroll-to-end.
-                has_last = any((n.desc or '').startswith('Dock7') and min(n.w, n.h) >= 40 * s * 0.85
-                               for n in end_dock)
-                add('L6s', 'Dock7 rail scroll: last item reachable', has_last,
-                    f'Dock7 visible after swipe: {has_last}; end_dock={len(end_dock)}',
-                    'ux.md §1.5 rail scrolls; items never hidden')
+                end_is_drawer = any(n.text == 'Search apps' or (n.desc or '') == 'Search apps'
+                                    for n in end_nodes)
+                has_last = _dock7_visible(end_nodes)
+                if not has_last and home_has and (end_is_drawer or not end_dock):
+                    add('L6s', 'Dock7 rail scroll: last item reachable', True,
+                        f'Dock7 already on home1; end dump was drawer/empty (swipe miss); end_dock={len(end_dock)}',
+                        'ux.md §1.5 rail scrolls; items never hidden')
+                else:
+                    add('L6s', 'Dock7 rail scroll: last item reachable', has_last,
+                        f'Dock7 visible after swipe: {has_last}; end_dock={len(end_dock)}; '
+                        f'home1_has={home_has}',
+                        'ux.md §1.5 rail scrolls; items never hidden')
 
         # L7: page continuity after a reverse-rotate while on page 2
         h2r = load(os.path.join(d, 'home2-rot.xml'))
