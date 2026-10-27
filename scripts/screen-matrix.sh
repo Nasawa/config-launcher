@@ -185,6 +185,13 @@ run_point() {
   else
     sh_ "cmd overlay disable --user 0 com.android.internal.display.cutout.emulation.tall" >/dev/null 2>&1 || true
   fi
+  # Short multi-window: true split-screen is not reliably scriptable on CI AVDs (needs a second
+  # visible task + --windowingMode). Simulate the top-half pane with wm size on a short window
+  # (points.tsv size_px already set); record how we simulated it for the report.
+  if echo "$shape" | grep -qiE 'multi-window|multiwindow|split'; then
+    echo "multiwindow_sim=wm_size_short_pane" >> "$d/meta.txt"
+    echo "multiwindow_note=true split-screen not scripted; wm size ${size} @ dens ${dens} stands in for a short page column so titleBarPaddingV keys off measured height" >> "$d/meta.txt"
+  fi
   pause 3
   sh_ "wm size; wm density; settings get system font_scale; cmd uimode night" > "$d/run.txt" 2>&1
   # Android clamps a wm size override to a multiple of the physical panel (2x on API 29, less on 35/36), so record

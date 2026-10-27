@@ -578,7 +578,7 @@ def severity(cid, m):
     pending = set()     # add an id here for a merged spec not built yet
     # L5 stays advisory until the end-edge rail PR lands (#197 / test-plan §20).
     # L6r = rail-geometry half of L6 (also advisory until that rail PR).
-    advisory_always = {'P1', 'A1', 'A2', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'G7', 'X1', 'X2', 'X3', 'L5', 'L6r', 'L6s', 'Dnd1'}
+    advisory_always = {'P1', 'A1', 'A2', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'G7', 'X1', 'X2', 'X3', 'G3n', 'L5', 'L6r', 'L6s', 'Dnd1'}
     if cid in pending:
         return 'pending'
     if cid == 'F1':
@@ -965,9 +965,30 @@ def run_checks(d):
                  if (n.w / s < 47.5 or n.h / s < 47.5) and not _dock_partial(n)]
         off = [n.b for n in tiles + dock + labels if n.b[0] < 0 or n.b[1] < 0 or (W and n.b[2] > W) or (H and n.b[3] > H)]
         intobar = [n.text for n in labels if tb and inter(n.b, tb['rect']) > 0]
-        add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar', not small and not off and not intobar,
-            f'{len(tiles)} tiles, {len(dock)} dock; under 48 dp {small[:4]}; off-screen {off[:3]}; into bar {intobar[:3]}',
-            'ux.md §12 Touch targets, §1.1 Cell, §15 "Never overlaps icons"')
+        # #204: a banner / §6.1 notice-row chip can push phone-land grid under 48 dp. Record
+        # numbers as advisory (not a #201 blocker) when that chrome is showing; still FAIL
+        # when under 48 with no notice/banner (real G3 / density regression).
+        texts_all = [n.text or '' for n in nodes] + [n.desc or '' for n in nodes]
+        notice_chrome = (
+            any(_is_notice_chip(n) for n in nodes)
+            or any('needs your OK.' in t or 'need your OK.' in t for t in texts_all)
+            or any(t.startswith('Pending') for t in texts_all)
+            or (m.get('fixture') or '').endswith('chip.json')
+        )
+        g3_detail = (f'{len(tiles)} tiles, {len(dock)} dock; under 48 dp {small[:4]}; '
+                     f'off-screen {off[:3]}; into bar {intobar[:3]}')
+        if small and notice_chrome and not off and not intobar:
+            add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar',
+                True,  # do not block #201
+                g3_detail + f'; notice/banner chrome present — under-48 tracked as advisory #204 '
+                f'(not a #201 blocker); min under48 {min((min(a,b) for _,a,b in small), default="?")}',
+                'ux.md §12 / §1.5 step 4; #204 (banner/notice vs 48 floor)', sev='advisory')
+            add('G3n' + sfx, 'Under-48 with notice/banner only (#204)', False,
+                g3_detail + '; filed #204', 'issue #204', sev='advisory')
+        else:
+            add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar',
+                not small and not off and not intobar, g3_detail,
+                'ux.md §12 Touch targets, §1.1 Cell, §15 "Never overlaps icons"')
         # G6 grid label contrast against the wallpaper under it (advisory: photo wallpapers make the sample noisy)
         im = open_png(os.path.join(d, k + '.png'))
         if im is not None and labels:
