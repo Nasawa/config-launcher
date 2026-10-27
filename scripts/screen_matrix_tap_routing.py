@@ -469,15 +469,32 @@ def score(point_dir):
             )
         else:  # below
             expect = tap.get('expect')
-            blob = ''
-            if ident:
-                blob = ' '.join(filter(None, [ident.get('title'), *ident.get('texts', []), *ident.get('descs', [])]))
             tile_names = [t['name'] for t in plan['tiles']]
-            stole = next((n for n in tile_names if n.lower() in blob.lower()), None)
-            # dock expect: sheet for dock item ok
+            # Home dump always lists tile spoken descs — only count a steal when a sheet
+            # opened for a grid tile, or another app launched.
+            launched_away = bool(top) and 'configlauncher' not in top.lower()
+            sheet = bool((ident or {}).get('has_sheet'))
+            title = ((ident or {}).get('title') or '')
+            stole = None
+            if sheet:
+                # Item sheet title matching a grid tile = steal; dock sheet / home menu OK.
+                home_menu = set((ident or {}).get('texts') or []) & {
+                    'Reload layout', 'Wallpaper', 'Pages',
+                }
+                if not home_menu:
+                    stole = next((n for n in tile_names if n.lower() == title.lower()
+                                  or n.lower() in title.lower()), None)
+                    if stole is None and title and title not in (
+                        'com.android.settings', 'Settings',
+                    ):
+                        # Sheet with unknown title — still a steal if title looks like a tile
+                        stole = next((n for n in tile_names if n.lower() in title.lower()), None)
+            if launched_away and stole is None:
+                stole = f'launched:{top}'
             if expect == 'dock':
-                ok = stole is None or (ident or {}).get('has_sheet')
-                # Prefer: not a grid tile name, or dock desc
+                # Dock long-press should open the dock item sheet, not a grid tile.
+                ok = stole is None and (sheet or launched_away or True)
+                # Prefer: sheet present and not a grid tile
                 ok = stole is None
             else:
                 ok = stole is None
