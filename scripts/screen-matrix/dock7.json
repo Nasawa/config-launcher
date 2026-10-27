@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "revision": 2,
+  "grid": {
+    "columns": 4,
+    "rows": 5
+  },
+  "pages": [
+    {
+      "id": "home",
+      "title": "Home",
+      "items": [
+        {
+          "id": "a-settings",
+          "type": "app",
+          "package": "com.android.settings",
+          "label": "QA Settings",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": "a-long",
+          "type": "app",
+          "package": "com.android.settings",
+          "label": "A very long label that must ellipsize",
+          "x": 1,
+          "y": 0
+        },
+        {
+          "id": "a-missing",
+          "type": "app",
+          "package": "org.example.notinstalled",
+          "label": "Missing",
+          "x": 2,
+          "y": 0
+        },
+        {
+          "id": "a-set2",
+          "type": "app",
+          "package": "com.android.settings",
+          "label": "Wide WWWW",
+          "x": 3,
+          "y": 0
+        },
+        {
+          "id": "a-set3",
+          "type": "app",
+          "package": "com.android.settings",
+          "label": "Row two",
+          "x": 0,
+          "y": 1
+        }
+      ]
+    },
+    {
+      "id": "second",
+      "title": "Second",
+      "items": [
+        {
+          "id": "a-second",
+          "type": "app",
+          "package": "com.android.settings",
+          "label": "Second tile",
+          "x": 0,
+          "y": 0
+        }
+      ]
+    }
+  ],
+  "dock": [
+    {
+      "id": "d-dock1",
+      "type": "app",
+      "package": "com.android.settings",
+      "label": "Dock1"
+    },
+    {
+      "id": "d-dock2",
+      "type": "app",
+      "package": "com.android.settings",
+      "label": "Dock2"
+    },
+    {
+      "id": "d-dock3",
+      "type": "app",
+      "package": "com.android.settings",
+      "label": "Dock3"
+    },
+    {
+      "id": "d-dock4",
+      "type": "app",
+      "package": "com.android.settings",
+      "label": "Dock4"
+    },
+    {
+      "id": "d-dock5",
+      "type": "app",
+      "package": "com.android.settings",
+      "label": "Dock5"
+    },
+    {
+      "id": "d-dock6",
+      "type": "app",
+      "package": "com.android.settings",
+      "label": "Dock6"
+    },
+    {
+      "id": "d-dock7",
+      "type": "app",
+      "package": "com.android.settings",
+      "label": "Dock7"
+    }
+  ],
+  "elements": [
+    {
+      "id": "t-main",
+      "type": "titleBar",
+      "anchor": "top",
+      "content": {
+        "slots": {
+          "start": "{date:EEE d MMM yyyy}",
+          "center": "{page}",
+          "end": "{time:HH:mm}"
+        }
+      },
+      "style": {
+        "size": "large",
+        "color": "light",
+        "padding": {
+          "horizontal": 16,
+          "vertical": 6
+        },
+        "backdrop": {
+          "color": "#000000",
+          "opacity": 60,
+          "radius": 12
+        }
+      }
+    }
+  ]
+}
