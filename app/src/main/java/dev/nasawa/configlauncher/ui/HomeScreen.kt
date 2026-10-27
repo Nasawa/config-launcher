@@ -294,7 +294,8 @@ fun HomeScreen(vm: HomeViewModel) {
             // Measure the page column (window − rail after safeDrawing) so title-bar padding
             // keys off the laid-out height, not Configuration.screenHeightDp (Pragma #201).
             BoxWithConstraints(mod) {
-            val pageColH = maxHeight.value
+            // Unbounded maxHeight is Dp.Infinity; treat as short so title-bar pad still absorbs.
+            val pageColH = maxHeight.value.let { if (it.isFinite()) it else 0f }
             Column(Modifier.fillMaxSize()) {
                 // #75: the edit bar takes the top row's place at the same height, so the grid doesn't jump under the finger.
                 // §1.5 rail: Apps/Done and ⋮ move onto the rail head; the source note and "Editing layout" are omitted.
@@ -930,19 +931,24 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
             val cellHDp = if (pitch.capped) pitch.pitchH.dp else ((pitch.blockH - 2 * padDp) / rows).dp
             val baseXDp = (originX + padDp).dp
             val baseYDp = (originY + padDp).dp
+            // §17.8 / L13: host size capped at span × 80 × 1.5 and centred in the span.
             tiles.forEach { t ->
                 val p = t.placement
+                val (hostW, hostH) = HomeGeometry.widgetHostSizeDp(p.w, p.h, cellWDp.value, cellHDp.value)
+                val (offX, offY) = HomeGeometry.widgetHostOffsetDp(p.w, p.h, cellWDp.value, cellHDp.value)
                 ConsentTile(
                     t, onReview = { onTile(t) },
-                    modifier = Modifier.offset(baseXDp + cellWDp * p.x, baseYDp + cellHDp * p.y).size(cellWDp * p.w, cellHDp * p.h),
+                    modifier = Modifier.offset(baseXDp + cellWDp * p.x + offX.dp, baseYDp + cellHDp * p.y + offY.dp).size(hostW.dp, hostH.dp),
                     onLongPress = { onWidgetLong(WidgetSheetFor(t, null)) },
                 )
             }
             live.forEach { l ->
                 val p = l.placement
+                val (hostW, hostH) = HomeGeometry.widgetHostSizeDp(p.w, p.h, cellWDp.value, cellHDp.value)
+                val (offX, offY) = HomeGeometry.widgetHostOffsetDp(p.w, p.h, cellWDp.value, cellHDp.value)
                 LiveCardTarget(
                     l, onLongPress = { onWidgetLong(WidgetSheetFor(null, l)) }, onPermissions = { onPermissions(l.id) },
-                    modifier = Modifier.offset(baseXDp + cellWDp * p.x, baseYDp + cellHDp * p.y).size(cellWDp * p.w, cellHDp * p.h),
+                    modifier = Modifier.offset(baseXDp + cellWDp * p.x + offX.dp, baseYDp + cellHDp * p.y + offY.dp).size(hostW.dp, hostH.dp),
                 )
             }
         }

@@ -46,7 +46,10 @@ object HomeGeometry {
      * Taller page columns keep the file's padding.
      */
     fun titleBarPaddingV(stylePaddingV: Int, pageColumnHeightDp: Float): Int =
-        if (pageColumnHeightDp < HEIGHT_COMPACT_DP) 0 else stylePaddingV.coerceAtLeast(0)
+        // Non-finite (Infinity from an unbounded BoxWithConstraints, NaN) must not keep the pad:
+        // Infinity < 480 is false and would leave padding.vertical on a short multi-window pane.
+        if (!pageColumnHeightDp.isFinite() || pageColumnHeightDp < HEIGHT_COMPACT_DP) 0
+        else stylePaddingV.coerceAtLeast(0)
 
     /** §1.5 content-width floor for chrome rows on Medium/Expanded (banner, notice, title bar, bottom dock). */
     const val CONTENT_WIDTH_FLOOR_DP = 576f
@@ -200,6 +203,32 @@ object HomeGeometry {
         val availW = 960f - RAIL_WIDTH_DP
         val availH = (600f - chromeAboveBelowDp).coerceAtLeast(0f)
         return pitch(availW, availH, 4, 5, WidthClass.Expanded).pitchH
+    }
+
+    /** §17.8 / L13 reference cell (dp). Cards scale with k = clamp(cell/80, 0.85, 1.5). */
+    const val CELL_REF_DP = 80f
+    /** §17.8 / L13: on-screen card side must not exceed k=1.5 → span × 80 × 1.5. */
+    const val WIDGET_K_MAX = 1.5f
+
+    /**
+     * Host size for a widget spanning [spanW]×[spanH] cells (§17.8 / test-plan L13).
+     * Each axis is min(span × cellPitch, span × 80 × 1.5) so a larger Medium/Expanded pitch
+     * (rail freeing height) cannot stretch cards past the k ≤ 1.5 cap.
+     */
+    fun widgetHostSizeDp(spanW: Int, spanH: Int, cellW: Float, cellH: Float): Pair<Float, Float> {
+        val sw = spanW.coerceAtLeast(1)
+        val sh = spanH.coerceAtLeast(1)
+        val maxW = sw * CELL_REF_DP * WIDGET_K_MAX
+        val maxH = sh * CELL_REF_DP * WIDGET_K_MAX
+        return min(cellW * sw, maxW) to min(cellH * sh, maxH)
+    }
+
+    /** Offset to centre a capped widget host inside its span × pitch area. */
+    fun widgetHostOffsetDp(spanW: Int, spanH: Int, cellW: Float, cellH: Float): Pair<Float, Float> {
+        val sw = spanW.coerceAtLeast(1)
+        val sh = spanH.coerceAtLeast(1)
+        val (hw, hh) = widgetHostSizeDp(sw, sh, cellW, cellH)
+        return ((cellW * sw - hw) / 2f).coerceAtLeast(0f) to ((cellH * sh - hh) / 2f).coerceAtLeast(0f)
     }
 
     enum class IconStep(val iconDp: Int, val showLabel: Boolean) {

@@ -230,4 +230,11 @@ class DockRailGeometryTest {
         // Prefer aspect ceiling over MIN_CELL when 1.25·H0 < 64.
         assertTrue(p.pitchW <= 58.01f)
     }
+
+    @Test fun titleBarPaddingAbsorbsNonFinitePageColumn() {
+        // BoxWithConstraints can report Dp.Infinity; Infinity < 480 is false and used to keep the pad.
+        assertEquals(0, HomeGeometry.titleBarPaddingV(6, Float.POSITIVE_INFINITY))
+        assertEquals(0, HomeGeometry.titleBarPaddingV(6, Float.NEGATIVE_INFINITY))
+        assertEquals(0, HomeGeometry.titleBarPaddingV(6, Float.NaN))
+    }
 }
