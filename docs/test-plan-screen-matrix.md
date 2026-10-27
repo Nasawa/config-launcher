@@ -156,6 +156,16 @@ lands. Under `dev8` they block. F1 (crashes/ANRs) always blocks.
 **Blocks dev8 only** (advisory under dev7):
 - L1–L5 and L7 on large-tier points (tablets, fold; see §4.1). L6/L8/L10/L12/L13 automated per #197; L9 needs Sprite (WindowInfoTracker); L11 deferred to dev9.
 - G1–G3 on tablets, landscape and the fold (Q2 resolved by #185 / ux.md §1.5).
+- **Manual edge drag-and-drop** (stable host only — hardware-accelerated emulator or a real device; software rendering hits SystemUI ANRs that limited the #194 review). Short checklist, not a matrix shard:
+
+  | Size | Orientations |
+  |---|---|
+  | 411 dp phone | port + land |
+  | t7 (7") | port + land |
+  | t10 (10") | port + land |
+  | Fold open | flat |
+
+  For each: long-press a home item and drop on **every grid edge and corner**, then into each **side gutter**. Pass = drop snaps to a real cell on edges/corners; a gutter drop is **refused** (item returns); **no crash**. One pass per size/orientation is enough — no font/night variants.
 
 **Advisory everywhere:**
 - Everything at font 2.0 except F1 (crashes always block). ux.md §12 allows hidden labels at ≥ 150 % and Q-S5
@@ -210,6 +220,7 @@ side nav/cutout is not a layout bias (#197).
 | L9 | Sprite | production must consume `WindowInfoTracker` before hinge asserts |
 | L11 | dev9 | instrumented margins |
 | L8 full hash | matrix + androidTest | unit pins cancel contract; device rotate smoke is best-effort without seeded fixture |
+| Edge DnD | **manual, blocks dev8** | every grid edge/corner + side gutters; 411 / t7 / t10 port+land + fold open; stable host only (§4) |
 
 ## 5. CI vs on-box
 
