@@ -268,8 +268,30 @@ with 0.6 dp spare, so it's **step 2: 48 dp icons, labels shown**. (At font 1.0 t
 56 dp needs a row pitch of about 84 dp at font 1.0.) A notice-row chip there (its own 48 dp row above the title bar,
 §6.1) takes about 10 dp per row and drops it to step 3.
 
-**Phone goldens move once.** Drawing 56 dp changes `PhoneOutputGoldenTest` on any phone whose cells reach step 1. They
-are re-baselined once, in the same PR as the icon change; after that, Compact stays unchanged.
+**Row-pitch floors for the ladder (font 1.0).** Content box = row pitch − 12 dp (4 dp cell pad + 8 dp tile pad). Label
+line ≈ 16 dp at font 1.0 (≈ 17 dp at 1.3). So the first step that fits needs:
+1. **56 dp + label:** pitchH ≥ **84 dp** (56 + 16 + 12). §1.1's **80 dp** cell minimum is the preferred floor for this
+   step; with the end-edge rail reclaiming the dock on t7-land / t10-land, expected pitch is about 85 dp and clears it.
+2. **48 dp + label:** pitchH ≥ **76 dp** (48 + 16 + 12). Labels stay whole.
+3. **48 dp, label hidden:** pitchH ≥ **60 dp** (48 + 12). Labels are cleanly absent (still spoken by TalkBack), never
+   clipped.
+
+A short window that still has a bottom dock (e.g. t7-land before the rail lands, measured ~64.5 dp on #194) lands on
+step 3. The runtime ladder is what handles short windows; the §15 load-time fit check stays on a portrait bar at
+`smallestScreenWidthDp` and is not wired to window metrics (Q-A12). No extra title-bar step for landscape.
+
+**Centring is measured inside the safe area.** On Medium/Expanded the block is centred in the page area after
+`WindowInsets.safeDrawing` (system bars and cutouts). Left and right margins match within 1 px of that area; measuring
+from the raw screen edge can show a few dp of asymmetry from a side nav bar or cutout and is not a layout bias.
+
+**Aspect caps are applied in px with floor.** `pitchW` is derived so the on-screen cell never rounds *up* past 1.25 ×
+height (and height never past 1.5 × width). A check may allow +1 px of measurement slack; the user-visible intent stays
+a hard ≤ 1.25 : 1 / ≤ 1.5 : 1 cap.
+
+**Phone output stays identical.** There are no screenshot goldens in the repo. `PhoneOutputGoldenTest` pins
+only each fixture's config JSON errors or canonical SHA-256 (and load warnings) in `test-fixtures/phone-output.json`,
+shared with `scripts/validate.py`. Drawing 56 dp icons does not change that file; Compact layout stays the fill-width
+behaviour it always was, and the golden stays green without a re-baseline.
 
 **Content width for the rows above and below the grid.** On Medium and Expanded, the §6.1 banner, the notice row, the
 §1.3 page label, the §15 title bar and a bottom dock are centred on the grid block and use the **content width**: the
