@@ -293,15 +293,18 @@ line ≈ 16 dp at font 1.0 (≈ 17 dp at 1.3). The first step that fits wins; **
      `warn_titlebar_fit` stay **load-time only** against a portrait bar at `smallestScreenWidthDp` (Q-A12) — never
      re-run from this short landscape height.
    - **Page dots:** stay as today (~20 dp with their 4 dp padding); not further shrunk.
-   - **Grid:** fills the rest. `pitchH` may sit at **≥ 48 dp** (below step 3's 60). Icons stay **48 dp** with labels
-     hidden (they may fill the cell; the 12 dp content-pad math no longer fits). On Medium/Expanded, the 1.25 : 1
-     aspect ceiling **wins over** the 64 dp preferred min cell when `1.25 · pitchH < 64`, so `pitchW` can be under 64.
-   - **Touch:** each cell's **whole area** is the hit target and must be **≥ 48 × 48 dp**; the 2 dp visual gap sits
-     **inside** that hit area (not outside it).
-   - **If even that can't reach rows × 48** (banner or notice row up, taller title text, etc.): still do not drop
-     rows and do **not** invent a window-metrics fit warning. Q-A12 must not be wired to the current window. The
-     touch-floor check (L16) fails until the extra chrome is gone or the window is taller; existing
-     `warn_titlebar_fit` / `warn_titlebar_fit_size` strings stay for the load-time title-bar ladder only.
+   - **Grid:** fills the rest. Prefer `pitchH` ≥ **48 dp** (below step 3's 60). Icons stay **48 dp** with labels
+     hidden when that fits (they may fill the cell; the 12 dp content-pad math no longer fits). On Medium/Expanded, the
+     1.25 : 1 aspect ceiling **wins over** the 64 dp preferred min cell when `1.25 · pitchH < 64`, so `pitchW` can be
+     under 64.
+   - **Touch (preferred):** each cell's **whole area** is the hit target and must be **≥ 48 × 48 dp**; the 2 dp visual
+     gap sits **inside** that hit area (not outside it).
+   - **When `rows × 48` still can't fit** (short multi-window pane, banner/notice up, etc.): still **do not drop
+     rows**. Apply the §12 **Short-pane grid hit targets** exception: hit targets are the **visible, non-overlapping
+     cell area** (no grow-down / grow-up overlap between grid rows; the visible tile is the one hit). The title bar
+     keeps its **48 dp** `{page}` target. `pitchH` may sit as low as **32 dp**. Below 32, L16 fails — still no
+     window-metrics fit warning (Q-A12). Existing `warn_titlebar_fit` / `warn_titlebar_fit_size` strings stay for the
+     load-time title-bar ladder only.
 
 A short window that still has a bottom dock (e.g. t7-land before the rail lands, measured ~64.5 dp on #194) lands on
 step 3. Phone landscape with the rail lands on step 4 when height forces it. The runtime ladder is what handles short
@@ -886,12 +889,24 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 | Actions | Every drag action also has custom accessibility actions on the item (`Move to…` with a page/row/column picker, `Add to folder…`, `Move to dock`, `Remove from home`, `Hide`), so the layout is fully editable without drag. Each is one write. `Add to folder…` is added in the same PR that builds dropping onto a folder |
 | Edit mode | Announce `Editing layout. Double-tap Done when finished.` Focus order: top bar, then grid in reading order, then dock. With a dock rail (§1.5): the rail head (`Done`, `⋮`), then the grid, then the rail's dock items top to bottom |
 | Banners | Polite live region, announced once. Buttons are focusable. The error detail view reads as a list of problems |
-| Touch targets | ≥ **48 × 48 dp** for everything (cells 64 × 80 dp, dock slots 64 dp, rail slots 64 dp shrinking to 48 dp, chip ≥ 48 dp hit area, banner buttons 48 dp tall) |
+| Touch targets | ≥ **48 × 48 dp** for everything (cells 64 × 80 dp, dock slots 64 dp, rail slots 64 dp shrinking to 48 dp, chip ≥ 48 dp hit area, banner buttons 48 dp tall). **Exception:** [Short-pane grid hit targets](#short-pane-grid-hit-targets) below |
 | Font scaling | Labels and text use sp and follow the system font size up to 200 %. Grid labels stay 1 line and ellipsize; at ≥ 150 % labels may be hidden on the home grid (still spoken by TalkBack) if cells can't fit them. **A label is shown whole or not at all, for any reason** (font scale, a banner, B9, the notice row, a small phone): when a cell is shorter than icon + full label line (even after the icon steps down to 48 dp, §1.5 icon ladder), the label is hidden, never cut through the letters (#173, 320 dp). Hidden labels are still spoken by TalkBack. The drawer always shows labels (wrapping to 2 lines). Banners and settings wrap, never truncate |
 | Contrast | Text in app UI (drawer, settings, banners, detail view) ≥ 4.5:1 and icons/controls ≥ 3:1, in light and dark (the home theme, §12.1: follows the system unless `launcher.json` overrides it; no dynamic colour in this release). Home labels over wallpaper: white text with a 1 dp 50 % black shadow. With `Label backdrop` on, the 60 % black scrim is added (§1.1). Over a pure white wallpaper, white text on that scrim alone measures 5.7:1 (WCAG, worst case), so it meets 4.5:1 on any wallpaper |
 | Reduced motion | Respect `Settings.Global.ANIMATOR_DURATION_SCALE == 0` and "Remove animations": no page-slide spring, folder open as a fade, no shake (use a red outline), no jiggle ever |
 | Colour | Status is never colour-only: ▲ warning / ■ error glyphs, dimmed tiles also say "not installed" to TalkBack |
 
+<a id="short-pane-grid-hit-targets"></a>
+**Short-pane grid hit targets** (scoped exception to the 48 × 48 floor; §1.5 step 4). In a short multi-window pane
+where the file's `rows × 48 dp` cannot fit in the measured page column after chrome (title bar, page dots, safeDrawing
+insets; e.g. Grace on #201 @ 686e98d: 800 × 312 dp, density 160, 5-row file → `pitchH` ≈ 39 dp), **rows are never
+dropped** (Option B). Hit targets for home-grid tiles are the **visible, non-overlapping cell area** — no grow-down
+(or grow-up) overlap band between grid rows; the visible tile is the one hit. Growing a short cell's hit area into the
+next row (or into the title bar) is forbidden: it left the upper tile at an effective ~49 × 39 under the §12 floor while
+clipping the `{page}` clickable under 48. The **title bar keeps its ≥ 48 dp** `{page}` target. `pitchH` floor for this
+exception is **32 dp** (WCAG 2.2 AA's minimum target size is 24 CSS px; 32 dp is the launcher floor above that). Below
+32, L16 fails; do **not** write a window-metrics fit warning (Q-A12). Phone-landscape and other windows that still clear
+`rows × 48` keep the normal 48 × 48 whole-cell rule. Reclaiming chrome so 48 dp targets return on short panes is a
+follow-up (dots into the title bar, text-only title bar, etc.).
 
 ### 12.1 Home theme: light and dark (Q-T6)
 **Christopher (Q-T6):** home follows the phone's **system light/dark setting** by default, and `launcher.json` can
@@ -964,7 +979,7 @@ this table.
 - [ ] First run (§7) with exact copy, `Skip for now` (app-private source, Choose folder later, Use phone storage, one-time reminder), persistable grant, three folder outcomes, format note, home role request (RoleManager), one-time hint.
 - [ ] Settings (§8): Config folder (incl. Choose folder / Use phone storage), Ask before merging, Restore previous layout, Include work apps in config, Hidden apps, Label backdrop, Open keyboard with drawer, Home app, Grid, About.
 - [ ] Snackbars (§9) with Undo where listed.
-- [ ] Accessibility (§12): labels, custom actions for every drag action, 48 dp targets, font scaling, reduced motion.
+- [ ] Accessibility (§12): labels, custom actions for every drag action, 48 dp targets (Short-pane grid hit targets exception on short multi-window panes), font scaling, reduced motion.
 - [ ] All copy in `strings.xml` with plurals.
 - [ ] Manual device check (#93): with TalkBack on, opening the Pages sheet puts focus on the current row, announced as selected (`Selected, Home, page 1 of 3`). Hint: a `FocusRequester` on the current row, requested after the sheet settles (`sheetState.currentValue == Expanded`), plus `Modifier.semantics { selected = true }` on that row.
 - [ ] Manual tests: edit the file on a PC via Syncthing while the phone is on home, in edit mode, and mid-drag. Corrupt the file, then edit on the phone (broken copy). Revoke access in system settings. Delete the file. Newer `schemaVersion`. Font 200 %. TalkBack-only layout edit.
