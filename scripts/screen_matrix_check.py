@@ -380,6 +380,40 @@ def fixture_items(name):
     return out
 
 
+def fixture_grid(name):
+    """(columns, rows) from the fixture grid, or (None, None) when missing."""
+    path = os.path.join(FIXDIR, name or 'launcher.json')
+    try:
+        data = json.load(open(path, encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None, None
+    g = data.get('grid') or {}
+    cols, rows = g.get('columns'), g.get('rows')
+    try:
+        cols = int(cols) if cols is not None else None
+        rows = int(rows) if rows is not None else None
+    except (TypeError, ValueError):
+        return None, None
+    return cols, rows
+
+
+def fixture_cards(name):
+    """[(title_or_id, x, y, w, h), ...] for card elements in a matrix fixture."""
+    path = os.path.join(FIXDIR, name or 'launcher.json')
+    try:
+        data = json.load(open(path, encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return []
+    out = []
+    for el in data.get('elements') or []:
+        if el.get('type') != 'card':
+            continue
+        out.append((el.get('title') or el.get('id') or '',
+                    int(el.get('x', 0)), int(el.get('y', 0)),
+                    int(el.get('w', 1) or 1), int(el.get('h', 1) or 1)))
+    return out
+
+
 def grid_tiles(nodes, tb, screen, s):
     """Clickable home-grid tiles with an optional nearby label (for L2). Excludes the dock and header.
 
@@ -460,6 +494,73 @@ def pitch_of(tile_nodes, s):
     block_top = min(tops)
     return pitchW, pitchH, block_left, block_top
 
+
+def pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture_name):
+    """pitch_of, refined with fixture (col,row) anchors so a single occupied icon row
+    at y=4 does not collapse to row 0, and L3 can span fixture grid.columns (#205).
+
+    Returns (pitchW_dp, pitchH_dp, block_left_px, block_top_px, grid_columns) or None.
+    grid_columns is fixture columns when known, else the number of occupied x clusters.
+    """
+    base = pitch_of(tile_nodes, s) if tile_nodes else None
+    if base is None and not card_nodes:
+        return None
+    pitchW, pitchH, block_left, block_top = base if base else (80.0, 80.0, 0.0, 0.0)
+    items = fixture_items(fixture_name) if fixture_name else []
+    cards_fx = fixture_cards(fixture_name) if fixture_name else []
+    cols_fx, _rows_fx = fixture_grid(fixture_name) if fixture_name else (None, None)
+
+    # Row anchors: (top_px, fixture_row). Cards contribute their top row; tiles their y.
+    row_anchors = []
+    for n, lab in (pairs or []):
+        key = (lab.text if lab else '') or (n.desc or '').split(',')[0]
+        exp = next((it for it in items if it[0] and key.startswith(it[0][:12])), None)
+        if exp is not None:
+            row_anchors.append((float(n.b[1]), exp[2]))
+    for n in (card_nodes or []):
+        desc_l = (n.desc or '').lower()
+        exp = next((it for it in cards_fx
+                    if it[0] and desc_l.startswith(it[0].lower()[:12])), None)
+        if exp is not None:
+            row_anchors.append((float(n.b[1]), exp[2]))
+
+    # Column anchors: (cx_px, fixture_col) from 1×1 tiles (multi-span cards skew cx).
+    col_anchors = []
+    for n, lab in (pairs or []):
+        key = (lab.text if lab else '') or (n.desc or '').split(',')[0]
+        exp = next((it for it in items if it[0] and key.startswith(it[0][:12])), None)
+        if exp is not None and exp[3] == 1:
+            col_anchors.append((float(n.cx), exp[1]))
+
+    # pitchH / block_top from distinct fixture rows (#205: icons alone at y=4).
+    if len({r for _, r in row_anchors}) >= 2:
+        # Median of (Δtop / Δrow) over pairs with Δrow > 0.
+        ratios = []
+        for i in range(len(row_anchors)):
+            for j in range(i + 1, len(row_anchors)):
+                t0, r0 = row_anchors[i]
+                t1, r1 = row_anchors[j]
+                if r1 == r0:
+                    continue
+                ratios.append((t1 - t0) / (r1 - r0))
+        if ratios:
+            pitchH_px = sorted(ratios)[len(ratios) // 2]
+            pitchH = pitchH_px / s
+            block_tops = [t - r * pitchH_px for t, r in row_anchors]
+            block_top = sorted(block_tops)[len(block_tops) // 2]
+    elif row_anchors:
+        # One fixture row occupied: keep pitchH from tiles, back out block_top.
+        t0, r0 = row_anchors[0]
+        block_top = t0 - r0 * pitchH * s
+
+    # block_left from fixture columns when the leftmost occupied col is not 0.
+    if col_anchors and pitchW > 0:
+        lefts = [cx - col * pitchW * s - pitchW * s / 2 for cx, col in col_anchors]
+        block_left = sorted(lefts)[len(lefts) // 2]
+
+    xs = _cluster_1d([n.cx for n in tile_nodes], min_gap=max(8, 0.25 * s * 48)) if tile_nodes else []
+    grid_columns = cols_fx if cols_fx and cols_fx > 0 else max(1, len(xs))
+    return pitchW, pitchH, block_left, block_top, grid_columns
 
 
 def parse_safe_drawing_insets(text, W, H):
@@ -835,9 +936,15 @@ def run_checks(d):
             f'{len(sb)} labels, clipped: {clipped[:5]}', 'ux.md §2.1, §12 Font scaling')
         sf = next((n for n in dr if n.text == 'Search apps' or (n.desc or '').startswith('Search apps')), None)
         if sf is not None:
-            # ux.md §2.1: the drawer opens full height, so the search field sits near the top (#179: half sheet)
-            add('D1', 'Drawer opens full height', sf.b[1] <= H * 0.25,
-                f'search field top y {sf.b[1]} of {H} ({sf.b[1] * 100 // max(H, 1)}%)', 'ux.md §2.1; #179 (fixed by #181)')
+            # ux.md §2.1 / docs/test-plan-screen-matrix.md D1 / #202 @ 4247606:
+            # search top ≤ max(25% of window height, 96 dp). Short panes (e.g. 800×312) keep the
+            # same absolute chrome (~88 dp) that passes at 24% on 800×360; half-sheet (55–61%) fails.
+            top_dp = sf.b[1] / s
+            limit_dp = max(H / s * 0.25, 96.0)
+            add('D1', 'Drawer opens full height', top_dp <= limit_dp,
+                f'search field top y {sf.b[1]} of {H} ({sf.b[1] * 100 // max(H, 1)}%; '
+                f'{top_dp:.0f} dp ≤ max(25%, 96)={limit_dp:.0f} dp)',
+                'ux.md §2.1; test-plan-screen-matrix.md D1; #179 (fixed by #181); short-pane floor (#202)')
         # D4 drawer label contrast against the sheet, from drawer.png (#182 drew white labels on #FEF7FF, 1.05:1)
         im = open_png(os.path.join(d, 'drawer.png'))
         if im is None:
@@ -1068,7 +1175,10 @@ def run_checks(d):
         tb = title_bar(nodes, s)
         pairs, labels_l, dock = grid_tiles(nodes, tb, (W or 1, H or 1), s)
         tile_nodes = [n for n, _ in pairs]
-        pitch = pitch_of(tile_nodes, s) if tile_nodes else None
+        _labels_g, _tiles_g, _dock_g, card_nodes, _region = grid_parts(nodes, tb, (W or 1, H or 1))
+        pitch5 = pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture) if (tile_nodes or card_nodes) else None
+        pitch = pitch5[:4] if pitch5 else None
+        grid_columns = pitch5[4] if pitch5 else None
         width_dp = (W / s) if W and s else 0
         height_dp = (H / s) if H and s else 0
         pid = m.get('id', '')
@@ -1135,13 +1245,14 @@ def run_checks(d):
             # Page column = window − safeDrawing − rail. Margins from *column centres* (#197),
             # not outer tile/label edges (fold-open-v1 was a false 11 px asym on edges).
             col_l, col_t, col_r, col_b = page_column_box(W or 0, H or 0, safe, dock, nodes=nodes)
-            xs = _cluster_1d([n.cx for n in tile_nodes], min_gap=max(8, 0.25 * s * 48)) if tile_nodes else []
-            if xs:
-                left_m_px = min(xs) - col_l
-                right_m_px = col_r - max(xs)
-            else:
-                left_m_px = block_left + pitchW * s / 2 - col_l
-                right_m_px = col_r - (block_left + pitchW * s / 2)
+            # Span the full fixture grid.columns (not only occupied tile centres) so a
+            # sparse page like cards-large (icons in cols 0–1 of 4) does not report
+            # asymmetric L/R margins (#205).
+            n_cols = grid_columns or 1
+            left_centre = block_left + pitchW * s / 2
+            right_centre = block_left + pitchW * s / 2 + (n_cols - 1) * pitchW * s
+            left_m_px = left_centre - col_l
+            right_m_px = col_r - right_centre
             ok_margin = abs(left_m_px - right_m_px) <= 1
             ok = ok_cap and ok_aspect and ok_margin
             rail_note = ''
