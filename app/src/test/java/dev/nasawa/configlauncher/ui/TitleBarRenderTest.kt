@@ -82,7 +82,8 @@ class TitleBarRenderTest {
         fun said(n: SemanticsNode) = n.config.getOrElseNullable(SemanticsProperties.ContentDescription) { null }.orEmpty().joinToString()
         val taps = shown.filter { SemanticsActions.OnClick in it.config }
         assertEquals("only the {page} slot is tappable", listOf("Home, Pages"), taps.map(::said))
-        val date = shown.single { said(it) == "Mon 26 Oct 2026" }.boundsInRoot
+        // Date string follows the device clock; match the EEE d MMM yyyy shape rather than a fixed day.
+        val date = shown.single { said(it).matches(Regex("""[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2} \d{4}""")) }.boundsInRoot
         val clock = shown.single { said(it).matches(Regex("\\d\\d:\\d\\d")) }.boundsInRoot
         val page = taps.single().touchBoundsInRoot
         val dp = rule.density.density
