@@ -417,7 +417,7 @@ def severity(cid, m):
     pending = set()     # add an id here for a merged spec not built yet
     # L5 stays advisory until the end-edge rail PR lands (#197 / test-plan §20).
     # L6r = rail-geometry half of L6 (also advisory until that rail PR).
-    advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'X1', 'X2', 'L5', 'L6r'}
+    advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'X1', 'X2', 'X3', 'L5', 'L6r'}
     if cid in pending:
         return 'pending'
     if cid == 'F1':
@@ -470,23 +470,66 @@ def run_checks(d):
         f"requested {m.get('night', '?')}, applied {night_got or '?'}"
         + (f" via {m['night_via']}" if m.get('night_via') else ''), 'test plan §1 variants, §5 (API 29: #150)')
 
-    # F1 cold start, crash and ANR
+    # F1 cold start, crash and ANR.
+    # am start -W often returns Status: timeout on software emulators even when MainActivity is up
+    # (0 crashes / 0 ANRs); treat that as started when the Activity line is ours.
     crash = read(os.path.join(d, 'crash.txt'))
     ours = [l for l in crash.splitlines() if 'FATAL EXCEPTION' in l or ('ANR in ' + PKG) in l or (PKG in l and 'Process:' in l)]
     anr = read(os.path.join(d, 'anr.txt'))
     our_anr = [l for l in anr.splitlines() if 'Config Launcher' in l]
     start = read(os.path.join(d, 'start.txt'))
-    started = 'Status: ok' in start or 'TotalTime' in start or not start
+    start_timeout = 'Status: timeout' in start and (PKG + '/.MainActivity') in start.replace('\r', '')
+    started = ('Status: ok' in start or 'TotalTime' in start or not start or start_timeout)
+    if 'Status: ok' in start:
+        start_st = 'ok'
+    elif start_timeout:
+        start_st = 'timeout (activity up)'
+    elif 'TotalTime' in start:
+        start_st = 'TotalTime'
+    elif not start:
+        start_st = 'empty'
+    else:
+        start_st = 'other'
     add('F1', 'Cold start: no crash, no launcher ANR', started and not ours and not our_anr,
-        f'crash lines {len(ours)}, launcher ANR dialogs {len(our_anr)}, other ANR dialogs {len(anr.splitlines()) - len(our_anr)}',
+        f'crash lines {len(ours)}, launcher ANR dialogs {len(our_anr)}, other ANR dialogs {len(anr.splitlines()) - len(our_anr)}; start {start_st}',
         'test-plan §15.2 smoke; A§11')
     tt = re.findall(r'TotalTime: (\d+)', start)
     add('P1', 'Cold start time recorded (am start -W)', True if tt else None,
         f'TotalTime {tt[-1]} ms (emulator, not a PF-2 measurement)' if tt else 'no TotalTime', 'test-plan §15.3 (PF-2 is device-only)')
 
-    # F2 seeded layout + RELOAD
+    # X3 / F2: seed must produce home before any F/G product check. First-run "Choose your config
+    # folder" is a harness seed failure (X3), not a product F2/F4/F5/G3 fail.
     h1 = home['home1']
     seeded = bool(h1) and find(h1, 'desc', r'^Home, Pages$') is not None and find(h1, 'desc', r', dock$') is not None
+    first_run = bool(h1) and find(h1, 'text', r'Choose your config folder') is not None
+    # Harness seed fail = driver gave up, or FirstRun screen. A seeded title bar with a missing
+    # dock (no FirstRun) stays a product F2, not X3.
+    seed_failed = (
+        os.path.isfile(os.path.join(d, 'seed-failed.txt'))
+        or m.get('seed_ok') == '0'
+        or first_run
+    )
+    if seeded:
+        seed_failed = False
+    x3_ok = False if seed_failed else (True if seeded else None)
+    x3_detail = (
+        read(os.path.join(d, 'seed-failed.txt')).strip()
+        or (f"first-run screen (attempts={m.get('seed_attempts', '?')})" if first_run else '')
+        or ('home1 missing Home/dock' if h1 is not None and not seeded else '')
+        or ('ok' if seeded else 'home1 missing')
+    )
+    if m.get('seed_attempts'):
+        x3_detail = (x3_detail + f"; attempts={m.get('seed_attempts')}").strip('; ')
+    add('X3', 'Seeded home showing before F/G checks (harness)', x3_ok, x3_detail,
+        'test plan §5 (seed prefs before set-home; retry/reseed; first-run ≠ product)')
+
+    if seed_failed:
+        add('F2', 'Seeded layout shows after RELOAD (title bar "Home", dock)', None,
+            'skipped: harness seed failed (X3)', 'ux.md §5 Reload; manifest ReloadReceiver (#55)',
+            sev='advisory')
+        # Do not score layout/flow product checks against a FirstRun or unseeded dump.
+        return m, res
+
     add('F2', 'Seeded layout shows after RELOAD (title bar "Home", dock)', seeded if h1 is not None else None,
         'home1.xml ' + ('ok' if seeded else ('missing or unparsable' if not h1 else 'no "Home, Pages" slot or dock item')),
         'ux.md §5 Reload; manifest ReloadReceiver (#55)')

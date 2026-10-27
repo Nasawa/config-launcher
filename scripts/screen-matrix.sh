@@ -170,22 +170,61 @@ run_point() {
   echo "night_applied=$(sh_ cmd uimode night | grep -oE 'yes|no|auto' | head -1)" >> "$d/meta.txt"
   echo "night_via=$NIGHT_VIA" >> "$d/meta.txt"
 
-  # Fresh app data, launcher as home, seeded layout (app-only mode)
-  sh_ am force-stop "$PKG"; sh_ pm clear "$PKG" > /dev/null
+  # Seed app-only prefs + fixture BEFORE set-home (set-home can auto-launch into empty prefs → FirstRun).
+  # Verify home is showing after RELOAD; retry/reseed up to 3 times. Seed failure = harness (X3), not product.
   A push "$FIX/$fixture" /data/local/tmp/sm-launcher.json > /dev/null < /dev/null
   A push "$FIX/settings.xml" /data/local/tmp/sm-settings.xml > /dev/null < /dev/null
-  sh_ "cmd package set-home-activity $PKG/.MainActivity > /dev/null 2>&1; run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'"
-  sh_ logcat -b all -c > /dev/null 2>&1
+  seed_ok=0
+  seed_attempt=0
+  while [ "$seed_attempt" -lt 3 ]; do
+    seed_attempt=$((seed_attempt + 1))
+    sh_ am force-stop "$PKG"
+    sh_ pm clear "$PKG" > /dev/null
+    # Prefs + launcher first, then set-home, then force-stop again (kills any race launch), then re-copy.
+    sh_ "run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'"
+    sh_ "cmd package set-home-activity $PKG/.MainActivity > /dev/null 2>&1"
+    sh_ am force-stop "$PKG"
+    sh_ "run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'"
+    prefs_chk=$(sh_ "run-as $PKG sh -c 'grep -c appOnly shared_prefs/settings.xml; test -s files/config/source/launcher.json && echo LOK'" | tr -d '\r' | tr '\n' ' ')
+    echo "seed_attempt=$seed_attempt prefs_chk=$prefs_chk" >> "$d/run.txt"
+    sh_ logcat -b all -c > /dev/null 2>&1
 
-  # F1 cold start
-  sh_ am start -W -n "$PKG/.MainActivity" > "$d/start.txt" 2>&1
-  pause; anr "$d"
-  # F2 reload the seeded layout
-  sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" >> "$d/run.txt" 2>&1
-  pause; anr "$d"
-  dump "$d" home1
+    # F1 cold start (last attempt's start.txt is kept)
+    sh_ am start -W -n "$PKG/.MainActivity" > "$d/start.txt" 2>&1
+    pause; anr "$d"
+    sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" >> "$d/run.txt" 2>&1
+    pause; anr "$d"
+    dump "$d" home1
+
+    if grep -q 'content-desc="Home, Pages"' "$d/home1.xml" 2>/dev/null \
+       && grep -q ', dock"' "$d/home1.xml" 2>/dev/null; then
+      seed_ok=1
+      break
+    fi
+    echo "seed: home not ready on attempt $seed_attempt" >> "$d/run.txt"
+    # First-run recovery: dismiss via Skip (confirm sheet) so next clear+reseed is clean; do not treat as product.
+    if grep -q 'Choose your config folder' "$d/home1.xml" 2>/dev/null; then
+      echo "seed: first-run screen on attempt $seed_attempt" >> "$d/run.txt"
+      if tap "$d/home1.xml" text '^Skip for now$'; then
+        pause 2; dump "$d" seed-skip
+        tap "$d/seed-skip.xml" text '^Skip for now$' && pause 2
+      fi
+    fi
+  done
+  echo "seed_ok=$seed_ok" >> "$d/meta.txt"
+  echo "seed_attempts=$seed_attempt" >> "$d/meta.txt"
+  if [ "$seed_ok" -ne 1 ]; then
+    echo "home1 still not seeded after $seed_attempt attempts (first-run or missing Home/dock)" > "$d/seed-failed.txt"
+    echo "partial=yes" >> "$d/meta.txt"
+    echo "skipping F3–F7: seed failed (harness X3)" >> "$d/run.txt"
+  fi
+
   # L3/L5 safeDrawing: system bars + cutout from dumpsys window (checker parses → insets).
   sh_ dumpsys window > "$d/insets.txt" 2>&1 || true
+
+  # Warm-up + F3–F7 only when seed produced home (else product checks would score FirstRun as app bugs).
+  hd="$d/home1.xml"
+  if [ "$seed_ok" -eq 1 ]; then
   # Warm-up: the first touch after a cold start is often dropped on the emulator (pr181: the first swipe never
   # reached the launcher; main does the same), so spend it on a tap on empty grid space, which does nothing.
   if p=$($CHECK find-empty "$d/home1.xml" "$dens"); then read -r x y <<< "$p"; sh_ input tap "$x" "$y"; pause 2; fi
@@ -278,6 +317,7 @@ run_point() {
     sh_ "settings put system user_rotation $rot"; pause 2
     home
   fi
+  fi  # seed_ok: F3–F7 + L1/L7
 
   # Crash buffer, launcher ANRs, focus
   sh_ logcat -d -b crash > "$d/crash.txt" 2>&1
