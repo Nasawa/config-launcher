@@ -21,6 +21,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 FIX=$HERE/screen-matrix
 CHECK="python3 $HERE/screen_matrix_check.py"
+TAP_ROUTING="python3 $HERE/screen_matrix_tap_routing.py"
 GATE_RE='^(s320-a51-v1|s320-a51-v2|s320-mdpi-v1|p411-a51-v1|p411-a51-v2|t7-land-v1)$'
 
 SHARD=''; POINTS='.'; OUT=screen-matrix-out; SETTLE=4; APK=''
@@ -406,6 +407,51 @@ run_point() {
 
   $CHECK check "$d" > /dev/null || echo "checker error for $id" >&2
   grep -m1 '^#' "$d/result.md" 2> /dev/null
+
+  # #201 / #197 short-pane tap-routing probe (split-phone* / wm-size short column).
+  case $id in
+    split-phone*|*-split-phone*) tap_routing_probe "$d" "$dens";;
+  esac
+}
+
+# Live tap-routing probe: plan from home1.xml, long-press/tap each target, score.
+# Artifacts: tap-routing-plan.json, tap-*.xml, tap-routing.md / .json
+tap_routing_probe() {
+  local d=$1 dens=$2 tid how x y expect line
+  [ -s "$d/home1.xml" ] || { echo "tap-routing: no home1.xml" >> "$d/run.txt"; return; }
+  echo "== tap-routing probe ($id)" >> "$d/run.txt"
+  $TAP_ROUTING plan "$d" "$dens" >> "$d/run.txt" 2>&1 || {
+    echo "tap-routing plan failed" >> "$d/run.txt"; return
+  }
+  [ -s "$d/tap-routing-taps.tsv" ] || return
+  # Ensure launcher is foreground before probing
+  home
+  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1 || true
+  pause 2
+  while IFS=$'\t' read -r tid kind how x y expect; do
+    case $tid in id|'') continue;; esac
+    echo "tap-routing $tid $how @ $x,$y expect=$expect" >> "$d/run.txt"
+    if [ "$how" = longpress ]; then
+      hold "$x" "$y"
+    else
+      sh_ input tap "$x" "$y"
+    fi
+    pause 2
+    anr "$d"
+    dump "$d" "tap-$tid"
+    sh_ dumpsys activity activities 2>/dev/null | tr -d '\r' \
+      | grep -m1 -E 'topResumedActivity|mResumedActivity' > "$d/tap-$tid-top.txt" || true
+    # Dismiss sheet / return home for the next tap
+    sh_ input keyevent BACK; pause 1
+    home
+    # Re-assert launcher (a launch may have left another app on top)
+    if ! grep -q "$PKG" "$d/tap-$tid-top.txt" 2>/dev/null; then
+      sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1 || true
+      pause 2
+    fi
+  done < "$d/tap-routing-taps.tsv"
+  $TAP_ROUTING score "$d" >> "$d/run.txt" 2>&1 || echo "tap-routing score non-zero" >> "$d/run.txt"
+  grep -m1 '^# Tap-routing' "$d/tap-routing.md" 2>/dev/null || true
 }
 
 A wait-for-device < /dev/null
