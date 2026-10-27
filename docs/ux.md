@@ -175,27 +175,29 @@ the tools to facilitate it where possible." The config will be able to override:
   or as a phone.
 - **Icon and grid scale** (e.g. icons larger or smaller than 56 dp, within the §12 touch-target floor).
 
-**Staging.** dev8 ships the defaults only. The overrides come in a later release, with the schema shape Archimedes owns
-(Q-A11). Until that release, an override key is rejected exactly like any unknown key today (strict keys: B2 on the
-phone, an error in `validate.py`). No override may break positions: `x`/`y`/`w`/`h` and the `dock[]` order keep meaning
-the same thing, and a window change still never writes.
+**Staging.** dev8 ships the defaults only. Until then an override key is rejected like any unknown key (strict keys:
+B2 on the phone, an error in `validate.py`). The override schema and UX are in
+[`docs/design/layout-overrides.md`](design/layout-overrides.md) (Q-A11, merged #186): slices O1–O6 after dev8. A window
+change still **never writes**.
 
-**Columns/rows overrides and items that don't fit (agreed with Archimedes, 2026-10-26).** When an override gives a window a
-smaller grid than an item's position needs (an item at column 6 on a 4-column override, or row 5 on a 4-row one):
-- The item is **skipped on that window**: not drawn, not moved, not written. It shows again on any window whose grid
-  holds it. Its cells stay its own in the file, so nothing else is placed on top of it from a bigger window.
-- `status.json` gets a §15-style warning, worked out from the **file at load**, not the window (same rule as Q-A12), so
-  every device writes the same list. Draft: `pages[1].items[3]: column 6, row 2 is outside the 4 × 5 grid used for
-  compact portrait, so it isn't shown there. Move it, or widen that grid.`
-- Placement on a window (drag, `Move to…`, Undo, `Add to home`, the widget picker) uses that window's grid, so a tablet
-  can place in column 6 and the phone then skips that item with the warning above.
-- The file stays valid as long as each position fits the **largest** grid the file declares.
+**Config overrides (one device, several window shapes).** Full rules live in
+[`docs/design/layout-overrides.md`](design/layout-overrides.md) — this section is only the UX summary, not a second
+spec. One config describes **one device's** home; `windowOverrides` adapts it to rotation, fold/unfold and resize.
+Matchers are **`widthClass`**, **`orientation`** and **`posture`** (`book` | `tabletop`) only. Root **`orientationLock`**
+and **`scale`** are global (no matcher). Landscape **follows portrait** except where an item is placed on that layout;
+main stays strictly validated; an item with no main spot and no entry on a layout is unplaced there (`Hidden here` /
+`warn_override_hidden`). **`Show here`** scans the page on screen, then later pages, then earlier ones, then adds a
+page (disabled only at 20 full pages). **O4** ships override layouts **read-only** (main still editable); O5 unlocks
+edits on any layout. Entering edit on main shows the once-per-session **`edit_main_follow`** snackbar when override
+layouts with `grid` exist. The old "fits the largest grid" validation line is superseded: each layout has its own
+`positions`, and main does not have to hold every override placement.
 
 **One rule behind all of it.** Home is drawn from `launcher.json` plus the window (size, insets, cutout, hinge, font
 scale). A window change (rotate, fold, unfold, resize) re-lays out what's on screen and nothing else: it never adds or
 removes cells, never moves an item, and **never writes** (no `launcher.json`, `status.json`, `revision`, history or
-DataStore change). `grid.columns` × `grid.rows`, every `x`/`y` (and `w`/`h`) and the `dock[]` order mean the same
-thing on every device that reads the file.
+DataStore change). Without `windowOverrides`, `grid.columns` × `grid.rows`, every `x`/`y` (and `w`/`h`) and the
+`dock[]` order mean the same thing wherever the file is read. With overrides, placement is per layout as in the design
+doc above; the window still never writes.
 
 **What run 2 showed** (dp from the `home1.xml` dumps; pitch = centre-to-centre distance between cells):
 
@@ -225,8 +227,8 @@ that only changes chrome, never a position.
 **Columns and rows: the file's, everywhere (Q-L1, decided).** A tablet shows the same `grid.columns` × `grid.rows` as the phone,
 with bigger, centred cells. More columns on a tablet would change what `x` means per device: an item placed in column 5
 on the tablet would be outside the phone's 4-column grid, which is a B2 error for the whole file today. A per-class
-grid (e.g. 6 columns on Expanded) is planned as a config override (above, Q-A11); the dev8 defaults need no schema
-change.
+grid (e.g. 6 columns on Expanded) is a config override after dev8
+([`docs/design/layout-overrides.md`](design/layout-overrides.md), Q-A11); the dev8 defaults need no schema change.
 
 **Cell size: capped and centred (Q-L2).** Let `availW` × `availH` be the page area (after insets, the top row, notice
 row, page label or title bar, page indicator and a bottom dock), `W0 = availW / columns` and `H0 = availH / rows`:
@@ -886,7 +888,7 @@ this table.
 ## 13. Build checklist (Sprite)
 
 - [ ] Home: pager + grid (`grid.columns/rows`, default 4 × 5, file allows 2–12) + dock (0–7), sizes from §1.1, wallpaper through.
-- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L15 in test-plan.md §20. dev8 builds the defaults only and still rejects any override key (O0); the config overrides (Q-A11, checks O1–O8) come after dev8.
+- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L15 in test-plan.md §20. dev8 builds the defaults only and still rejects any override key (O0); the config overrides after dev8 follow [`docs/design/layout-overrides.md`](design/layout-overrides.md) (Q-A11, slices O1–O6 / checks O9–O13).
 - [ ] Dimmed tiles and reconciliation (§1.2): not installed, unpublished shortcut, paused work apps, activity fallback, unplaced apps in the drawer only (`page` not offered in Settings), private space never placed. Never auto-delete.
 - [ ] Item sheet shows the real app name and package. Strip bidi and zero-width characters from labels at render.
 - [ ] Drawer: search (§2 match rules, focused with the keyboard up; TalkBack and hardware-keyboard rules, Back hides the keyboard first, `Open keyboard with drawer` setting), `drawer.sort` (label or installTime), `drawer.rules` groups, hidden apps section (package names), work tab.
@@ -1892,7 +1894,7 @@ The same `launcher.json` syncs to a tablet. Cells are bigger there, up to the §
   declared `minSpan`, it renders at that span with the §16.5 amber outline + ▲ and the warning `elements[4]: span 2×1 is
   below this widget's minimum 3×2. Shown at 2×1 anyway.`
 - **Grid too small for the position** (an `x`+`w` past the columns): a validation error (B2, §6). There's no per-device
-  grid schema in v1 (Q-A6; config overrides are planned, Q-A11): one `grid` in the file, and cell size and `k` absorb phone vs tablet.
+  grid schema in v1 (Q-A6; config overrides after dev8 follow [layout-overrides.md](design/layout-overrides.md), Q-A11): one `grid` in the file by default, and cell size and `k` absorb phone vs tablet.
 - **Approval doesn't travel** (A1): on the tablet, the first load shows `Needs your OK`, the tile keeps the widget's
   real cells, and the dashboard comes alive one tap per widget.
 
@@ -2208,7 +2210,7 @@ Tablets, landscape and foldables (§1.5). ✅ **All six decided by Christopher o
 as a starting point the config will be able to override later (§1.5 "Defaults now, overrides later", Q-A11). His
 principle: "if the user wants to do weird stuff, we should provide the tools to facilitate it where possible."
 - ✅ **Q-L1** More columns on a tablet? **Decided: the same grid everywhere by default** (Q-D4 stands). A per-class or
-  per-orientation grid is planned as an override (Q-A11).
+  per-orientation grid is a config override ([layout-overrides.md](design/layout-overrides.md), Q-A11).
 - ✅ **Q-L2** Big empty margins or stretched cells? **Decided: centred grid with a 144 dp cell cap** (1.25 : 1). Cap on/off
   and its size are planned overrides.
 - ✅ **Q-L3** Which edge does the dock move to in landscape? **Decided: the end edge** (right, or left in a right-to-left
@@ -2287,49 +2289,12 @@ Flags from Christopher's answers, both resolved in ARCHITECTURE §18:
 - ~~AQ-10~~ Label backdrop: 60 % black scrim. White on it over a pure white wallpaper is 5.7:1, which meets 4.5:1.
 - ~~AQ-11~~ Settled by AF-2: `unsorted.mode` is never acted on, so `page` behaves as the drawer, per Christopher.
 
-Tablets, landscape and foldables (§1.5; Archimedes' notes for this PR). dev8 needs no schema change; Q-A11 is the planned override work:
-- **Q-A11** Config overrides for §1.5 (**planned work, reopened 2026-10-26**; was "deferred"). Christopher decided Q-L1–Q-L6
-  as defaults and wants the config able to override each (§1.5 "Defaults now, overrides later"). **Archimedes owns and
-  finalises the schema shape.** Pragma's candidate, for discussion only:
-
-  ```json
-  "windowOverrides": [
-    { "when": { "widthClass": "expanded", "orientation": "landscape" },
-      "grid": { "columns": 6, "rows": 4 },
-      "cellCap": { "enabled": true, "maxWidthDp": 160 },
-      "dock": { "edge": "start" } },
-    { "when": { "orientation": "portrait" }, "dock": { "edge": "top" } },
-    { "when": { "posture": "halfOpened" }, "fold": { "halfOpened": "span" } },
-    { "when": { "posture": "flat" }, "fold": { "flat": "asPhone" } },
-    { "when": { "deviceClass": "phone" }, "orientationLock": "landscape" },
-    { "when": {}, "scale": { "icon": 1.15 } }
-  ]
-  ```
-
-  - **Name:** a top-level `windowOverrides` array. Not `layouts` (already the widget layouts keyed `"WxH"`, Q-A6) and not
-    `overrides` (easy to mix up with the title bar's per-page overrides).
-  - **`when`:** every key given must match; an empty `when` always matches. Keys: `widthClass` (`compact` | `medium` |
-    `expanded`), `orientation` (`portrait` | `landscape`), `posture` (`folded` | `flat` | `halfOpened`, maybe split into
-    `book` | `tabletop`), and `deviceClass` (`phone` | `tablet`, from `smallestScreenWidthDp` < / ≥ 600).
-  - **Fields:** `grid {columns, rows}` (2–12, as today), `cellCap {enabled, maxWidthDp}`, `dock {edge: top | bottom | start
-    | end}`, `fold {halfOpened: oneHalf | span, flat: asTablet | asPhone}`, `orientationLock` (`portrait` | `landscape` |
-    `system`), `scale {icon}` (e.g. 0.75–1.5 × 56 dp; touch targets stay ≥ 48 dp).
-  - **Order:** entries apply in file order, a later entry wins field by field. A window with no match uses the defaults.
-  - **Settled with Archimedes (2026-10-26)**, who takes `windowOverrides` as the baseline for
-    `docs/design/layout-overrides.md`:
-    - `orientationLock` may be keyed on `deviceClass` only (stable across rotation). Keying it on `orientation` or
-      `widthClass` is a validation error, because locking changes them and the rule would flip itself.
-    - `posture: folded` is flagged as hard and best-guess (`FoldingFeature` alone doesn't say it's the cover screen).
-      Archimedes picks the fold defaults and tests on emulators.
-    - Widen-only is dropped: smaller-grid overrides use the §1.5 "skipped on that window" state, never moved or written,
-      with a load-time warning per override.
-    - Still open (Archimedes): which coordinates a user edit writes while an override grid is active.
-  - **Constraints carried over:** the root and `grid` have `additionalProperties: false`, so older builds reject the file
-    (B2). It needs the Q-A10 pre-release route or `schemaVersion` 2, and FEATURE_LEVEL can't gate a root key on its own
-    (`requires` is only on `elements[]`); a FEATURE_LEVEL bump still marks the release that understands it. Positions are
-    validated against the largest declared grid, placement and the warnings stay file-derived, and a window change never
-    writes.
-  - **Until then:** dev8 ships the §1.5 defaults only, and an override key is rejected as any unknown key is today.
+Tablets, landscape and foldables (§1.5).
+- ~~**Q-A11**~~ ✅ Config overrides for §1.5: design landed in
+  [`docs/design/layout-overrides.md`](design/layout-overrides.md) (merged #186, e54eabe). One device, several window
+  shapes; `when` is `widthClass` / `orientation` / `posture` only; `orientationLock` and `scale` are global; UX summary
+  in §1.5 above. The candidate JSON and "largest grid" notes below this heading are superseded — do not implement from
+  them. dev8 still ships defaults only (O0); slices O1–O6 follow.
 - ~~Q-A12~~ ✅ Resolved by Archimedes (title-bar fit warnings vs "a resize never writes"): the fit check runs **only on
   config load or reload**, against a **portrait bar at `smallestScreenWidthDp`**, and never re-runs on rotation, fold or
   resize. A fold changes the warnings only at the next load, because `status.json` describes the last load, not the
