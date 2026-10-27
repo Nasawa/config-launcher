@@ -148,16 +148,29 @@ run_point() {
   echo "== $id ($shape)"
 
   # Display + system settings for this point
-  # L12 RTL: shape containing "rtl" → Arabic locale (rail on start/left once L5 lands).
+  # Locale from shape keywords: rtl → ar-EG; longlabel/de → de-DE; enxa → en-XA; else en-US.
   if echo "$shape" | grep -qi rtl; then
-    sh_ "settings put system system_locales ar-EG"
-    echo "locale=ar-EG" >> "$d/meta.txt"
+    loc=ar-EG
+  elif echo "$shape" | grep -qiE 'longlabel|\bde\b'; then
+    loc=de-DE
+  elif echo "$shape" | grep -qi enxa; then
+    loc=en-XA
   else
-    sh_ "settings put system system_locales en-US" >/dev/null 2>&1 || true
-    echo "locale=en-US" >> "$d/meta.txt"
+    loc=en-US
   fi
+  sh_ "settings put system system_locales $loc"
+  echo "locale=$loc" >> "$d/meta.txt"
   sh_ "wm size $size; wm density $dens; settings put system font_scale $fs; cmd uimode night $night"
   sh_ "settings put system accelerometer_rotation 0; settings put system user_rotation $rot"
+  # One-side cutout in landscape: enable tall cutout overlay (becomes a side inset when rotated).
+  if echo "$shape" | grep -qi cutout; then
+    sh_ "cmd overlay enable --user 0 com.android.internal.display.cutout.emulation.tall" >/dev/null 2>&1 \
+      || sh_ "cmd overlay enable com.android.internal.display.cutout.emulation.tall" >/dev/null 2>&1 \
+      || true
+    echo "cutout_overlay=tall" >> "$d/meta.txt"
+  else
+    sh_ "cmd overlay disable --user 0 com.android.internal.display.cutout.emulation.tall" >/dev/null 2>&1 || true
+  fi
   pause 3
   sh_ "wm size; wm density; settings get system font_scale; cmd uimode night" > "$d/run.txt" 2>&1
   # Android clamps a wm size override to a multiple of the physical panel (2x on API 29, less on 35/36), so record
@@ -225,6 +238,20 @@ run_point() {
   # Warm-up + F3–F7 only when seed produced home (else product checks would score FirstRun as app bugs).
   hd="$d/home1.xml"
   if [ "$seed_ok" -eq 1 ]; then
+  # L6s: dock7 on a short rail — swipe the rail toward the end so Dock7 is reachable, then dump.
+  # DnD into/out of the rail is left on the manual dev8 checklist (input draganddrop is unreliable on CI).
+  if [ "$fixture" = dock7.json ] && echo "$id" | grep -q land; then
+    read -r _sw _sh <<< "$($CHECK screen "$d/home1.xml" 2>/dev/null || echo "$sw $sh")"
+    # Rail is on the end edge: swipe up inside the rail column to reveal lower slots.
+    rail_x=$((_sw * 92 / 100))
+    echo "$shape" | grep -qi rtl && rail_x=$((_sw * 8 / 100)) || true
+    sh_ input swipe "$rail_x" $((_sh * 75 / 100)) "$rail_x" $((_sh * 25 / 100)) 400
+    pause 2
+    dump "$d" home-dock-end
+    # Swipe back so later LP/menu taps still see the head.
+    sh_ input swipe "$rail_x" $((_sh * 25 / 100)) "$rail_x" $((_sh * 75 / 100)) 400
+    pause 1
+  fi
   # Warm-up: the first touch after a cold start is often dropped on the emulator (pr181: the first swipe never
   # reached the launcher; main does the same), so spend it on a tap on empty grid space, which does nothing.
   if p=$($CHECK find-empty "$d/home1.xml" "$dens"); then read -r x y <<< "$p"; sh_ input tap "$x" "$y"; pause 2; fi
@@ -346,6 +373,7 @@ done 3< "$FIX/points.tsv"
 
 # Restore the emulator
 sh_ "wm size reset; wm density reset; settings put system font_scale 1.0; cmd uimode night no; settings put system user_rotation 0; settings put system system_locales en-US"
+sh_ "cmd overlay disable --user 0 com.android.internal.display.cutout.emulation.tall" >/dev/null 2>&1 || true
 
 [ "$n" -gt 0 ] || { echo "no points matched (shard='$SHARD' points='$POINTS')" >&2; exit 2; }
 $CHECK summarize "$OUT"
