@@ -21,6 +21,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 FIX=$HERE/screen-matrix
 CHECK="python3 $HERE/screen_matrix_check.py"
+TAP_ROUTING="python3 $HERE/screen_matrix_tap_routing.py"
 GATE_RE='^(s320-a51-v1|s320-a51-v2|s320-mdpi-v1|p411-a51-v1|p411-a51-v2|t7-land-v1)$'
 
 SHARD=''; POINTS='.'; OUT=screen-matrix-out; SETTLE=4; APK=''
@@ -115,7 +116,9 @@ set_night() {
   if night_is "$1"; then NIGHT_VIA=settings-ui; fi
 }
 
-# ANR dialogs: record the title (launcher vs System UI), tap Wait. Software-only emulators show System UI ANRs.
+# ANR dialogs: record the title (launcher vs System UI). Prefer "Close app" for Pixel/Nexus
+# Launcher (Wait leaves it wedged on API 35 google_apis tablets — all-18 X3 on run 40545707363);
+# otherwise tap Wait. Software-only emulators also show System UI ANRs.
 anr() {
   local d=$1 _
   for _ in 1 2 3; do
@@ -123,10 +126,43 @@ anr() {
     sh_ cat /sdcard/anr.xml > "$d/.anr.xml" 2> /dev/null
     grep -q "isn't responding\|isn&apos;t responding" "$d/.anr.xml" || break
     grep -o 'text="[^"]*responding[^"]*"' "$d/.anr.xml" >> "$d/anr.txt"
-    tap "$d/.anr.xml" text '^Wait$' || break
+    if grep -qE 'Pixel Launcher|Nexus Launcher|nexuslauncher' "$d/.anr.xml"; then
+      tap "$d/.anr.xml" text '^Close app$' \
+        || tap "$d/.anr.xml" text '^Close App$' \
+        || tap "$d/.anr.xml" text '^Wait$' || break
+      # Stock launcher ANRing while a second HOME is installed — disable so it cannot reclaim focus.
+      disable_stock_launchers
+    else
+      tap "$d/.anr.xml" text '^Wait$' || break
+    fi
     pause 3
   done
   rm -f "$d/.anr.xml"
+}
+
+# After our app is HOME, force-stop Pixel/Nexus (and AOSP Launcher3) so they cannot ANR over dumps.
+# Do NOT pm disable-user by default: on API 35 google_apis Pixel Launcher hosts the gesture-nav
+# recents provider, and disabling it drops the navigationBars inset (800×312 split went 196→220 dp
+# grid, pitch 39→44; run 40553533989). MATRIX_DISABLE_STOCK_LAUNCHER=1 restores the disable.
+disable_stock_launchers() {
+  local p
+  for p in com.google.android.apps.nexuslauncher com.android.launcher3; do
+    if [ "${MATRIX_DISABLE_STOCK_LAUNCHER:-0}" = 1 ]; then
+      sh_ "pm disable-user --user 0 $p" >/dev/null 2>&1 || true
+    fi
+    sh_ "am force-stop $p" >/dev/null 2>&1 || true
+  done
+}
+
+wait_boot_idle() {
+  local i b
+  for i in $(seq 1 90); do
+    b=$(sh_ getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+    [ "$b" = 1 ] && break
+    sleep 2
+  done
+  # Extra settle: tablet google_apis images still schedule Pixel Launcher work after boot_completed.
+  pause 8
 }
 
 home() { sh_ input keyevent HOME; pause 2; }
@@ -217,6 +253,7 @@ run_point() {
     # Prefs + launcher first, then set-home, then force-stop again (kills any race launch), then re-copy.
     sh_ "run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'"
     sh_ "cmd package set-home-activity $PKG/.MainActivity > /dev/null 2>&1"
+    disable_stock_launchers
     sh_ am force-stop "$PKG"
     sh_ "run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'"
     prefs_chk=$(sh_ "run-as $PKG sh -c 'grep -c appOnly shared_prefs/settings.xml; test -s files/config/source/launcher.json && echo LOK'" | tr -d '\r' | tr '\n' ' ')
@@ -287,6 +324,8 @@ run_point() {
 
   # L3/L5 safeDrawing: system bars + cutout from dumpsys window (checker parses → insets).
   sh_ dumpsys window > "$d/insets.txt" 2>&1 || true
+  # Record the nav-bar inset so a harness change that drops it is visible (pitch reference geometry).
+  echo "nav_inset=$(grep -m1 -o 'type=navigationBars frame=\[[^]]*\]\[[^]]*\]' "$d/insets.txt" | sed 's/.*frame=//' || true)" >> "$d/meta.txt"
 
   # Warm-up + F3–F7 only when seed produced home (else product checks would score FirstRun as app bugs).
   hd="$d/home1.xml"
@@ -404,13 +443,65 @@ run_point() {
   sh_ logcat -d -b main -b system | grep -E "ANR in $PKG|FATAL EXCEPTION" >> "$d/crash.txt"
   sh_ dumpsys window | grep -m1 mCurrentFocus > "$d/focus.txt"
 
+  # TR1 before the checker so G3 short-pane option B can read tap-routing.json
+  # (docs PR #209: pitchH≥32 + TR1 hit=visible; a11y overlap → #208).
+  case $id in
+    split-phone*|*-split-phone*) tap_routing_probe "$d" "$dens";;
+  esac
+
   $CHECK check "$d" > /dev/null || echo "checker error for $id" >&2
   grep -m1 '^#' "$d/result.md" 2> /dev/null
 }
 
+# Live tap-routing probe: plan from home1.xml, long-press/tap each target, score.
+# Artifacts: tap-routing-plan.json, tap-*.xml, tap-routing.md / .json
+tap_routing_probe() {
+  local d=$1 dens=$2 tid how x y expect line
+  [ -s "$d/home1.xml" ] || { echo "tap-routing: no home1.xml" >> "$d/run.txt"; return; }
+  echo "== tap-routing probe ($id)" >> "$d/run.txt"
+  $TAP_ROUTING plan "$d" "$dens" >> "$d/run.txt" 2>&1 || {
+    echo "tap-routing plan failed" >> "$d/run.txt"; return
+  }
+  [ -s "$d/tap-routing-taps.tsv" ] || return
+  # Ensure launcher is foreground before probing
+  home
+  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1 || true
+  pause 2
+  while IFS=$'\t' read -r tid kind how x y expect; do
+    case $tid in id|'') continue;; esac
+    echo "tap-routing $tid $how @ $x,$y expect=$expect" >> "$d/run.txt"
+    if [ "$how" = longpress ]; then
+      hold "$x" "$y"
+    else
+      sh_ input tap "$x" "$y"
+    fi
+    pause 2
+    anr "$d"
+    dump "$d" "tap-$tid"
+    sh_ dumpsys activity activities 2>/dev/null | tr -d '\r' \
+      | grep -m1 -E 'topResumedActivity|mResumedActivity' > "$d/tap-$tid-top.txt" || true
+    # Dismiss sheet / return home for the next tap
+    sh_ input keyevent BACK; pause 1
+    home
+    # Re-assert launcher (a launch may have left another app on top)
+    if ! grep -q "$PKG" "$d/tap-$tid-top.txt" 2>/dev/null; then
+      sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1 || true
+      pause 2
+    fi
+  done < "$d/tap-routing-taps.tsv"
+  $TAP_ROUTING score "$d" >> "$d/run.txt" 2>&1 || echo "tap-routing score non-zero" >> "$d/run.txt"
+  grep -m1 '^# Tap-routing' "$d/tap-routing.md" 2>/dev/null || true
+}
+
 A wait-for-device < /dev/null
+wait_boot_idle
 A install -r -g "$APK" < /dev/null | tee "$OUT/install.txt"
 grep -q '^Success' "$OUT/install.txt" || { echo "install failed" >&2; exit 1; }
+# Claim HOME and disable stock Pixel/Nexus Launcher before any point (API 35 tablet ANR storm).
+sh_ "cmd package set-home-activity $PKG/.MainActivity > /dev/null 2>&1" || true
+disable_stock_launchers
+echo "stock_launcher_disabled=${MATRIX_DISABLE_STOCK_LAUNCHER:-0} (force-stop only when 0)" >> "$OUT/harness-setup.txt"
+sh_ "pm list packages -d" >> "$OUT/harness-setup.txt" 2>&1 || true
 
 dups=$(awk -F'\t' '!/^#/ && NF > 1 {print $1}' "$FIX/points.tsv" | sort | uniq -d)
 [ -z "$dups" ] || { echo "duplicate point ids in points.tsv: $dups" >&2; exit 2; }
