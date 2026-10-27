@@ -300,11 +300,11 @@ line ≈ 16 dp at font 1.0 (≈ 17 dp at 1.3). The first step that fits wins; **
    - **Touch (preferred):** each cell's **whole area** is the hit target and must be **≥ 48 × 48 dp**; the 2 dp visual
      gap sits **inside** that hit area (not outside it).
    - **When `rows × 48` still can't fit** (short multi-window pane, banner/notice up, etc.): still **do not drop
-     rows**. Apply the §12 **Short-pane grid hit targets** exception: hit targets are the **visible, non-overlapping
-     cell area** (no grow-down / grow-up overlap between grid rows; the visible tile is the one hit). The title bar
-     keeps its **48 dp** `{page}` target. `pitchH` may sit as low as **32 dp**. Below 32, L16 fails — still no
-     window-metrics fit warning (Q-A12). Existing `warn_titlebar_fit` / `warn_titlebar_fit_size` strings stay for the
-     load-time title-bar ladder only.
+     rows**. Apply the §12 **Short-pane grid hit targets** exception (behaviour-based: the tile you see is the tile
+     you hit; overlapping a11y hit bounds are allowed only where the visible tile wins). The title bar keeps its
+     **48 dp** `{page}` target. `pitchH` may sit as low as **32 dp**. Below 32, L16 fails — still no window-metrics
+     fit warning (Q-A12). Existing `warn_titlebar_fit` / `warn_titlebar_fit_size` strings stay for the load-time
+     title-bar ladder only.
 
 A short window that still has a bottom dock (e.g. t7-land before the rail lands, measured ~64.5 dp on #194) lands on
 step 3. Phone landscape with the rail lands on step 4 when height forces it. The runtime ladder is what handles short
@@ -899,14 +899,21 @@ The MVP doesn't need it: an agent edits the synced file directly, and the normal
 **Short-pane grid hit targets** (scoped exception to the 48 × 48 floor; §1.5 step 4). In a short multi-window pane
 where the file's `rows × 48 dp` cannot fit in the measured page column after chrome (title bar, page dots, safeDrawing
 insets; e.g. Grace on #201 @ 686e98d: 800 × 312 dp, density 160, 5-row file → `pitchH` ≈ 39 dp), **rows are never
-dropped** (Option B). Hit targets for home-grid tiles are the **visible, non-overlapping cell area** — no grow-down
-(or grow-up) overlap band between grid rows; the visible tile is the one hit. Growing a short cell's hit area into the
-next row (or into the title bar) is forbidden: it left the upper tile at an effective ~49 × 39 under the §12 floor while
-clipping the `{page}` clickable under 48. The **title bar keeps its ≥ 48 dp** `{page}` target. `pitchH` floor for this
-exception is **32 dp** (WCAG 2.2 AA's minimum target size is 24 CSS px; 32 dp is the launcher floor above that). Below
-32, L16 fails; do **not** write a window-metrics fit warning (Q-A12). Phone-landscape and other windows that still clear
-`rows × 48` keep the normal 48 × 48 whole-cell rule. Reclaiming chrome so 48 dp targets return on short panes is a
-follow-up (dots into the title bar, text-only title bar, etc.).
+dropped** (Option B). The rule is **behaviour-based**, not a ban on overlapping hit bounds:
+
+- Every point inside a tile's **visible** area activates **that** tile.
+- No tap in one tile's visible area may reach another tile (or the title bar).
+- Overlapping hit bounds in the accessibility tree are **allowed only where the visible tile wins** (the tile you see
+  is the tile you hit). At 686e98d, hit areas still grow down ~9 dp; in that band the lower, visible row wins, and the
+  bottom row's extra band only covers empty space above the dots — that passes. Growing into the title bar so `{page}`
+  drops under 48 does **not**.
+
+The **title bar keeps its ≥ 48 dp** `{page}` target. `pitchH` floor for this exception is **32 dp** (WCAG 2.2 AA's
+minimum target size is 24 CSS px; 32 dp is the launcher floor above that). Below 32, L16 fails; do **not** write a
+window-metrics fit warning (Q-A12). Phone-landscape and other windows that still clear `rows × 48` keep the normal
+48 × 48 whole-cell rule. Reclaiming chrome so 48 dp targets return on short panes is a follow-up (dots into the title
+bar, text-only title bar, etc.). Tidying a11y-tree bound overlap for TalkBack explore-by-touch is part of that
+follow-up (#208), not a G3 blocker.
 
 ### 12.1 Home theme: light and dark (Q-T6)
 **Christopher (Q-T6):** home follows the phone's **system light/dark setting** by default, and `launcher.json` can
