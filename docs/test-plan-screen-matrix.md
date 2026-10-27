@@ -199,6 +199,7 @@ L5 is **advisory until the end-edge rail PR** lands (#197).
 | L10 | §20 L10 (#197) | `Edits.freeCell` / `AddToHome` / `MoveToCell` | same answers for the same file (grid only) | unit (CI `testDebugUnitTest`) | JVM | **auto** |
 | L11 | §20 L11 | margin long-press / swipe / drop / column taps | per §20 | — | — | **deferred to dev9** |
 | L12 | §20 L12 (#197) | new rows | 599/600, 839/840 dp; phone-land 800×360; RTL t7-land | via L3/L5 on those points | bound-*, phone-land-v1, rtl-t7-land-v1 | **auto** |
+| L12+#201 | §1.5 / #201 coverage | new rows | RTL phone-land; font 2.0 t7-land + phone-land; long-label (de) t7-land; cutout phone-land; dock7 scroll (L6s) | L5 side/width, G7 chrome centre, A2 rail structure, L6s | rtl-phone-land-v1, t7-land-v3, phone-land-v3, t7-land-longlabel-v1, cutout-phone-land-v1, dock7-*-land | **auto** (DnD rail advisory → manual checklist) |
 | L13 | §20 L13 (#197) | fixture `cards-large.json` | k ≤ 1.5, no stretch on t10-land | advisory→block at dev8 | cards-t10-land-v1 | **auto** |
 
 **safeDrawing insets (L3 / L5).** Driver writes `dumpsys window` → `insets.txt` after `home1`. Checker
