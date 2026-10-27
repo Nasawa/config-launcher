@@ -40,3 +40,12 @@ dock7-t7-land-v1	tablets	1200x1920	320	1	1.0	no	dock7.json	large	L6 dock7 on t7-
 dock7-t7-port-v1	tablets	1200x1920	320	0	1.0	no	dock7.json	large	L6 dock7 on t7-port
 dock7-phone-land-v1	phones	800x360	160	0	1.0	no	dock7.json	phone	L6 dock7 on phone landscape
 cards-t10-land-v1	tablets	1600x2560	320	1	1.0	no	cards-large.json	large	L13 cards-large on t10-land
+rtl-phone-land-v1	phones	800x360	160	0	1.0	no	launcher.json	phone	L12 RTL phone landscape (rtl; rail on start/left once L5 lands)
+t7-land-v3	tablets	1200x1920	320	1	2.0	no	launcher.json	large	#201 font 2.0 on t7-land (rail width / labels)
+phone-land-v3	phones	800x360	160	0	2.0	no	launcher.json	phone	#201 font 2.0 on phone-land
+t7-land-longlabel-v1	tablets	1200x1920	320	1	1.0	no	launcher.json	large	#201 long-label locale (longlabel/de) on t7-land
+cutout-phone-land-v1	phones	800x360	160	0	1.0	no	launcher.json	phone	#201 one-side display cutout in landscape (cutout overlay)
+phone-land-d15-v1	phones	1200x540	240	0	1.0	no	launcher.json	phone	#201 phone-land @ density 1.5 (hdpi); no icon overlap; tiles ≥48 when no notice
+phone-land-d2625-v1	phones	2100x945	420	0	1.0	no	launcher.json	phone	#201 phone-land @ density 2.625 (420dpi); no icon overlap; tiles ≥48 when no notice
+phone-land-d35-v1	phones	2800x1260	560	0	1.0	no	launcher.json	phone	#201 phone-land @ density 3.5 (560dpi); no icon overlap; tiles ≥48 when no notice
+split-phone-v1	phones	800x312	160	0	1.0	no	launcher.json	phone	#201 short multi-window pane via wm size (800×312 dp; titleBarPaddingV page-column fallback)
