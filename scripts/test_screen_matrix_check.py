@@ -196,5 +196,103 @@ class RailGeom(unittest.TestCase):
         self.assertEqual(rr - rl, 80)
 
 
+
+class CardsLargeL2L3(unittest.TestCase):
+    """#205: cards-large icons alone at row 4 must not report L2 row 0 or asymmetric L3."""
+
+    def _check(self, name):
+        d = _point(name)
+        td = tempfile.mkdtemp()
+        try:
+            for f in os.listdir(d):
+                shutil.copy(os.path.join(d, f), td)
+            meta = open(os.path.join(td, "meta.txt")).read()
+            if "gate=" not in meta:
+                open(os.path.join(td, "meta.txt"), "a").write("\ngate=dev8\n")
+            import io
+            from contextlib import redirect_stdout
+            with redirect_stdout(io.StringIO()):
+                c.cmd_check(td)
+            res = json.load(open(os.path.join(td, "result.json")))
+            return {x["id"]: x for x in res["checks"]}
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+    def test_cards_t10_land_l2_l3_pass(self):
+        ch = self._check("cards-t10-land-v1")
+        self.assertEqual(ch["L2"]["status"], "PASS", ch["L2"].get("detail"))
+        self.assertEqual(ch["L3"]["status"], "PASS", ch["L3"].get("detail"))
+        # Occupied cols were only 0–1 of 4; harness must expand to grid.columns → equal margins.
+        self.assertIn("768.0/768.0", ch["L3"]["detail"])
+
+
+class D1ShortPaneFloor(unittest.TestCase):
+    """#202 D1: short-pane floor max(25%, 96 dp); half-sheet regressions still fail."""
+
+    def _check(self, name):
+        d = _point(name)
+        td = tempfile.mkdtemp()
+        try:
+            for f in os.listdir(d):
+                shutil.copy(os.path.join(d, f), td)
+            meta = open(os.path.join(td, "meta.txt")).read()
+            if "gate=" not in meta:
+                open(os.path.join(td, "meta.txt"), "a").write("\ngate=dev8\n")
+            import io
+            from contextlib import redirect_stdout
+            with redirect_stdout(io.StringIO()):
+                c.cmd_check(td)
+            res = json.load(open(os.path.join(td, "result.json")))
+            return {x["id"]: x for x in res["checks"]}
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+    def test_split_phone_short_pane_passes(self):
+        # 800×312 short pane: search at 88 dp (28%) — same absolute chrome as 24% on 800×360.
+        ch = self._check("split-phone-v1")["D1"]
+        self.assertEqual(ch["status"], "PASS", ch.get("detail"))
+        self.assertIn("88 dp", ch["detail"])
+        self.assertIn("96", ch["detail"])
+
+    def test_half_sheet_still_fails(self):
+        # Synthetic half-sheet: Search apps top at 55% of an 800 dp tall window (runs 1–3).
+        td = tempfile.mkdtemp()
+        try:
+            xml = """<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="" class="android.widget.FrameLayout"
+        package="com.nasawa.configlauncher" content-desc="" checkable="false" checked="false"
+        clickable="false" enabled="true" focusable="false" focused="false" scrollable="false"
+        long-clickable="false" password="false" selected="false" bounds="[0,0][400,800]">
+    <node index="0" text="Search apps" resource-id="" class="android.widget.EditText"
+          package="com.nasawa.configlauncher" content-desc="Search apps" checkable="false"
+          checked="false" clickable="true" enabled="true" focusable="true" focused="false"
+          scrollable="false" long-clickable="false" password="false" selected="false"
+          bounds="[16,440][384,488]" />
+  </node>
+</hierarchy>
+"""
+            open(os.path.join(td, "drawer.xml"), "w").write(xml)
+            open(os.path.join(td, "home1.xml"), "w").write(xml)
+            open(os.path.join(td, "meta.txt"), "w").write(
+                "id=half-sheet-synth\ndensity=160\nscreen_px=400x800\n"
+                "font_scale=1.0\nnight=no\nrotation=0\napi=35\ngate=dev8\n"
+                "tier=phone\n")
+            open(os.path.join(td, "run.txt"), "w").write(
+                "Override size: 400x800\nOverride density: 160\nNight mode: no\n")
+            open(os.path.join(td, "retries.txt"), "w").write("")
+            import io
+            from contextlib import redirect_stdout
+            with redirect_stdout(io.StringIO()):
+                c.cmd_check(td)
+            res = json.load(open(os.path.join(td, "result.json")))
+            d1 = next(x for x in res["checks"] if x["id"] == "D1")
+            self.assertEqual(d1["status"], "FAIL", d1.get("detail"))
+            self.assertIn("440 dp", d1["detail"])
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+
+
 if __name__ == "__main__":
     unittest.main()
