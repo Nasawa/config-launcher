@@ -14,6 +14,11 @@ on:
         description: 'Only points whose id matches this regex (e.g. ^p411-a51-)'
         default: '.'
         type: string
+      gate:
+        description: 'Severity for L* / large G* checks: dev7 (advisory) or dev8 (blocking). Tags matching *dev8* force dev8.'
+        default: dev7
+        type: choice
+        options: [dev7, dev8]
   push:
     tags: ['v*-dev*', 'v*-rc*']
   pull_request:
@@ -98,6 +103,7 @@ jobs:
         env:
           POINTS: ${{ inputs.points || '.' }}
           SHARD: ${{ matrix.shard }}
+          MATRIX_GATE: ${{ inputs.gate || (contains(github.ref, 'dev8') && 'dev8' || 'dev7') }}
         with:
           api-level: ${{ matrix.api }}
           target: ${{ matrix.target }}
@@ -106,7 +112,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -skin ${{ matrix.skin }}
           # One line: the runner executes each script line in its own sh.
-          script: bash scripts/screen-matrix.sh --shard "$SHARD" --points "$POINTS" --apk apk --out "screen-matrix-out/$SHARD"
+          script: bash scripts/screen-matrix.sh --shard "$SHARD" --points "$POINTS" --matrix-gate "$MATRIX_GATE" --apk apk --out "screen-matrix-out/$SHARD"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

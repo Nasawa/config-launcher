@@ -1,6 +1,6 @@
 # Pre-release screen matrix (emulator, free tooling)
 
-Owner: Grace (QA). Status: **approved by Christopher** (#177); run 1 done (§6), a rerun after the run-1 harness fixes is next. Extends test-plan §15.2 (emulator matrix) and §18
+Owner: Grace (QA). Status: **approved by Christopher** (#177, merged at c330340 / dev7). #185 (ux.md §1.5) and #186 merged; L1–L13 (test-plan §20) land in the matrix for dev8. Extends test-plan §15.2 (emulator matrix) and §18
 (automation). It doesn't replace the device passes in test-plan §15.1/§17. Spec references: `ux.md §x` is
 docs/ux.md and `A§x` is ARCHITECTURE.md. When this plan and a spec disagree, the spec wins, so fix this file.
 
@@ -132,31 +132,34 @@ Page-2 variants (`T1p2`, `G1p2`, `G5cp2`, …) have the same severity as their c
 `.png`, plus `start.txt`, `crash.txt`, `anr.txt`, `retries.txt` (when a gesture was retried), `focus.txt`, `meta.txt`, `result.json` and `result.md`. The
 summary is `summary.md`, which CI also posts to the job summary.
 
-## 4. dev7 gate
+## 4. dev7 / dev8 gate
 
-A point is **blocking** when a FAIL there fails the run, so dev7 isn't tagged. **Advisory** results are listed in the
-summary and need a human look. **Pending** results are reported, never block, and switch to blocking when the cited implementation lands
-(none are pending now: G5b/G5c block since #178, D1 since #181).
-The policy is coded in `severity()` in `screen_matrix_check.py`.
+A point is **blocking** when a FAIL there fails the run. **Advisory** results are listed in the summary and need a
+human look. **Pending** results are reported, never block, and switch to blocking when the cited implementation lands
+(none are pending now: G5b/G5c block since #178, D1 since #181). The policy is coded in `severity()` in
+`screen_matrix_check.py`, keyed on `gate=dev7|dev8` in each point's `meta.txt`.
 
-**Blocks dev7:**
+**Severity switch.** Set by `--matrix-gate LEVEL` or `MATRIX_GATE` (default `dev7`). The workflow accepts a `gate`
+input on `workflow_dispatch`; a tag whose name contains `dev8` (e.g. `v0.0.1-dev8`) forces `dev8`. Under `dev7`,
+L1–L13 and G1–G3 on tablet/landscape/fold stay advisory so main does not go red before Sprite's ux.md §1.5 work
+lands. Under `dev8` they block. F1 (crashes/ANRs) always blocks.
+
+**Blocks dev7 (and dev8):**
 1. The build and the install on all three images, and X0 (the point really ran at its size) wherever the point blocks.
 2. F1 (no launcher crash or ANR) at **every** point, including tablets, the fold and font 2.0.
-3. F2–F7 at every point at font 1.0 and 1.3, tablets and fold included. A flow that breaks in landscape is a bug
-   even before Q-S2 is answered (Q2).
+3. F2–F7 at every point at font 1.0 and 1.3, tablets and fold included.
 4. T1–T4 (ladder order, clock, warning exactly once, touch bounds) at every point at font 1.0 and 1.3.
 5. G1–G3 and G5a on **phone** points (≤ 448 dp wide, portrait) at font 1.0 and 1.3.
+6. G5b, G5c, D1, D4 wherever they apply (same as dev7).
 
-**Advisory for dev7:**
-- G1–G3 on tablets, landscape and the fold. ux.md §1.1 says "Phones only in MVP" and landscape is Q-S2 (ux.md open
-  questions). Interim call (Q2): advisory through dev7, blocking from dev8 after the §1.1 review of the run-2
-  screenshots.
-- Everything at font 2.0 except F1 (crashes always block). Decided: ux.md §12 allows hidden labels at ≥ 150 % and
-  Q-S5 (fitting cells at 200 %) is open, so at 2.0 only a crash or ANR is a dev7 blocker; the rest needs a human look.
+**Blocks dev8 only** (advisory under dev7):
+- L1–L5 and L7 on large-tier points (tablets, fold; see §4.1). L6 and L8–L13 stay manual until fixtures/points land.
+- G1–G3 on tablets, landscape and the fold (Q2 resolved by #185 / ux.md §1.5).
+
+**Advisory everywhere:**
+- Everything at font 2.0 except F1 (crashes always block). ux.md §12 allows hidden labels at ≥ 150 % and Q-S5
+  (fitting cells at 200 %) is open.
 - T5, T6, A1, D3, D4a, G6, TH1, X1, X2 and P1.
-
-G5b and G5c were pending until the #175 implementation landed, and block since #178 (merged); D1 blocks since #181.
-D4 (drawer contrast ≥ 3:1) blocks. The policy is approved as written (Christopher, #177).
 
 **Minimum on-box gate** (when CI isn't available, see §5): `--gate` runs `s320-a51-v1`, `s320-a51-v2`, `s320-mdpi-v1`,
 `p411-a51-v1`, `p411-a51-v2` and `t7-land-v1`.
@@ -165,12 +168,43 @@ D4 (drawer contrast ≥ 3:1) blocks. The policy is approved as written (Christop
 scope (the config-driven title bar isn't required for v1.0), while dev7's headline is the #149 overflow-ladder fix,
 so dev7 can't be tagged with the ladder broken.
 
+### 4.1 L1–L13 (ux.md §1.5 / test-plan §20)
+
+Source of truth for the expected behaviour is docs/test-plan.md §20 and docs/ux.md §1.5 (merged via #185). The matrix
+automates what the existing dumps / one reverse-rotate can measure; the rest is a short manual checklist. Severity
+follows the dev7/dev8 switch above. L14/L15 exist in §20 but are out of this matrix pass (L15 ≈ G1 on
+`s360-mdpi-v2` after the 56 dp icon change).
+
+| ID | Source | Measured | Threshold / pass | Severity | Points | Auto? |
+|---|---|---|---|---|---|---|
+| L1 | §1.5 "never writes"; §20 L1 | `sha256` of on-device `launcher.json` before and after one reverse-rotate (`hash-before.txt` / `hash-after-rot.txt`) | hashes equal and non-empty | advisory→block at dev8 | large tier | **auto** (smoke: one reverse-rotate; full ×4 / fold↔unfold is manual) |
+| L2 | §1.5; §20 L2 | `floor((centre − blockLeft) / pitchW)` (and row) vs fixture `(x,y)` | every matched tile lands on its fixture cell | advisory→block at dev8 | large tier (home1) | **auto** |
+| L3 | §1.5 Q-L2; §20 L3 | pitchW, cell W/H and H/W, left vs right margin of the tile block | pitchW ≤ 144 dp; W/H ≤ 1.25; H/W ≤ 1.5; abs(L-R) ≤ 2 dp. SKIP on Compact (< 600 dp) | advisory→block at dev8 | Medium/Expanded large points | **auto** |
+| L4 | §1.5 cell min / icon ladder; §20 L4 | pitchH on t7-land / t10-land @ font 1.0; every label height ≥ 12 sp × font × 0.85 or absent | pitchH ≥ 80 dp on those two; no clipped labels anywhere | advisory→block at dev8 | large tier | **auto** |
+| L5 | §1.5 Q-L3/Q-L4; §20 L5 | dock cluster geometry (`dock_is_rail`) | rail on `t7-land*` / `t10-land*`; bottom on `t7-port*` / `t10-port*` / `fold-open*` | advisory→block at dev8 | large tier | **auto** (safeDrawing / RTL rail side is manual) |
+| L7 | §1.5 page id; §20 L7 | after reverse-rotate while on page 2, `home2-rot.xml` still shows `Second` / page 2 of 2 | page id preserved | advisory→block at dev8 | large tier with home2 | **auto** (fold↔unfold continuity is manual) |
+
+**Manual checklist** (not automated yet; painless, run once per dev8 candidate on a large point):
+
+| ID | Why not auto | What to do |
+|---|---|---|
+| L1 full | Matrix only reverse-rotates once | On t7-land: rotate ×4 and confirm `launcher.json` hash + revision unchanged; no `status.json` write |
+| L6 | Needs fixture `dock7` | Seed 7 dock items; confirm all fit ≥ 48 dp in file order on t7-land (rail), phone land, t7-port |
+| L8 | Needs instrumented drag | Start a drag on t7-land, rotate; drag cancels, nothing written, item in old cell |
+| L9 | Needs real `FoldingFeature` | Emulator HALF_OPENED book + tabletop: no cell/card/dock intersects hinge; flat ignores hinge |
+| L10 | Unit + one UI check | `Move to…` shows Column 1–4 / Row 1–5 everywhere; Undo / Add to home / widget picker agree across points |
+| L11 | Instrumented | Long-press in a side margin → home menu; swipe-up there → drawer; drop refused; column-centre taps hit the right item |
+| L12 | New matrix rows | Add 599/600 and 839/840 dp, one phone-landscape, one RTL point; re-run L3/L5 |
+| L13 | Needs fixture `cards-large` | 2×2 + 4×1 cards: k ≤ 1.5 on t10-land, no stretch, nothing across the hinge |
+| L5 insets | Needs insets dump | Rail sits inside `safeDrawing` (nav bar / cutout on the same side) |
+
 ## 5. CI vs on-box
 
 **CI** (`.github/workflows/screen-matrix.yml`, GitHub-hosted `ubuntu-latest` with KVM, free for this public repo):
 - **Triggers:**
-  - `workflow_dispatch`, with inputs `shards` (comma list or `all`) and `points` (an id regex).
-  - Pushes of `v*-dev*` / `v*-rc*` tags, so `v0.0.1-dev7` runs it.
+  - `workflow_dispatch`, with inputs `shards` (comma list or `all`), `points` (an id regex), and `gate`
+    (`dev7` advisory L*/large-G*, or `dev8` blocking; default `dev7`).
+  - Pushes of `v*-dev*` / `v*-rc*` tags, so `v0.0.1-dev7` runs it; a tag whose name contains `dev8` forces gate=dev8.
   - A PR getting the label `screen-matrix` (the label exists). Only the `labeled` event fires: pushing to a labelled
     PR doesn't rerun it, so re-apply the label or dispatch.
   - Not on every push or PR. The cheap per-PR smoke stays in emulator-smoke.yml.
@@ -300,11 +334,8 @@ The script changes the display size, density, font scale, night mode and rotatio
 - Minutes: free while the repo is public; run 1's measured numbers are in §5.
 
 **Needs Christopher:**
-- **Q2 (needs Christopher)** Q-S2 / "Phones only in MVP" (ux.md §1.1): when do tablet, landscape and fold layout
-  checks (G1–G3) become blocking, and is the ux.md §1.1 landscape layout (same grid, dock on the right edge) final?
-  - **Interim (Grok Bot, 2026-10-26); pending Christopher's confirmation.** Christopher has been asked directly and
-    hasn't answered, so this isn't his decision:
-    - Tablet, landscape and fold layout checks stay **advisory through dev7**.
-    - They become **blocking at dev8**, once Pragma and Archimedes have reviewed ux.md §1.1 against the run-2
-      screenshots (`evidence/matrix/run2/layout-review/`).
-    - Crashes and ANRs (F1) stay **blocking at every point**, as now.
+- **Q2 (resolved by #185 / ux.md §1.5).** Tablet, landscape and fold layout checks (G1–G3 and L1–L13) stay
+  **advisory through dev7** and become **blocking at dev8**, via the `gate` / `MATRIX_GATE` switch (§4). The §1.5
+  defaults (file columns×rows, Medium/Expanded cell cap + centring, dock = rail when aspect ≥ 1.4 or height Compact)
+  replace the old "Phones only in MVP" interim. Baseline evidence before Sprite's §1.5 lands:
+  `evidence/matrix/dev8-baseline/`.
