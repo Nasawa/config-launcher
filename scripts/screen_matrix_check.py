@@ -229,6 +229,62 @@ def rail_geom(dock, W, H, nodes=None):
     return True, side, left, right
 
 
+def layout_rtl_of(m, locale=None, force_rtl=None, layout_dir=None):
+    """(rtl, source): the point's layout direction from its config / dump, never from where the rail is.
+
+    Order: dumped layout_dir (1/rtl, 0/ltr) > force_rtl=1 > an RTL locale (ar/he/iw/fa/ur, *-XB pseudo) or an
+    `rtl` shape > LTR.
+    """
+    ld = (layout_dir if layout_dir is not None else (m.get('layout_dir') or '')).strip().lower()
+    if ld in ('1', 'rtl'):
+        return True, f'layout_dir={ld}'
+    if ld in ('0', 'ltr'):
+        return False, f'layout_dir={ld}'
+    fr = (force_rtl if force_rtl is not None else (m.get('force_rtl') or '')).strip().lower()
+    if fr in ('1', 'true'):
+        return True, 'force_rtl=1'
+    loc = (locale if locale is not None else (m.get('locale') or '')).strip()
+    if re.match(r'(ar|he|iw|fa|ur)(\b|[-_])', loc, re.I) or loc.lower().endswith('-xb'):
+        return True, f'locale={loc}'
+    if 'rtl' in (m.get('shape') or '').lower():
+        return True, 'shape=rtl'
+    return False, f'locale={loc or "en-US"}'
+
+
+def rail_end_edge(panel, slots, head, tiles, W, safe, rtl, tol):
+    """L5 end-edge assertion (#187 / ux.md §1.5): the rail hugs the window's end edge inside safeDrawing,
+    the page column sits on the other side.
+
+    panel / slots / head / tiles are (l, t, r, b) px boxes (head may be None, tiles may be empty).
+    End edge = right in LTR, left in RTL. "Hug": the rail's outer edge is within tol of the safeDrawing edge
+    (or of the raw window edge when that side has an inset, i.e. the rail paints edge-to-edge) and its slots
+    and head stay inside safeDrawing. Returns (ok, measured_side, detail).
+    """
+    sl, _st, sr, _sb = safe if safe else (0, 0, 0, 0)
+    want = 'left' if rtl else 'right'
+    cx = (panel[0] + panel[2]) / 2
+    side = 'left' if cx < W / 2 else 'right'
+    content = list(slots) + ([head] if head else [])
+    if want == 'right':
+        outer, inner, safe_edge = panel[2], panel[0], W - sr
+        hug = abs(outer - safe_edge) <= tol or (sr > 0 and abs(outer - W) <= tol)
+        inside = all(b[2] <= safe_edge + tol for b in content)
+        other = all(b[2] <= inner + tol for b in tiles)
+        gap = W - outer
+    else:
+        outer, inner, safe_edge = panel[0], panel[2], sl
+        hug = abs(outer - safe_edge) <= tol or (sl > 0 and abs(outer) <= tol)
+        inside = all(b[0] >= safe_edge - tol for b in content)
+        other = all(b[0] >= inner - tol for b in tiles)
+        gap = outer
+    ok = side == want and hug and inside and other
+    detail = (f'rail side {side} (want end edge = {want}); rail x {panel[0]}..{panel[2]} of {W}, '
+              f'outer-edge gap {gap} px (safe {"L" if want == "left" else "R"}={sl if want == "left" else sr}, '
+              f'tol {tol}); hug {hug}; slots/head inside safeDrawing {inside}; '
+              f'page column on the other side {other} ({len(tiles)} tiles)')
+    return ok, side, detail
+
+
 def page_column_box(W, H, safe, dock, nodes=None):
     """Content box for the page column: window − safeDrawing − rail (ux.md §1.5)."""
     sl, st, sr, sb = safe if safe else (0, 0, 0, 0)
@@ -680,9 +736,9 @@ def severity(cid, m):
     fs = float(m.get('font_scale', '1.0'))
     tier = m.get('tier', 'phone')
     pending = set()     # add an id here for a merged spec not built yet
-    # L5 stays advisory until the end-edge rail PR lands (#197 / test-plan §20).
-    # L6r = rail-geometry half of L6 (also advisory until that rail PR).
-    advisory_always = {'P1', 'A1', 'A2', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'G7', 'X1', 'X2', 'X3', 'G3n', 'G3a', 'L5', 'L6r', 'L6s', 'Dnd1'}
+    # L5 gates like the other L checks and asserts the end edge (test-plan-screen-matrix §4.1).
+    # L6r = rail-geometry half of L6 (still advisory).
+    advisory_always = {'P1', 'A1', 'A2', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'G7', 'X1', 'X2', 'X3', 'G3n', 'G3a', 'L6r', 'L6s', 'Dnd1'}
     if cid in pending:
         return 'pending'
     if cid == 'F1':
@@ -1422,6 +1478,16 @@ def run_checks(d):
                            (m.get('tier') == 'phone' and rot != '1' and 'land' not in pid))
         rail = dock_is_rail(dock, W or 1, H or 1)
         apps = find(nodes, 'text', r'^Apps$')
+        _l5_safe = parse_safe_drawing_insets(read(os.path.join(d, 'insets.txt')), W or 1, H or 1)
+
+        def l5_end_edge(rtl_):
+            panel = rail_panel(nodes, W or 1, H or 1, dock)
+            if not panel:
+                return None, 'no rail panel View (cannot measure the end edge)'
+            hd = apps or find(nodes, 'text', r'^Done$')
+            return rail_end_edge(panel.b, [n.b for n in dock], hd.b if hd else None,
+                                 [n.b for n, _ in pairs], W or 1, _l5_safe, rtl_,
+                                 max(2, int(round(s))))[0::2]
         if rail is None:
             add('L5', 'Dock placement (rail vs bottom)', None, 'no dock slots',
                 'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
@@ -1431,10 +1497,11 @@ def run_checks(d):
             if apps and dock:
                 apps_on_rail = abs(apps.cx - dock[0].cx) < max(W * 0.15, 1)
             is_rail_ok, side, rl, rr = rail_geom(dock, W or 1, H or 1, nodes=nodes)
-            locale = (m.get('locale') or 'en-US').lower()
-            rtl = locale.startswith('ar') or locale.endswith('-xb') or 'rtl' in (m.get('shape') or '').lower()
+            # Direction from the point's config / dumped layout direction, never from the rail itself.
+            rtl, dir_src = layout_rtl_of(m, want_loc, force_rtl, layout_dir)
             want_side = 'left' if rtl else 'right'
-            side_ok = (side == want_side) if is_rail_ok else False
+            end_ok, end_det = l5_end_edge(rtl)
+            side_ok = bool(end_ok) if is_rail_ok else False
             # Rail width = max(80 dp, Apps/Done label + 24 dp); no clipped/ellipsised head labels.
             panel_w_dp = ((rr - rl) / s) if (is_rail_ok and rl is not None and rr is not None) else 0.0
             head = apps or find(nodes, 'text', r'^Done$')
@@ -1453,14 +1520,16 @@ def run_checks(d):
             if head and is_rail_ok and rl is not None:
                 head_in = head.b[0] >= rl - 2 and head.b[2] <= rr + 2
             ok_l5 = bool(rail) and side_ok and width_ok and head_in and not ellip
+            if end_ok is None and rail:
+                ok_l5 = None          # no rail panel View to measure: cannot verify the end edge
             if x4_rtl_failed:
                 add('L5', 'Dock placement (rail vs bottom)', None,
                     f'skipped: harness X4 RTL locale/layoutDirection not applied '
                     f'(side {side}, want {want_side}); not a product rail-side score',
-                    'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5', sev='advisory')
+                    'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
             else:
                 add('L5', 'Dock placement (rail vs bottom)', ok_l5 if rail else False,
-                    f'want rail; is_rail {rail}; side {side} (want {want_side}, rtl={rtl}); '
+                    f'want rail; is_rail {rail}; {end_det}; rtl={rtl} ({dir_src}); '
                     f'railW {panel_w_dp:.1f} dp (need ≥{need_w:.1f}); Apps near dock {apps_on_rail}; '
                     f'head_in {head_in} ellip {ellip}; dock {[n.b for n in dock[:3]]}; '
                     f'window {width_dp:.0f}×{height_dp:.0f} dp',
@@ -1470,10 +1539,14 @@ def run_checks(d):
                 f'want bottom; is_rail {rail}; dock {[n.b for n in dock[:3]]}; '
                 f'window {width_dp:.0f}×{height_dp:.0f} dp (fold-open 1.2:1 stays bottom)',
                 'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
-        else:
-            add('L5', 'Dock placement (rail vs bottom)', None,
-                f'no expected placement for {pid}; is_rail {rail}',
+        elif rail is True and not x4_rtl_failed:
+            # No placement rule for this size (e.g. bound-840), but a rail that is drawn must sit on the end edge.
+            rtl, dir_src = layout_rtl_of(m, want_loc, force_rtl, layout_dir)
+            end_ok, end_det = l5_end_edge(rtl)
+            add('L5', 'Dock placement (rail vs bottom)', end_ok,
+                f'no placement rule for {pid}; rail drawn → end-edge only; {end_det}; rtl={rtl} ({dir_src})',
                 'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
+        # else: no placement rule and no rail → L5 omitted (a SKIP would INCOMPLETE under gate=dev8).
 
         # G7: banner / title / page dots / snackbar centre within 1 px of page-column centre (rail layouts).
         if rail is True:

@@ -1,0 +1,4 @@
+app_locales=Locales for dev.nasawa.configlauncher for user 0 are [en-US]
+force_rtl=0
+layout_dir=
+want_locale=en-US
