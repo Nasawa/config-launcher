@@ -189,13 +189,21 @@ class DockRailGeometryTest {
 
     @Test fun titleBarPaddingAbsorbedOnCompactHeight() {
         // Fixture padding.vertical = 6 would make the bar 60 dp (48 button + 12 pad) and push
-        // phone-land 5-row cells under 48. Compact height absorbs the pad (§1.5 / #201 G3).
+        // phone-land 5-row cells under 48. Short page column absorbs the pad (§1.5 / #201 G3).
         assertEquals(0, HomeGeometry.titleBarPaddingV(6, 360f))
         assertEquals(0, HomeGeometry.titleBarPaddingV(6, 479f))
         assertEquals(6, HomeGeometry.titleBarPaddingV(6, 480f))
         assertEquals(6, HomeGeometry.titleBarPaddingV(6, 600f))
         assertEquals(0, HomeGeometry.titleBarPaddingV(0, 360f))
         assertEquals(4, HomeGeometry.titleBarPaddingV(4, 800f))
+    }
+
+    @Test fun titleBarPaddingKeysOffPageColumnNotScreen() {
+        // Tall screen (800) but short multi-window page column (312): same absorb as phone-land.
+        assertEquals(0, HomeGeometry.titleBarPaddingV(6, 312f))
+        assertEquals(0, HomeGeometry.titleBarPaddingV(6, 360f))
+        // Measured page column at the Compact floor keeps the file's padding.
+        assertEquals(6, HomeGeometry.titleBarPaddingV(6, 480f))
     }
 
     @Test fun phoneLandGridPitchMeetsTouchFloorAndAspect() {

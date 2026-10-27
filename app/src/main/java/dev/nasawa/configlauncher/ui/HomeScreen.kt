@@ -38,6 +38,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -290,7 +291,11 @@ fun HomeScreen(vm: HomeViewModel) {
             // Local body so the rail Row and the bottom-dock Column share the same chrome.
             @Composable
             fun HomeBody(mod: Modifier, railHead: Boolean) {
-            Column(mod) {
+            // Measure the page column (window − rail after safeDrawing) so title-bar padding
+            // keys off the laid-out height, not Configuration.screenHeightDp (Pragma #201).
+            BoxWithConstraints(mod) {
+            val pageColH = maxHeight.value
+            Column(Modifier.fillMaxSize()) {
                 // #75: the edit bar takes the top row's place at the same height, so the grid doesn't jump under the finger.
                 // §1.5 rail: Apps/Done and ⋮ move onto the rail head; the source note and "Editing layout" are omitted.
                 if (!railHead) Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
@@ -389,7 +394,7 @@ fun HomeScreen(vm: HomeViewModel) {
                 ContentWidthBox(chromeContent) {
                     if (titleBar != null) {
                         if (countChip) NoticeRow(null, chips = chips)
-                        TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop, onFit = { titleFit = it }) { pageList = true }
+                        TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop, pageColumnHeightDp = pageColH, onFit = { titleFit = it }) { pageList = true }
                     } else {
                         LaunchedEffect(Unit) { titleFit = null }
                         if (countChip) NoticeRow(if (PageList.showLabel(pages)) { { PageLabelButton(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true } } } else null, chips = chips)
@@ -453,6 +458,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     }
                 }
             }
+            } // BoxWithConstraints (page column measure)
             } // HomeBody
 
             if (useRail) {
@@ -888,7 +894,9 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                             Box(
                                 // Editing outline sits on the cell; 2.dp gap is inside the touch target so
                                 // pitchH ≥ 48 keeps a 48×48 hit area (§12 / #201 G3).
-                                Modifier.weight(1f).fillMaxHeight().then(
+                                // clipToBounds: step-4 48 dp icons may fill the cell; density rounding must
+                                // not let them paint into the neighbour (Pragma #201).
+                                Modifier.weight(1f).fillMaxHeight().clipToBounds().then(
                                     if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier,
                                 ),
                                 contentAlignment = Alignment.Center,
@@ -896,12 +904,18 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                                 byCell[x to y]?.let { r ->
                                     with(drag) {
                                         // fillMaxSize + tile before padding: touch bounds = full cell.
+                                        // When the cell is too short for content-pad + icon, drop the 2 dp
+                                        // visual gap so a 48 dp icon fills the cell instead of overflowing.
+                                        val tight = !step.showLabel && cellH < HomeGeometry.ICON_FALLBACK_DP + HomeGeometry.CONTENT_PAD_DP
                                         Tile(
                                             r, apps,
-                                            Modifier.fillMaxSize().tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.PAGE)).padding(2.dp),
+                                            Modifier.fillMaxSize().tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.PAGE)).then(
+                                                if (tight) Modifier else Modifier.padding(2.dp),
+                                            ),
                                             showLabel = true,
                                             iconDp = step.iconDp,
                                             drawLabel = step.showLabel,
+                                            tight = tight,
                                         )
                                     }
                                 }
@@ -966,27 +980,38 @@ internal fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragCont
  * the folder dialog), where it's the home theme's `onSurface` with no shadow or scrim, so it reads in light mode (#182).
  * [iconDp] / [showLabel]: §1.5 icon ladder (56 + label → 48 + label → 48, label hidden). The grid picks one step for
  * every cell; the dock always passes 56 dp with no label.
+ * [tight]: §1.5 step 4 — cell too short for content-pad + 48 dp icon; drop tile pad and centre the icon so it
+ * fills the cell without spilling into the neighbour (Pragma #201).
  */
 @Composable
-fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onWallpaper: Boolean = true, onClick: (() -> Unit)? = null, iconDp: Int = TileLabel.ICON_DP, drawLabel: Boolean = showLabel) {
+fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onWallpaper: Boolean = true, onClick: (() -> Unit)? = null, iconDp: Int = TileLabel.ICON_DP, drawLabel: Boolean = showLabel, tight: Boolean = false) {
     val label = Labels.clean(r.title)
     val style = TileLabel.style(MaterialTheme.typography.labelSmall, onWallpaper)
     val labelColor = TileLabel.color(onWallpaper, MaterialTheme.colorScheme)
     val backdrop = onWallpaper && LocalLabelBackdrop.current
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val pad = if (tight) Modifier else Modifier.padding(4.dp)
     BoxWithConstraints(
-        modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(4.dp).alpha(if (r.missing || r.app?.paused == true) 0.4f else 1f),
-        contentAlignment = Alignment.TopCenter,
+        modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).then(pad).alpha(if (r.missing || r.app?.paused == true) 0.4f else 1f),
+        contentAlignment = if (tight || !drawLabel) Alignment.Center else Alignment.TopCenter,
     ) {
         // [showLabel]: this tile has a name (false on the dock). [drawLabel]: §1.5 ladder still drawing it.
         // When the name is hidden, TalkBack keeps it via contentDescription (§12).
         val fits = !constraints.hasBoundedHeight || maxHeight >= iconDp.dp + TileLabel.height(measurer, label, style, backdrop)
         val whole = showLabel && drawLabel && fits
+        // Cap the icon to the cell so density rounding can't push a 48 dp glyph past the neighbour.
+        val iconSize = if (constraints.hasBoundedHeight || constraints.hasBoundedWidth) {
+            val maxSide = minOf(
+                if (constraints.hasBoundedWidth) maxWidth.value.toInt() else iconDp,
+                if (constraints.hasBoundedHeight) maxHeight.value.toInt() else iconDp,
+            ).coerceAtLeast(0)
+            minOf(iconDp, maxSide)
+        } else iconDp
         Column(
             if (showLabel && !whole) Modifier.semantics { contentDescription = label } else Modifier,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (r.item is FolderItem) FolderIcon(r, apps, iconDp) else AppIconImage(r.app, apps, iconDp)
+            if (r.item is FolderItem) FolderIcon(r, apps, iconSize) else AppIconImage(r.app, apps, iconSize)
             if (whole) Text(
                 label, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
                 style = style, color = labelColor,

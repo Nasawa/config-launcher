@@ -356,9 +356,20 @@ private fun minuteClock(): ZonedDateTime {
  * holding `{page}` opens the page list (≥ 2 pages, 48 dp target) like the page label. [labelBackdrop] is the device's
  * Label backdrop setting, which `backdrop: "auto"` follows. [onFit] gets the §15.1 `warn_titlebar_fit` line (null once
  * the bar fits at step 0 or 1) whenever the overflow ladder's result changes.
+ * [pageColumnHeightDp] is the measured page-column height (§1.5 / #201); when null, falls back to
+ * Configuration.screenHeightDp. Short multi-window layouts must pass the measured value.
  */
 @Composable
-fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int, enabled: Boolean, labelBackdrop: Boolean, onFit: (String?) -> Unit = {}, onOpen: () -> Unit) {
+fun TitleBarRow(
+    bar: TitleBarModel.Bar,
+    pages: List<ResolvedPage>,
+    current: Int,
+    enabled: Boolean,
+    labelBackdrop: Boolean,
+    pageColumnHeightDp: Float? = null,
+    onFit: (String?) -> Unit = {},
+    onOpen: () -> Unit,
+) {
     val ctx = LocalContext.current
     val locale: Locale = LocalConfiguration.current.locales[0] ?: Locale.ROOT
     val now = minuteClock()
@@ -379,9 +390,11 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
     val spoken = shown.copy(date = { p -> if (p == null) fmt(null, dateSpoken) else fmt(p, dateDefault) })
 
     val st = bar.style
-    // §1.5 / #201 G3: on Compact-height windows, absorb style padding into the 48 dp budget so the
-    // title bar does not push home tiles under the §12 touch floor (phone landscape).
-    val padV = HomeGeometry.titleBarPaddingV(st.paddingV, LocalConfiguration.current.screenHeightDp.toFloat())
+    // §1.5 / #201 G3: on a short page column (< 480 dp), absorb style padding into the 48 dp budget
+    // so the title bar does not push home tiles under the §12 touch floor (phone landscape).
+    // Prefer the measured page-column height so short multi-window layouts match phone-land.
+    val pageColH = pageColumnHeightDp ?: LocalConfiguration.current.screenHeightDp.toFloat()
+    val padV = HomeGeometry.titleBarPaddingV(st.paddingV, pageColH)
     // #180: the light/dark variant follows the home theme (the system setting today, #156's `theme` key later).
     val dark = currentHomeDark()
     val scheme = MaterialTheme.colorScheme

@@ -38,13 +38,15 @@ object HomeGeometry {
     const val MIN_TOUCH_DP = 48f
 
     /**
-     * Title-bar vertical padding on Compact-height windows (< 480 dp).
+     * Title-bar vertical padding on a short page column (< 480 dp).
      * Style `padding.vertical` is absorbed into the 48 dp page-button budget so the bar
      * does not steal grid height under the §12 floor (phone landscape / #201 G3).
-     * Taller windows keep the file's padding.
+     * Key off the **measured page-column height**, not Configuration.screenHeightDp, so a
+     * short multi-window layout on a tall screen still gets the fallback (Pragma #201).
+     * Taller page columns keep the file's padding.
      */
-    fun titleBarPaddingV(stylePaddingV: Int, windowHeightDp: Float): Int =
-        if (windowHeightDp < HEIGHT_COMPACT_DP) 0 else stylePaddingV.coerceAtLeast(0)
+    fun titleBarPaddingV(stylePaddingV: Int, pageColumnHeightDp: Float): Int =
+        if (pageColumnHeightDp < HEIGHT_COMPACT_DP) 0 else stylePaddingV.coerceAtLeast(0)
 
     /** §1.5 content-width floor for chrome rows on Medium/Expanded (banner, notice, title bar, bottom dock). */
     const val CONTENT_WIDTH_FLOOR_DP = 576f
