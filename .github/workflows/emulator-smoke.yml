@@ -1,6 +1,6 @@
 name: Emulator smoke
-# Test matrix: emulators API 29, 35 and 36 (minSdk 29). There are no androidTest sources yet,
-# so this installs the debug APK, cold-starts MainActivity, and fails on a crash or ANR.
+# Test matrix: emulators API 29, 35 and 36 (minSdk 29). androidTest sources exist (L8 rotate-mid-drag smoke, L9 hinge @Ignore until Sprite wires WindowInfoTracker);
+# this workflow still installs the debug APK, cold-starts MainActivity, and fails on a crash or ANR.
 # Runs nightly, on demand, on every PR, and on pushes to main.
 on:
   schedule:
