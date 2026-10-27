@@ -4,12 +4,15 @@
 # the display size/density, font scale, night mode and rotation with adb, seeds the fixture layout (debug APK, run-as),
 # walks flows F1-F7, writes uiautomator dumps + screenshots, then runs scripts/screen_matrix_check.py on the dumps.
 #
-# usage: scripts/screen-matrix.sh [--shard NAME] [--points REGEX] [--gate] [--apk PATH] [--out DIR] [--settle SEC]
-#   --shard   only rows of this shard (small-a, small-b, phones, tablets, fold)
-#   --points  only rows whose id matches this extended regex
-#   --gate    only the on-box dev7 gate subset (see the test plan)
-#   --apk     debug APK, or a directory holding one (default app/build/outputs/apk/debug/)
-#   --settle  seconds to wait after start/reload/taps (default 4; use 15-20 on a software-only emulator)
+# usage: scripts/screen-matrix.sh [--shard NAME] [--points REGEX] [--gate] [--matrix-gate LEVEL]
+#                                  [--apk PATH] [--out DIR] [--settle SEC]
+#   --shard        only rows of this shard (small-a, small-b, phones, tablets, fold)
+#   --points       only rows whose id matches this extended regex
+#   --gate         only the on-box gate subset (see the test plan)
+#   --matrix-gate  severity for L* / large G*: dev7 (advisory, default) or dev8 (blocking).
+#                  Also set by MATRIX_GATE. Tag refs matching *dev8* force blocking in CI.
+#   --apk          debug APK, or a directory holding one (default app/build/outputs/apk/debug/)
+#   --settle       seconds to wait after start/reload/taps (default 4; use 15-20 on a software-only emulator)
 # Exit: 0 when every point PASSes, 1 otherwise. Artifacts: <out>/<point>/ and <out>/summary.md.
 set -uo pipefail
 
@@ -21,18 +24,25 @@ CHECK="python3 $HERE/screen_matrix_check.py"
 GATE_RE='^(s320-a51-v1|s320-a51-v2|s320-mdpi-v1|p411-a51-v1|p411-a51-v2|t7-land-v1)$'
 
 SHARD=''; POINTS='.'; OUT=screen-matrix-out; SETTLE=4; APK=''
+# Severity switch for L* / large G* (docs/test-plan-screen-matrix.md "dev7 / dev8 gate").
+MATRIX_GATE=${MATRIX_GATE:-dev7}
 while [ $# -gt 0 ]; do
   case $1 in
     --shard) SHARD=$2; shift 2;;
     --points) POINTS=$2; shift 2;;
     --gate) POINTS=$GATE_RE; shift;;
+    --matrix-gate) MATRIX_GATE=$2; shift 2;;
     --apk) APK=$2; shift 2;;
     --out) OUT=$2; shift 2;;
     --settle) SETTLE=$2; shift 2;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0;;
     *) echo "unknown argument: $1" >&2; exit 2;;
   esac
 done
+case $MATRIX_GATE in
+  dev7|dev8) ;;
+  *) echo "MATRIX_GATE must be dev7 or dev8, got '$MATRIX_GATE'" >&2; exit 2;;
+esac
 if [ -z "$APK" ]; then
   apks=("$ROOT"/app/build/outputs/apk/debug/*.apk)
   APK=${apks[0]}
@@ -133,6 +143,7 @@ run_point() {
     echo "rotation=$rot"; echo "font_scale=$fs"; echo "night=$night"; echo "fixture=$fixture"; echo "tier=$tier"
     echo "shape=$shape"; echo "api=$(sh_ getprop ro.build.version.sdk | tr -d '\r')"
     echo "apk_sha256=$(sha256sum "$APK" | cut -c1-64)"
+    echo "gate=$MATRIX_GATE"
   } > "$d/meta.txt"
   echo "== $id ($shape)"
 
@@ -237,6 +248,26 @@ run_point() {
   fi
   rm -f "$d"/.w0.* "$d"/.w1.*
   sh_ input keyevent BACK; pause 1; sh_ input keyevent BACK; pause 1; home
+
+  # L1 / L7 (ux.md §1.5): on large-tier points, reverse-rotate once; hash launcher.json and dump page 2.
+  if [ "$tier" = large ]; then
+    sh_ "run-as $PKG sha256sum files/config/source/launcher.json 2>/dev/null | cut -c1-64" > "$d/hash-before.txt" || true
+    flip=$((1 - rot))
+    sh_ "settings put system user_rotation $flip"; pause 3
+    sh_ "run-as $PKG sha256sum files/config/source/launcher.json 2>/dev/null | cut -c1-64" > "$d/hash-after-rot.txt" || true
+    if [ -s "$d/home2.xml" ]; then
+      home
+      dump "$d" .home-rot
+      if tap "$d/.home-rot.xml" desc ', Pages$'; then
+        pause
+        dump "$d" .pages-rot
+        tap "$d/.pages-rot.xml" desc '^Second, page 2 of 2' && { pause; dump "$d" home2-rot; }
+      fi
+      rm -f "$d"/.home-rot.* "$d"/.pages-rot.*
+    fi
+    sh_ "settings put system user_rotation $rot"; pause 2
+    home
+  fi
 
   # Crash buffer, launcher ANRs, focus
   sh_ logcat -d -b crash > "$d/crash.txt" 2>&1
