@@ -38,7 +38,8 @@ fun slotLabel(slot: Slot, rtl: Boolean): Int = when (slot) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TitleBarSheet(state: TitleBarEdits.State, onToggle: (Boolean) -> Unit, onPick: (Slot, Choice) -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismiss) {
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismiss, sheetState = sheet) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Text(stringResource(R.string.titlebar_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() })
             val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl

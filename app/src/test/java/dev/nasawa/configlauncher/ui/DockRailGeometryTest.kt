@@ -186,4 +186,40 @@ class DockRailGeometryTest {
         val warn = TitleBarLayout.fitWarning("elements[0]", 320, step = 2, size = null)
         assertTrue(warn != null && "320" in warn && "175" !in warn)
     }
+
+    @Test fun titleBarPaddingAbsorbedOnCompactHeight() {
+        // Fixture padding.vertical = 6 would make the bar 60 dp (48 button + 12 pad) and push
+        // phone-land 5-row cells under 48. Compact height absorbs the pad (§1.5 / #201 G3).
+        assertEquals(0, HomeGeometry.titleBarPaddingV(6, 360f))
+        assertEquals(0, HomeGeometry.titleBarPaddingV(6, 479f))
+        assertEquals(6, HomeGeometry.titleBarPaddingV(6, 480f))
+        assertEquals(6, HomeGeometry.titleBarPaddingV(6, 600f))
+        assertEquals(0, HomeGeometry.titleBarPaddingV(0, 360f))
+        assertEquals(4, HomeGeometry.titleBarPaddingV(4, 800f))
+    }
+
+    @Test fun phoneLandGridPitchMeetsTouchFloorAndAspect() {
+        // Matrix phone-land / dock7-phone-land: 800×360 @ mdpi, safeDrawing T/B 24 → 312 tall;
+        // rail 80 → page column 720. Compact title (48) + page dots (~20) → grid ≈ 244.
+        assertEquals(0, HomeGeometry.titleBarPaddingV(6, 360f))
+        val gridH = 312f - 48f - 20f
+        assertEquals(244f, gridH, 0.01f)
+        val p = HomeGeometry.pitch(720f, gridH, 4, 5, HomeGeometry.WidthClass.Medium)
+        assertTrue("pitchH ≥ 48: ${p.pitchH}", p.pitchH >= HomeGeometry.MIN_TOUCH_DP - 0.01f)
+        assertTrue("W ≤ 1.25·H: ${p.pitchW}/${p.pitchH}", p.pitchW <= 1.25f * p.pitchH + 0.01f)
+        assertTrue("H ≤ 1.5·W", p.pitchH <= 1.5f * p.pitchW + 0.01f)
+        // Aspect wins over MIN_CELL when 1.25·H0 < 64.
+        assertTrue("pitchW may be under MIN_CELL when aspect binds: ${p.pitchW}", p.pitchW <= HomeGeometry.MIN_CELL_DP + 0.01f)
+    }
+
+    @Test fun shortRowsAspectWinsOverMinCell() {
+        // H0 = 46.4 (the pre-fix phone-land grid): 1.25·H0 ≈ 58 < 64. Old code forced 64 and broke aspect.
+        // Floor in px may leave +1 px of slack vs 1.25·finalH (§1.5 / #197 L3).
+        val density = 1f
+        val p = HomeGeometry.pitch(720f, 232f, 4, 5, HomeGeometry.WidthClass.Medium, density)
+        assertTrue(p.pitchW * density <= 1.25f * p.pitchH * density + 1f)
+        assertTrue(p.pitchW < HomeGeometry.MIN_CELL_DP)
+        // Prefer aspect ceiling over MIN_CELL when 1.25·H0 < 64.
+        assertTrue(p.pitchW <= 58.01f)
+    }
 }

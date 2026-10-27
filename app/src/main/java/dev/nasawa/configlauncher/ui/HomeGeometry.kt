@@ -34,6 +34,18 @@ object HomeGeometry {
      */
     const val CONTENT_PAD_DP = 12f
 
+    /** §12 / G3 touch-target floor for home tiles and dock/rail slots. */
+    const val MIN_TOUCH_DP = 48f
+
+    /**
+     * Title-bar vertical padding on Compact-height windows (< 480 dp).
+     * Style `padding.vertical` is absorbed into the 48 dp page-button budget so the bar
+     * does not steal grid height under the §12 floor (phone landscape / #201 G3).
+     * Taller windows keep the file's padding.
+     */
+    fun titleBarPaddingV(stylePaddingV: Int, windowHeightDp: Float): Int =
+        if (windowHeightDp < HEIGHT_COMPACT_DP) 0 else stylePaddingV.coerceAtLeast(0)
+
     /** §1.5 content-width floor for chrome rows on Medium/Expanded (banner, notice, title bar, bottom dock). */
     const val CONTENT_WIDTH_FLOOR_DP = 576f
 
@@ -158,8 +170,12 @@ object HomeGeometry {
         val minCellPx = floor(MIN_CELL_DP * d).toInt()
         // W derived from H0 with floor so W ≤ 1.25·H0 never rounds up.
         val wFromHPx = floor(MAX_W_OVER_H * h0Px.toDouble()).toInt()
-        val pitchWPx = min(floor(w0Px.toDouble()).toInt(), min(capWPx, max(minCellPx, wFromHPx)))
-            .coerceAtLeast(0)
+        // Prefer MIN_CELL when the aspect ceiling allows it; never round up past 1.25·H0
+        // (short phone-landscape rows can put 1.25·H0 under 64 — aspect wins over MIN_CELL).
+        val pitchWPx = min(
+            floor(w0Px.toDouble()).toInt(),
+            min(capWPx, max(minCellPx, wFromHPx).coerceAtMost(wFromHPx.coerceAtLeast(0))),
+        ).coerceAtLeast(0)
         // H capped with floor so H ≤ 1.5·W never rounds up.
         val hFromWPx = floor(MAX_H_OVER_W * pitchWPx.toDouble()).toInt()
         val pitchHPx = min(floor(h0Px.toDouble()).toInt(), hFromWPx).coerceAtLeast(0)

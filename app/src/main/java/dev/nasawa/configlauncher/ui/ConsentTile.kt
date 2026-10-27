@@ -197,8 +197,10 @@ internal class CenterKey(private val onTap: () -> Unit, private val onLong: () -
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WidgetItemSheet(name: String, live: Boolean, reason: ConsentUi.Reason? = null, onAction: (ConsentUi.SheetAction) -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+    // #201 F3: same short-window rule as ItemSheet / #181 — full expand + scroll so every action is reachable.
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismiss, sheetState = sheet) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text(name, style = MaterialTheme.typography.titleMedium)
             Text(stringResource(R.string.widget_sheet_source_file), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             reason?.let { Text(reasonText(it), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp)) }
@@ -220,7 +222,8 @@ fun WidgetItemSheet(name: String, live: Boolean, reason: ConsentUi.Reason? = nul
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpdateHintSheet(onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismiss) {
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismiss, sheetState = sheet) {
         Text(stringResource(R.string.tile_update_hint), Modifier.padding(start = 24.dp, end = 24.dp, bottom = 32.dp))
     }
 }

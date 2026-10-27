@@ -886,16 +886,19 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                     Row(Modifier.fillMaxWidth().weight(1f)) {
                         for (x in 0 until grid.columns) {
                             Box(
-                                Modifier.weight(1f).fillMaxHeight().padding(2.dp).then(
+                                // Editing outline sits on the cell; 2.dp gap is inside the touch target so
+                                // pitchH ≥ 48 keeps a 48×48 hit area (§12 / #201 G3).
+                                Modifier.weight(1f).fillMaxHeight().then(
                                     if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier,
                                 ),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 byCell[x to y]?.let { r ->
                                     with(drag) {
+                                        // fillMaxSize + tile before padding: touch bounds = full cell.
                                         Tile(
                                             r, apps,
-                                            Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.PAGE)),
+                                            Modifier.fillMaxSize().tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.PAGE)).padding(2.dp),
                                             showLabel = true,
                                             iconDp = step.iconDp,
                                             drawLabel = step.showLabel,

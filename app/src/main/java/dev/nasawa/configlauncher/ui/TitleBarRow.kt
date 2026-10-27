@@ -379,6 +379,9 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
     val spoken = shown.copy(date = { p -> if (p == null) fmt(null, dateSpoken) else fmt(p, dateDefault) })
 
     val st = bar.style
+    // §1.5 / #201 G3: on Compact-height windows, absorb style padding into the 48 dp budget so the
+    // title bar does not push home tiles under the §12 touch floor (phone landscape).
+    val padV = HomeGeometry.titleBarPaddingV(st.paddingV, LocalConfiguration.current.screenHeightDp.toFloat())
     // #180: the light/dark variant follows the home theme (the system setting today, #156's `theme` key later).
     val dark = currentHomeDark()
     val scheme = MaterialTheme.colorScheme
@@ -453,7 +456,7 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
 
     Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
         SubcomposeLayout(
-            Modifier.fillMaxWidth().then(back).padding(horizontal = st.paddingH.dp, vertical = st.paddingV.dp),
+            Modifier.fillMaxWidth().then(back).padding(horizontal = st.paddingH.dp, vertical = padV.dp),
         ) { cs ->
             val w = cs.maxWidth
             val gap = TitleBarLayout.GAP_DP.dp.roundToPx()

@@ -161,4 +161,35 @@ class DockRailPlacementTest {
         val winRightGap = window.right.value - chrome.right.value
         assertTrue("not equal margins on the raw window when the rail is present rtl=$rtl", kotlin.math.abs(winLeftGap - winRightGap) > 2f)
     }
+
+    @Test @Config(qualifiers = "w800dp-h360dp-mdpi")
+    fun railScrollsWhenSevenAppsOnShortPhoneLand() {
+        // Grace couldn't run rail scrolling locally; 7×48 = 336 > short avail → needsRailScroll + 48 dp slots.
+        val seven = (0 until 7).map { ResolvedItem(AppItem("d$it", "dock.$it", label = "Dock $it"), null) }
+        assertTrue(HomeGeometry.needsRailScroll(7, 280f))
+        assertEquals(48f, HomeGeometry.railSlotDp(7, 280f), 0.01f)
+        rule.setContent {
+            val apps = InstalledApps(ApplicationProvider.getApplicationContext())
+            val drag = DragController({ error("unused") }) {}
+            drag.dockVertical = true
+            Box(Modifier.size(800.dp, 360.dp).testTag("window")) {
+                Row(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f).fillMaxHeight().testTag("page"))
+                    DockRail(seven, apps, drag, {}, {}, { _, _ -> emptyList() }) {
+                        Text("Apps", maxLines = 1, softWrap = false, overflow = TextOverflow.Visible)
+                    }
+                }
+            }
+        }
+        rule.waitForIdle()
+        val rail = rule.onNodeWithTag("dockRail").getBoundsInRoot()
+        val railH = (rail.bottom - rail.top).value
+        // Unshrunk 7×64 would need 448 dp; phone-land rail column is far shorter → scroll path.
+        assertTrue("rail shorter than 7×64: $railH", railH < 7f * 64f - 1f)
+        // Slot floor still 48 (§12) for the scrollable path.
+        assertEquals(48f, HomeGeometry.railSlotDp(7, 280f), 0.01f)
+        assertTrue(HomeGeometry.useRail(800f, 360f))
+        assertTrue("rail composed for 7 dock apps", railH > 0f)
+    }
+
 }
