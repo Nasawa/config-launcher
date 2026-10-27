@@ -140,12 +140,16 @@ anr() {
   rm -f "$d/.anr.xml"
 }
 
-# After our app is HOME, disable Pixel/Nexus (and AOSP Launcher3) so they cannot ANR over dumps.
-# Idempotent; safe on images that lack those packages.
+# After our app is HOME, force-stop Pixel/Nexus (and AOSP Launcher3) so they cannot ANR over dumps.
+# Do NOT pm disable-user by default: on API 35 google_apis Pixel Launcher hosts the gesture-nav
+# recents provider, and disabling it drops the navigationBars inset (800×312 split went 196→220 dp
+# grid, pitch 39→44; run 40553533989). MATRIX_DISABLE_STOCK_LAUNCHER=1 restores the disable.
 disable_stock_launchers() {
   local p
   for p in com.google.android.apps.nexuslauncher com.android.launcher3; do
-    sh_ "pm disable-user --user 0 $p" >/dev/null 2>&1 || true
+    if [ "${MATRIX_DISABLE_STOCK_LAUNCHER:-0}" = 1 ]; then
+      sh_ "pm disable-user --user 0 $p" >/dev/null 2>&1 || true
+    fi
     sh_ "am force-stop $p" >/dev/null 2>&1 || true
   done
 }
@@ -320,6 +324,8 @@ run_point() {
 
   # L3/L5 safeDrawing: system bars + cutout from dumpsys window (checker parses → insets).
   sh_ dumpsys window > "$d/insets.txt" 2>&1 || true
+  # Record the nav-bar inset so a harness change that drops it is visible (pitch reference geometry).
+  echo "nav_inset=$(grep -m1 -o 'type=navigationBars frame=\[[^]]*\]\[[^]]*\]' "$d/insets.txt" | sed 's/.*frame=//' || true)" >> "$d/meta.txt"
 
   # Warm-up + F3–F7 only when seed produced home (else product checks would score FirstRun as app bugs).
   hd="$d/home1.xml"
@@ -494,7 +500,7 @@ grep -q '^Success' "$OUT/install.txt" || { echo "install failed" >&2; exit 1; }
 # Claim HOME and disable stock Pixel/Nexus Launcher before any point (API 35 tablet ANR storm).
 sh_ "cmd package set-home-activity $PKG/.MainActivity > /dev/null 2>&1" || true
 disable_stock_launchers
-echo "stock_launcher_disabled=1" >> "$OUT/harness-setup.txt"
+echo "stock_launcher_disabled=${MATRIX_DISABLE_STOCK_LAUNCHER:-0} (force-stop only when 0)" >> "$OUT/harness-setup.txt"
 sh_ "pm list packages -d" >> "$OUT/harness-setup.txt" 2>&1 || true
 
 dups=$(awk -F'\t' '!/^#/ && NF > 1 {print $1}' "$FIX/points.tsv" | sort | uniq -d)
