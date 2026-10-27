@@ -26,6 +26,10 @@ DND="python3 $HERE/screen_matrix_dnd.py"
 # Live DnD / pager probe (#187, PR #210): MATRIX_PROBES=dnd enables it on these points (launcher.json fixture only).
 MATRIX_PROBES=${MATRIX_PROBES:-}
 DND_POINTS=${DND_POINTS:-'^(rtl-.*|t7-land-v1|t7-port-v1|phone-land-v1|p411-a51-v1)$'}
+# Pager-restore probe (#188, PR #214): MATRIX_PROBES=pager runs it after the checker on these points;
+# pager-only skips F3-F7, L1/L7 and the checker on every point (probe runs only, no matrix verdict).
+PAGER="python3 $HERE/screen_matrix_pager.py"
+PAGER_POINTS=${PAGER_POINTS:-'^(p411-a51-v1|p411-a51-v1-a36|rtl-phone-port-v1|t7-port-v1|rtl-t7-land-v1|fold-open-v1|split-phone-v1)$'}
 GATE_RE='^(s320-a51-v1|s320-a51-v2|s320-mdpi-v1|p411-a51-v1|p411-a51-v2|t7-land-v1)$'
 
 SHARD=''; POINTS='.'; OUT=screen-matrix-out; SETTLE=4; APK=''
@@ -340,6 +344,11 @@ run_point() {
 
   # Warm-up + F3–F7 only when seed produced home (else product checks would score FirstRun as app bugs).
   hd="$d/home1.xml"
+  if [[ ",$MATRIX_PROBES," == *,pager-only,* ]]; then
+    if [[ $id =~ $PAGER_POINTS ]] && [ "$seed_ok" -eq 1 ]; then pager_probe "$d" "$dens" "$size" "$rot" "$shape"; fi
+    sh_ "settings put system user_rotation $rot"
+    return
+  fi
   if [ "$seed_ok" -eq 1 ]; then
   # L6s: dock7 on a short rail — swipe the rail toward the end so Dock7 is reachable, then dump.
   # DnD into/out of the rail is left on the manual dev8 checklist (input draganddrop is unreliable on CI).
@@ -467,6 +476,166 @@ run_point() {
   if [[ ",$MATRIX_PROBES," == *,dnd,* ]] && [[ $id =~ $DND_POINTS ]] && [ "$fixture" = launcher.json ] && [ "$seed_ok" -eq 1 ]; then
     dnd_probe "$d" "$dens"
   fi
+  if [[ ",$MATRIX_PROBES," == *,pager,* ]] && [[ $id =~ $PAGER_POINTS ]] && [ "$seed_ok" -eq 1 ]; then
+    pager_probe "$d" "$dens" "$size" "$rot" "$shape"
+  fi
+}
+
+# --- Pager-restore probe (#188 / PR #214; scripts/screen_matrix_pager.py scores it).
+# Fixture pager.json = pages home, second, third (tiles "QA Settings", "Second tile", "Third tile").
+# Every case starts cold from pager.json and moves to a NON-zero page through the Pages list, then changes the
+# window or reloads. Each step: pg-<case>-<step>.xml/.png; crash + ANR per case: pg-<case>-crash.txt.
+pg_seed() {   # pg_seed <dir> <fixture>: cold start on <fixture>
+  sh_ am force-stop "$PKG"
+  A push "$FIX/$2" /data/local/tmp/sm-pager.json > /dev/null < /dev/null
+  sh_ "run-as $PKG sh -c 'cp /data/local/tmp/sm-pager.json files/config/source/launcher.json'"
+  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1; pause; anr "$1"
+  sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" > /dev/null 2>&1; pause 3; anr "$1"
+}
+pg_reload() {  # pg_reload <dir> <fixture>: replace the config in place and RELOAD (no restart)
+  A push "$FIX/$2" /data/local/tmp/sm-pager.json > /dev/null < /dev/null
+  sh_ "run-as $PKG sh -c 'cp /data/local/tmp/sm-pager.json files/config/source/launcher.json'"
+  sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" > /dev/null 2>&1; pause; anr "$1"
+}
+pg_goto() {    # pg_goto <dir> <Title>: Pages list → that page (swipe fallback is not used: it is a check of its own)
+  local d=$1 t=$2
+  dump "$d" .pg
+  tap "$d/.pg.xml" desc ', Pages$' || { rm -f "$d"/.pg.*; return 1; }
+  pause 3; dump "$d" .pg
+  tap "$d/.pg.xml" desc "^$t, page" || { rm -f "$d"/.pg.*; sh_ input keyevent BACK; return 1; }
+  pause 3; rm -f "$d"/.pg.*
+}
+pg_hash() { sh_ "run-as $PKG sha256sum files/config/source/launcher.json 2>/dev/null | cut -c1-64" | tr -d '\r'; }
+pg_snap() {    # pg_snap <dir> <case> <step>
+  dump "$1" "pg-$2-$3"
+  sh_ dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -m1 -E 'topResumedActivity|mResumedActivity' > "$1/pg-$2-$3-top.txt" || true
+  echo "$2 $3 hash=$(pg_hash)" >> "$1/pager-hashes.txt"
+}
+pg_case_start() { echo "== pager $2" >> "$1/run.txt"; echo "$2" >> "$1/pager-cases.txt"; sh_ logcat -b all -c > /dev/null 2>&1; }
+pg_case_end() {
+  { sh_ logcat -d -b crash; sh_ logcat -d -b main -b system | grep -E "ANR in $PKG|FATAL EXCEPTION|AndroidRuntime.*$PKG"; } > "$1/pg-$2-crash.txt" 2>&1
+}
+pg_task() { sh_ "dumpsys activity activities" 2>/dev/null | tr -d '\r' | grep -E "Task\{|mWindowingMode|windowingMode=" | grep -m3 -iE "configlauncher|freeform|multi" ; }
+pager_probe() {
+  local d=$1 dens=$2 size=$3 rot=$4 shape=$5 flip w h hw x y tid
+  w=${size%x*}; h=${size#*x}; flip=$((1 - rot))
+  echo "== pager probe ($id)" >> "$d/run.txt"
+  : > "$d/pager-cases.txt"; : > "$d/pager-hashes.txt"
+  sh_ "settings put system user_rotation $rot"
+
+  # cold: LTR/RTL regression: cold start lands on page 1, swipe next twice and back once (2, 3, 2)
+  pg_case_start "$d" cold; pg_seed "$d" pager.json; pg_snap "$d" cold 0-start
+  read -r W H <<< "$($CHECK screen "$d/pg-cold-0-start.xml" 2>/dev/null || echo "$w $h")"
+  # warm-up tap (first touch after cold start is often dropped)
+  if p=$($CHECK find-empty "$d/pg-cold-0-start.xml" "$dens"); then read -r x y <<< "$p"; sh_ input tap "$x" "$y"; pause 2; fi
+  y=$((H * 55 / 100))
+  if echo "$shape" | grep -qi rtl; then a=$((W * 20 / 100)); b=$((W * 80 / 100)); else a=$((W * 80 / 100)); b=$((W * 20 / 100)); fi
+  sh_ input swipe "$a" "$y" "$b" "$y" 300; pause 3; pg_snap "$d" cold 1-next
+  sh_ input swipe "$a" "$y" "$b" "$y" 300; pause 3; pg_snap "$d" cold 2-next
+  sh_ input swipe "$b" "$y" "$a" "$y" 300; pause 3; pg_snap "$d" cold 3-prev
+  pg_case_end "$d" cold
+
+  # rot: page 2 → rotate → rotate back
+  pg_case_start "$d" rot; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager rot: goto failed" >> "$d/run.txt"
+  pg_snap "$d" rot 0-before
+  sh_ "settings put system user_rotation $flip"; pause; anr "$d"; pg_snap "$d" rot 1-rotated
+  sh_ "settings put system user_rotation $rot"; pause; anr "$d"; pg_snap "$d" rot 2-back
+  pg_case_end "$d" rot
+
+  # resize (fold/unfold stand-in): page 2 → half width → density change → back
+  pg_case_start "$d" resize; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager resize: goto failed" >> "$d/run.txt"
+  pg_snap "$d" resize 0-before
+  hw=$(( w / 2 )); sh_ "wm size ${hw}x$h"; pause; anr "$d"; sh_ wm size >> "$d/pager-wm.txt"; pg_snap "$d" resize 1-half
+  sh_ "wm density $(( dens * 3 / 4 ))"; pause; anr "$d"; sh_ wm density >> "$d/pager-wm.txt"; pg_snap "$d" resize 2-density
+  sh_ "wm density $dens; wm size $size"; pause; anr "$d"; sh_ "wm size; wm density" >> "$d/pager-wm.txt"; pg_snap "$d" resize 3-back
+  pg_case_end "$d" resize
+
+  # mw: real freeform window if the image allows it (enter, resize twice, leave), then the short-pane wm-size stand-in
+  pg_case_start "$d" mw; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager mw: goto failed" >> "$d/run.txt"
+  pg_snap "$d" mw 0-before
+  {
+    echo "--- enable freeform"
+    sh_ "settings put global enable_freeform_support 1; settings put global force_resizable_activities 1; settings put global enable_non_resizable_multi_window 1" 2>&1
+    tid=$(sh_ "dumpsys activity activities" 2>/dev/null | tr -d '\r' | grep -m1 -oE "Task\{[0-9a-f]+ #[0-9]+[^}]*configlauncher" | grep -oE '#[0-9]+' | tr -d '#')
+    echo "task=$tid"
+    [ -n "$tid" ] && sh_ "am task set-windowing-mode $tid 5" 2>&1 || true
+    [ -n "$tid" ] && sh_ "cmd activity task set-windowing-mode $tid 5" 2>&1 || true
+    pg_task | grep -qi freeform || sh_ "am start -W --windowingMode 5 -n $PKG/.MainActivity" 2>&1
+    pg_task
+  } >> "$d/pager-mw.txt" 2>&1
+  pause; anr "$d"; pg_snap "$d" mw 1-freeform
+  if [ -n "$tid" ]; then
+    { echo "--- resize"; sh_ "am task resize $tid 0 0 $((w * 2 / 3)) $((h / 2))" 2>&1; pg_task; } >> "$d/pager-mw.txt" 2>&1
+    pause; anr "$d"; pg_snap "$d" mw 2-resize-a
+    { echo "--- resize"; sh_ "am task resize $tid 0 0 $((w / 2)) $((h * 2 / 3))" 2>&1; pg_task; } >> "$d/pager-mw.txt" 2>&1
+    pause; anr "$d"; pg_snap "$d" mw 3-resize-b
+    { echo "--- leave"; sh_ "am task set-windowing-mode $tid 1" 2>&1; sh_ "cmd activity task set-windowing-mode $tid 1" 2>&1; pg_task; } >> "$d/pager-mw.txt" 2>&1
+    pause; anr "$d"; pg_snap "$d" mw 4-left
+  fi
+  # short pane stand-in (as split-phone-v1): same width, 40 % height; then a taller pane; then back
+  sh_ "wm size ${w}x$(( h * 40 / 100 ))"; pause; anr "$d"; pg_snap "$d" mw 5-pane-short
+  sh_ "wm size ${w}x$(( h * 60 / 100 ))"; pause; anr "$d"; pg_snap "$d" mw 6-pane-tall
+  sh_ "wm size $size"; pause; anr "$d"; pg_snap "$d" mw 7-full
+  sh_ "wm size" >> "$d/pager-wm.txt"
+  pg_case_end "$d" mw
+
+  # reorder: on second (page 2) → second moves to the front → same page, now 1 of 3
+  pg_case_start "$d" reorder; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager reorder: goto failed" >> "$d/run.txt"
+  pg_snap "$d" reorder 0-before
+  pg_reload "$d" pager-reorder.json; pg_snap "$d" reorder 1-reloaded
+  # then a recreation on the reordered list (saved id + new index survive a rotate)
+  sh_ "settings put system user_rotation $flip"; pause; anr "$d"; pg_snap "$d" reorder 2-rotated
+  sh_ "settings put system user_rotation $rot"; pause; anr "$d"
+  pg_case_end "$d" reorder
+
+  # remove-last: on third (page 3) → third deleted → clamp to new last (second, 2 of 2)
+  pg_case_start "$d" rmlast; pg_seed "$d" pager.json; pg_goto "$d" Third || echo "pager rmlast: goto failed" >> "$d/run.txt"
+  pg_snap "$d" rmlast 0-before
+  pg_reload "$d" pager-remove-last.json; pg_snap "$d" rmlast 1-reloaded
+  pg_case_end "$d" rmlast
+
+  # remove-mid: on second (page 2) → second deleted → same index (third, 2 of 2)
+  pg_case_start "$d" rmmid; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager rmmid: goto failed" >> "$d/run.txt"
+  pg_snap "$d" rmmid 0-before
+  pg_reload "$d" pager-remove-mid.json; pg_snap "$d" rmmid 1-reloaded
+  pg_case_end "$d" rmmid
+
+  # dragrot: page 2, edit mode, long-press-drag "Second tile", rotate while the finger is down, then UP.
+  # Want: drag cancelled, launcher.json unchanged, no crash, still page 2.
+  pg_case_start "$d" dragrot; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager dragrot: goto failed" >> "$d/run.txt"
+  dnd_edit "$d" "$dens" || echo "pager dragrot: no edit mode" >> "$d/run.txt"
+  pg_snap "$d" dragrot 0-edit
+  pg_hash > "$d/pg-dragrot-hash-before.txt"
+  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-dragrot-config-before.json" 2>/dev/null || true
+  if p=$($CHECK find "$d/pg-dragrot-0-edit.xml" text '^Second tile$'); then
+    read -r x y <<< "$p"
+    sh_ "input motionevent DOWN $x $y; sleep 1.6; input motionevent MOVE $((x + W / 20)) $((y + H / 40)); input motionevent MOVE $((x + W / 10)) $((y + H / 20)); input motionevent MOVE $((x + W / 6)) $((y + H / 12))"
+    dump "$d" pg-dragrot-1-dragging
+    sh_ "settings put system user_rotation $flip"; pause
+    sh_ "input motionevent MOVE $((x + W / 5)) $((y + H / 10)); input motionevent UP $((x + W / 5)) $((y + H / 10))"
+    pause 3; anr "$d"; pg_snap "$d" dragrot 2-rotated
+    sh_ "settings put system user_rotation $rot"; pause; anr "$d"; pg_snap "$d" dragrot 3-back
+  else
+    echo "pager dragrot: Second tile not found" >> "$d/run.txt"
+  fi
+  pg_hash > "$d/pg-dragrot-hash-after.txt"
+  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-dragrot-config-after.json" 2>/dev/null || true
+  pg_case_end "$d" dragrot
+
+  # oos (out of scope, #188 stays open): drawer / edit mode across a rotate, recorded not scored
+  pg_case_start "$d" oos; pg_seed "$d" pager.json; pg_goto "$d" Second || true
+  dnd_edit "$d" "$dens" || true; pg_snap "$d" oos 0-edit
+  sh_ "settings put system user_rotation $flip"; pause; anr "$d"; pg_snap "$d" oos 1-edit-rotated
+  sh_ "settings put system user_rotation $rot"; pause; anr "$d"; home
+  sh_ input swipe $((W / 2)) $((H * 70 / 100)) $((W / 2)) $((H * 25 / 100)) 300; pause; pg_snap "$d" oos 2-drawer
+  sh_ "settings put system user_rotation $flip"; pause; anr "$d"; pg_snap "$d" oos 3-drawer-rotated
+  sh_ "settings put system user_rotation $rot"; pause; anr "$d"
+  pg_case_end "$d" oos
+
+  $PAGER score "$d" >> "$d/run.txt" 2>&1 || echo "pager score non-zero" >> "$d/run.txt"
+  grep -m1 '^# Pager' "$d/pager.md" 2>/dev/null || true
+  sh_ "wm size $size; wm density $dens; settings put system user_rotation $rot"
+  dnd_reset "$d"; home
 }
 
 # --- DnD / pager probe (scripts/screen_matrix_dnd.py). Each case starts from the seeded fixture.

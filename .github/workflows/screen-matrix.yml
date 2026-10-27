@@ -20,7 +20,7 @@ on:
         type: choice
         options: [dev7, dev8]
       probes:
-        description: 'Extra live probes, comma-separated (dnd = scripted drag-and-drop + pager direction, #187). Empty = none.'
+        description: 'Extra live probes, comma-separated (dnd = scripted drag-and-drop + pager direction, #187; pager = pager restore by page id, #188; pager-only = only the pager probe, no checker). Empty = none.'
         default: ''
         type: string
   push:
