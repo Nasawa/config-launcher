@@ -716,44 +716,93 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                      live: List<ConsentUi.Live> = emptyList(), onWidgetLong: (WidgetSheetFor) -> Unit = {}, onPermissions: (String) -> Unit = {}) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = grid.rows
-    Column(Modifier.fillMaxSize().padding(8.dp)) {
-        val body: @Composable ColumnScope.() -> Unit = {
-            for (y in 0 until rows) {
-                Row(Modifier.fillMaxWidth().weight(1f)) {
-                    for (x in 0 until grid.columns) {
-                        // §4.1: in edit mode every cell shows a faint outline (white 16 %).
-                        Box(Modifier.weight(1f).fillMaxHeight().padding(2.dp).then(
-                            if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier),
-                            contentAlignment = Alignment.Center) {
-                            byCell[x to y]?.let { r -> with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.PAGE))) } }
+    val occupied by rememberUpdatedState(byCell.keys + tiles.flatMap { it.placement.cells() } + live.flatMap { it.placement.cells() })
+    val onEmpty by rememberUpdatedState(onEmptyLong)
+    // §1.5: width class from the window; pitch from the pager slot left for the grid.
+    val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.toFloat()
+    val widthClass = HomeGeometry.widthClass(screenW)
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val labelStyle = TileLabel.style(MaterialTheme.typography.labelSmall, onWallpaper = true)
+    val backdrop = LocalLabelBackdrop.current
+    // One line height for the whole grid (ladder is chosen once; icons never mix sizes on a page).
+    val labelLineDp = TileLabel.height(measurer, "Ag", labelStyle, backdrop).value
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val availW = maxWidth.value
+        val availH = maxHeight.value
+        val pitch = HomeGeometry.pitch(availW, availH, grid.columns, rows, widthClass)
+        val (originX, originY) = HomeGeometry.blockOrigin(availW, availH, pitch)
+        // Compact still has the 8.dp grid pad inside the block; ladder uses the cell the tile actually gets.
+        val pad = if (pitch.capped) 0f else 16f
+        val cellW = if (pitch.capped) pitch.pitchW else ((pitch.blockW - pad) / grid.columns).coerceAtLeast(0f)
+        val cellH = if (pitch.capped) pitch.pitchH else ((pitch.blockH - pad) / rows).coerceAtLeast(0f)
+        val contentW = (cellW - HomeGeometry.CONTENT_PAD_DP).coerceAtLeast(0f)
+        val contentH = (cellH - HomeGeometry.CONTENT_PAD_DP).coerceAtLeast(0f)
+        val step = HomeGeometry.iconStep(contentW, contentH, labelLineDp)
+        // Long-press on the whole pager slot: margins and empty cells open the home menu (§1.5 / #75).
+        Box(
+            Modifier.fillMaxSize().pointerInput(grid, pitch, originX, originY) {
+                detectTapGestures(onLongPress = { pos ->
+                    val cell = GridHit.cellInBlock(
+                        pos.x, pos.y,
+                        originX * density, originY * density,
+                        pitch.blockW * density, pitch.blockH * density,
+                        grid.columns, rows,
+                    )
+                    if (cell == null || cell !in occupied) onEmpty()
+                })
+            },
+        ) {
+            val blockMod = Modifier
+                .width(pitch.blockW.dp)
+                .height(pitch.blockH.dp)
+                .align(Alignment.Center)
+                .onGloballyPositioned { drag.gridRect = it.boundsInRoot() }
+            Column(blockMod.padding(if (pitch.capped) 0.dp else 8.dp)) {
+                for (y in 0 until rows) {
+                    Row(Modifier.fillMaxWidth().weight(1f)) {
+                        for (x in 0 until grid.columns) {
+                            Box(
+                                Modifier.weight(1f).fillMaxHeight().padding(2.dp).then(
+                                    if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier,
+                                ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                byCell[x to y]?.let { r ->
+                                    with(drag) {
+                                        Tile(
+                                            r, apps,
+                                            Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.PAGE)),
+                                            showLabel = true,
+                                            iconDp = step.iconDp,
+                                            drawLabel = step.showLabel,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
-        // §1.1: long-press on empty space opens the home menu. Detected on the whole grid (#75: the gutters between
-        // cells count too); a press that lands on an occupied cell is the tile's own long-press.
-        val occupied by rememberUpdatedState(byCell.keys + tiles.flatMap { it.placement.cells() } + live.flatMap { it.placement.cells() })
-        val onEmpty by rememberUpdatedState(onEmptyLong)
-        BoxWithConstraints(Modifier.weight(1f).onGloballyPositioned { drag.gridRect = it.boundsInRoot() }.pointerInput(grid) {
-            detectTapGestures(onLongPress = { pos ->
-                val cell = GridHit.cell(pos.x, pos.y, size.width.toFloat(), size.height.toFloat(), grid.columns, grid.rows)
-                if (cell !in occupied) onEmpty()
-            })
-        }) {
-            Column(Modifier.fillMaxSize(), content = body)
-            // #142: a non-live widget's consent tile spans its cells (ux.md §17.3); its content is never drawn.
-            val cw = maxWidth / grid.columns
-            val ch = maxHeight / rows
+            // #142: consent / live tiles span cells inside the placed block (Compact keeps the 8.dp pad).
+            val padDp = if (pitch.capped) 0f else 8f
+            val cellWDp = if (pitch.capped) pitch.pitchW.dp else ((pitch.blockW - 2 * padDp) / grid.columns).dp
+            val cellHDp = if (pitch.capped) pitch.pitchH.dp else ((pitch.blockH - 2 * padDp) / rows).dp
+            val baseXDp = (originX + padDp).dp
+            val baseYDp = (originY + padDp).dp
             tiles.forEach { t ->
                 val p = t.placement
-                ConsentTile(t, onReview = { onTile(t) }, modifier = Modifier.offset(cw * p.x, ch * p.y).size(cw * p.w, ch * p.h),
-                    onLongPress = { onWidgetLong(WidgetSheetFor(t, null)) })
+                ConsentTile(
+                    t, onReview = { onTile(t) },
+                    modifier = Modifier.offset(baseXDp + cellWDp * p.x, baseYDp + cellHDp * p.y).size(cellWDp * p.w, cellHDp * p.h),
+                    onLongPress = { onWidgetLong(WidgetSheetFor(t, null)) },
+                )
             }
             live.forEach { l ->
                 val p = l.placement
-                LiveCardTarget(l, onLongPress = { onWidgetLong(WidgetSheetFor(null, l)) }, onPermissions = { onPermissions(l.id) },
-                    modifier = Modifier.offset(cw * p.x, ch * p.y).size(cw * p.w, ch * p.h))
+                LiveCardTarget(
+                    l, onLongPress = { onWidgetLong(WidgetSheetFor(null, l)) }, onPermissions = { onPermissions(l.id) },
+                    modifier = Modifier.offset(baseXDp + cellWDp * p.x, baseYDp + cellHDp * p.y).size(cellWDp * p.w, cellHDp * p.h),
+                )
             }
         }
     }
@@ -779,7 +828,7 @@ internal fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragCont
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
         items.forEach { r -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.DOCK))
-                    .semantics { contentDescription = res.getString(R.string.a11y_dock_item, Labels.clean(r.title)) }, showLabel = false) } } }
+                    .semantics { contentDescription = res.getString(R.string.a11y_dock_item, Labels.clean(r.title)) }, showLabel = false, iconDp = HomeGeometry.ICON_DP) } } }
         if (items.isEmpty()) Text(stringResource(R.string.dock_empty), color = Color.Gray, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterVertically))
     }
 }
@@ -788,9 +837,11 @@ internal fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragCont
  * One app or folder cell. [onWallpaper]: true on home (grid, dock), where the label is white with the label shadow
  * and the `Label backdrop` scrim (§12.1, it doesn't follow the theme); false on a themed surface (the drawer sheet,
  * the folder dialog), where it's the home theme's `onSurface` with no shadow or scrim, so it reads in light mode (#182).
+ * [iconDp] / [showLabel]: §1.5 icon ladder (56 + label → 48 + label → 48, label hidden). The grid picks one step for
+ * every cell; the dock always passes 56 dp with no label.
  */
 @Composable
-fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onWallpaper: Boolean = true, onClick: (() -> Unit)? = null) {
+fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onWallpaper: Boolean = true, onClick: (() -> Unit)? = null, iconDp: Int = TileLabel.ICON_DP, drawLabel: Boolean = showLabel) {
     val label = Labels.clean(r.title)
     val style = TileLabel.style(MaterialTheme.typography.labelSmall, onWallpaper)
     val labelColor = TileLabel.color(onWallpaper, MaterialTheme.colorScheme)
@@ -800,15 +851,15 @@ fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, sh
         modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(4.dp).alpha(if (r.missing || r.app?.paused == true) 0.4f else 1f),
         contentAlignment = Alignment.TopCenter,
     ) {
-        // ux.md §12 (#173, #175): a label is shown whole or not at all. When the cell is shorter than the icon plus one
-        // full label line (a banner, B9, the notice row, a small phone, a big font), it's hidden, never cut through the
-        // letters. A hidden label is still spoken by TalkBack.
-        val whole = showLabel && (!constraints.hasBoundedHeight || maxHeight >= TileLabel.ICON_DP.dp + TileLabel.height(measurer, label, style, backdrop))
+        // [showLabel]: this tile has a name (false on the dock). [drawLabel]: §1.5 ladder still drawing it.
+        // When the name is hidden, TalkBack keeps it via contentDescription (§12).
+        val fits = !constraints.hasBoundedHeight || maxHeight >= iconDp.dp + TileLabel.height(measurer, label, style, backdrop)
+        val whole = showLabel && drawLabel && fits
         Column(
             if (showLabel && !whole) Modifier.semantics { contentDescription = label } else Modifier,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (r.item is FolderItem) FolderIcon(r, apps) else AppIconImage(r.app, apps, TileLabel.ICON_DP)
+            if (r.item is FolderItem) FolderIcon(r, apps, iconDp) else AppIconImage(r.app, apps, iconDp)
             if (whole) Text(
                 label, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
                 style = style, color = labelColor,
@@ -818,9 +869,9 @@ fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, sh
     }
 }
 
-/** The grid label's size rules (ux.md §12): one line, at most 76 dp wide, under a 48 dp icon. */
+/** The grid label's size rules (ux.md §12 / §1.5): one line, at most 76 dp wide, under a 56 dp icon (48 on the ladder). */
 object TileLabel {
-    const val ICON_DP = 48
+    const val ICON_DP = HomeGeometry.ICON_DP
     const val MAX_WIDTH_DP = 76
 
     /** White on the wallpaper (§12.1); the theme's `onSurface` on the drawer sheet and in the folder dialog. */
@@ -850,11 +901,12 @@ internal fun AppIconImage(app: InstalledApp?, apps: InstalledApps, sizeDp: Int) 
 }
 
 @Composable
-private fun FolderIcon(r: ResolvedItem, apps: InstalledApps) {
-    Box(Modifier.size(48.dp).background(Color(0x33FFFFFF), RoundedCornerShape(14.dp)).padding(5.dp)) {
+private fun FolderIcon(r: ResolvedItem, apps: InstalledApps, sizeDp: Int = HomeGeometry.ICON_DP) {
+    val inner = (sizeDp * 17 / 48).coerceAtLeast(12)
+    Box(Modifier.size(sizeDp.dp).background(Color(0x33FFFFFF), RoundedCornerShape(14.dp)).padding((sizeDp * 5 / 48).coerceAtLeast(3).dp)) {
         Column {
             r.children.take(4).chunked(2).forEach { row ->
-                Row { row.forEach { c -> Box(Modifier.padding(1.dp)) { AppIconImage(c.app, apps, 17) } } }
+                Row { row.forEach { c -> Box(Modifier.padding(1.dp)) { AppIconImage(c.app, apps, inner) } } }
             }
         }
     }
