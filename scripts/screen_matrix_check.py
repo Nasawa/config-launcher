@@ -674,28 +674,45 @@ def run_checks(d):
         'home1.xml ' + ('ok' if seeded else ('missing or unparsable' if not h1 else 'no "Home, Pages" slot or dock item')),
         'ux.md §5 Reload; manifest ReloadReceiver (#55)')
 
-    # F3 long-press item
+    # F3 long-press item — full sheet (skipPartiallyExpanded + scroll, #201): last actions
+    # (App info, Remove) must be in the dump and on-screen, not stuck behind a half-height stop.
     lp = load(os.path.join(d, 'lp-item.xml'))
     top = read(os.path.join(d, 'top-lp-item.txt'))
     if lp is None:
         add('F3', 'Long-press a home item opens the item sheet, nothing launches', None, 'not captured', 'ux.md §1.1 gestures; test-plan §19 LP-2')
     else:
         t = texts(lp)
-        ok = 'App info' in t and any('com.android.settings' in x for x in t) and (PKG in top or not top)
+        Wlp, Hlp = screen_of(lp)
+        def _on_screen(label):
+            n = find(lp, 'text', rf'^{re.escape(label)}$')
+            if n is None:
+                return False
+            return n.h > 0 and n.b[1] < Hlp and n.b[3] > 0
+        need_f3 = ['Edit layout', 'App info', 'Remove']
+        have = {x: (x in t and _on_screen(x)) for x in need_f3}
+        ok = all(have.values()) and any('com.android.settings' in x for x in t) and (PKG in top or not top)
         add('F3', 'Long-press a home item opens the item sheet, nothing launches', ok,
-            f"App info {'App info' in t}, real package {any('com.android.settings' in x for x in t)}, launcher on top {PKG in top if top else 'n/a'}",
-            'ux.md §1.1 gestures; test-plan §19 LP-2')
+            f"actions {have}; pkg {any('com.android.settings' in x for x in t)}; "
+            f"launcher on top {PKG in top if top else 'n/a'}; sheet {Wlp}x{Hlp}",
+            'ux.md §1.1 gestures; test-plan §19 LP-2; #201 full-height sheet')
 
-    # F4 long-press empty space
+    # F4 long-press empty space — full home menu; last entry (Settings / Wallpaper) reachable.
     le = load(os.path.join(d, 'lp-empty.xml'))
     if le is None:
         add('F4', 'Long-press empty space opens the home menu', None, 'not captured', 'ux.md §1.1 gestures; test-plan §19 LP-6')
     else:
         t = texts(le)
+        Wle, Hle = screen_of(le)
         need = ['Edit layout', 'Reload layout', 'Settings']
-        add('F4', 'Long-press empty space opens the home menu', all(x in t for x in need) and 'App info' not in t,
-            'menu: ' + ', '.join(x for x in t if x in need + ['Pages', 'Wallpaper', 'App info']),
-            'ux.md §1.1 gestures; test-plan §19 LP-6')
+        def _on_screen_le(label):
+            n = find(le, 'text', rf'^{re.escape(label)}$')
+            return bool(n and n.h > 0 and n.b[1] < Hle and n.b[3] > 0)
+        reachable = all(_on_screen_le(x) for x in need)
+        add('F4', 'Long-press empty space opens the home menu',
+            all(x in t for x in need) and reachable and 'App info' not in t,
+            'menu: ' + ', '.join(x for x in t if x in need + ['Pages', 'Wallpaper', 'App info'])
+            + f'; reachable { {x: _on_screen_le(x) for x in need + ["Wallpaper"]} }',
+            'ux.md §1.1 gestures; test-plan §19 LP-6; #201 full-height sheet')
 
     # F5 drawer by swipe-up, D2 drawer long-press
     dr = load(os.path.join(d, 'drawer.xml'))
@@ -710,8 +727,16 @@ def run_checks(d):
         add('F5b', 'Long-press a drawer app: Add to home, Hide, App info', None, 'not captured', 'ux.md §2 Long-press app; test-plan §19 LP-7')
     else:
         t = texts(dl)
-        add('F5b', 'Long-press a drawer app: Add to home, Hide, App info', all(x in t for x in ('Add to home', 'Hide', 'App info')),
-            'actions: ' + ', '.join(x for x in t if x in ('Add to home', 'Hide', 'App info')), 'ux.md §2 Long-press app; test-plan §19 LP-7')
+        Wdl, Hdl = screen_of(dl)
+        need5 = ('Add to home', 'Hide', 'App info')
+        def _on_screen_dl(label):
+            n = find(dl, 'text', rf'^{re.escape(label)}$')
+            return bool(n and n.h > 0 and n.b[1] < Hdl and n.b[3] > 0)
+        ok5b = all(x in t and _on_screen_dl(x) for x in need5)
+        add('F5b', 'Long-press a drawer app: Add to home, Hide, App info', ok5b,
+            'actions: ' + ', '.join(x for x in t if x in need5)
+            + f'; reachable { {x: _on_screen_dl(x) for x in need5} }',
+            'ux.md §2 Long-press app; test-plan §19 LP-7; #201 full-height sheet')
     if dr is not None:
         sb = [n for n in dr if n.cls == 'TextView' and n.text and n.text not in ('Search apps', '⋮')]
         clipped = [n.text for n in sb if 0 < n.h / s < 12 * fs * 0.85 and n.b[3] < H - 2]
@@ -1170,9 +1195,10 @@ def run_checks(d):
                     if side == 'left' and rr is not None and t.cx <= rr:
                         grid_in_col = False
             ok_a2 = head_above and order_ok and grid_in_col
-            add('A2', 'A11y rail structure (head→dock top→bottom; grid in page col)', ok_a2,
+            add('A2', 'A11y traversal-order proxy (TalkBack N/A on CI)', ok_a2,
                 f'head_above_dock {head_above}; dock_file_order {file_names[:7]}; '
-                f'grid_in_page_col {grid_in_col}; TalkBack focus order not in dump — see ux.md §1.5',
+                f'grid_in_page_col {grid_in_col}; proxy for ux.md §1.5 rail order '
+                f'(head→…→grid→dots→dock); TalkBack cannot run on CI images',
                 'ux.md §1.5 TalkBack and D-pad order')
 
         # L6s: dock7 scrolled rail — last item reachable (driver dumps home-dock-end.xml after swipe).
