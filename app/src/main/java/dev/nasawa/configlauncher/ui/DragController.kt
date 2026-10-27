@@ -43,6 +43,8 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
     var dockCount = 0
     /** True when the dock is the §1.5 end-edge rail (drop index follows Y). */
     var dockVertical = false
+    /** §1.5 RTL (#187): columns and a bottom dock mirror; rects stay physical (boundsInRoot). */
+    var rtl = false
     var grid = Grid()
     var currentPageId: String? = null
 
@@ -64,20 +66,17 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
         val c = startRect.center + offset
         val e: Edit? = when {
             dockRect.contains(c) -> {
-                val slots = dockCount + 1
-                val index = if (dockVertical) {
-                    if (dockRect.height <= 0f) 0
-                    else ((c.y - dockRect.top) / dockRect.height * slots).toInt().coerceIn(0, dockCount)
-                } else {
-                    if (dockRect.width <= 0f) 0
-                    else ((c.x - dockRect.left) / dockRect.width * slots).toInt().coerceIn(0, dockCount)
-                }
+                val index = GridHit.dockIndex(
+                    c.x, c.y, dockRect.left, dockRect.top, dockRect.width, dockRect.height,
+                    dockCount, dockVertical, rtl,
+                )
                 Edit.MoveToDock(item.item.id, index)
             }
             gridRect.contains(c) && currentPageId != null -> {
-                val x = ((c.x - gridRect.left) / gridRect.width * grid.columns).toInt().coerceIn(0, grid.columns - 1)
-                val y = ((c.y - gridRect.top) / gridRect.height * grid.rows).toInt().coerceIn(0, grid.rows - 1)
-                Edit.MoveToCell(item.item.id, currentPageId!!, x, y)
+                GridHit.cellInBlock(
+                    c.x, c.y, gridRect.left, gridRect.top, gridRect.width, gridRect.height,
+                    grid.columns, grid.rows, rtl,
+                )?.let { (x, y) -> Edit.MoveToCell(item.item.id, currentPageId!!, x, y) }
             }
             else -> null
         }
