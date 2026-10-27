@@ -1,6 +1,6 @@
 # Pre-release screen matrix (emulator, free tooling)
 
-Owner: Grace (QA). Status: **approved by Christopher** (#177); run 1 done (§6), a rerun after the run-1 harness fixes is next. Extends test-plan §15.2 (emulator matrix) and §18
+Owner: Grace (QA). Status: **approved by Christopher** (#177, merged at c330340 / dev7). #185 (ux.md §1.5) and #186 merged; L1–L13 (test-plan §20) land in the matrix for dev8. Extends test-plan §15.2 (emulator matrix) and §18
 (automation). It doesn't replace the device passes in test-plan §15.1/§17. Spec references: `ux.md §x` is
 docs/ux.md and `A§x` is ARCHITECTURE.md. When this plan and a spec disagree, the spec wins, so fix this file.
 
@@ -71,7 +71,7 @@ Fixtures live outside `test-fixtures/` on purpose, because CI diffs that tree ag
 ## 2. Flows per point
 
 `scripts/screen-matrix.sh` runs these on every point. Before the flows, it runs `pm clear`, sets the launcher as home,
-and seeds the fixture with `run-as` (debug APK).
+and seeds the fixture with `run-as` (debug APK). Prefs and `launcher.json` are copied **before** `set-home-activity`, then the driver force-stops again and re-copies (avoids a race where set-home auto-launches into empty prefs → FirstRun). Home is verified before F/G; failures are X3 (harness), not product.
 
 | ID | Flow | Pass | Spec |
 |---|---|---|---|
@@ -97,6 +97,7 @@ is `SKIP`. On a real run, a SKIP of a blocking check makes the point `INCOMPLETE
 | X0 | Requested display size applied | The `wm size` override in `run.txt` equals the point's `size_px`. Android clamps an override to a multiple of the AVD panel, so CI sets a panel per shard (§5). A FAIL means the point ran at another size, so its other results describe that size, not the point |
 | X1 | Requested night mode applied | advisory. `cmd uimode night` reads back the variant's theme, and `meta.txt` records `night_via`. The API 29 image locks night mode (`mNightModeLocked=true`, pr182), so `cmd uimode night yes` and `settings put secure ui_night_mode` are both ignored there (runs 1–3, as in #150). The driver tries, in order: `cmd`, the secure setting, `cmd` after `adb root` (a locked mode still accepts a caller with `MODIFY_DAY_NIGHT_MODE`), then the Settings › Display › Dark theme switch (what pr182 did by hand). `via none` means nothing stuck; TH1 is judged against the theme that really applied, and dark is still covered by the eight API 35/36 v2 points. Stays advisory: it describes the harness, not the app |
 | X2 | Gestures registered first time | advisory. Lists the flows the driver had to repeat (`retries.txt`, §5): F3/F4 when the menu didn't open, F5 when the swipe didn't open the drawer, F5b when the app menu didn't open. A retried flow is still judged on its second dump, so a flake shows here instead of failing the point; a flow that fails twice fails its own check |
+| X3 | Seeded home showing before F/G checks | advisory (harness). After each seed the driver verifies `Home, Pages` + a dock slot on `home1`, and retries clear+reseed (prefs copied *before* `set-home-activity`) up to 3 times. A first-run "Choose your config folder" screen means the seed did not stick — recorded as X3 FAIL, not as product F2/F4/F5/G*. `seed-failed.txt` + `partial=yes` skip F3–F7 so those checks stay SKIP advisory |
 
 **Title bar** (both pages; ux.md §15 "Overflow ladder (narrow phones, #149)"):
 
@@ -132,31 +133,44 @@ Page-2 variants (`T1p2`, `G1p2`, `G5cp2`, …) have the same severity as their c
 `.png`, plus `start.txt`, `crash.txt`, `anr.txt`, `retries.txt` (when a gesture was retried), `focus.txt`, `meta.txt`, `result.json` and `result.md`. The
 summary is `summary.md`, which CI also posts to the job summary.
 
-## 4. dev7 gate
+## 4. dev7 / dev8 gate
 
-A point is **blocking** when a FAIL there fails the run, so dev7 isn't tagged. **Advisory** results are listed in the
-summary and need a human look. **Pending** results are reported, never block, and switch to blocking when the cited implementation lands
-(none are pending now: G5b/G5c block since #178, D1 since #181).
-The policy is coded in `severity()` in `screen_matrix_check.py`.
+A point is **blocking** when a FAIL there fails the run. **Advisory** results are listed in the summary and need a
+human look. **Pending** results are reported, never block, and switch to blocking when the cited implementation lands
+(none are pending now: G5b/G5c block since #178, D1 since #181). The policy is coded in `severity()` in
+`screen_matrix_check.py`, keyed on `gate=dev7|dev8` in each point's `meta.txt`.
 
-**Blocks dev7:**
+**Severity switch.** Set by `--matrix-gate LEVEL` or `MATRIX_GATE` (default `dev7`). The workflow accepts a `gate`
+input on `workflow_dispatch`; a tag whose name contains `dev8` (e.g. `v0.0.1-dev8`) forces `dev8`. Under `dev7`,
+L1–L13 and G1–G3 on tablet/landscape/fold stay advisory so main does not go red before Sprite's ux.md §1.5 work
+lands. Under `dev8` they block. F1 (crashes/ANRs) always blocks.
+
+**Blocks dev7 (and dev8):**
 1. The build and the install on all three images, and X0 (the point really ran at its size) wherever the point blocks.
 2. F1 (no launcher crash or ANR) at **every** point, including tablets, the fold and font 2.0.
-3. F2–F7 at every point at font 1.0 and 1.3, tablets and fold included. A flow that breaks in landscape is a bug
-   even before Q-S2 is answered (Q2).
+3. F2–F7 at every point at font 1.0 and 1.3, tablets and fold included.
 4. T1–T4 (ladder order, clock, warning exactly once, touch bounds) at every point at font 1.0 and 1.3.
 5. G1–G3 and G5a on **phone** points (≤ 448 dp wide, portrait) at font 1.0 and 1.3.
+6. G5b, G5c, D1, D4 wherever they apply (same as dev7).
 
-**Advisory for dev7:**
-- G1–G3 on tablets, landscape and the fold. ux.md §1.1 says "Phones only in MVP" and landscape is Q-S2 (ux.md open
-  questions). Interim call (Q2): advisory through dev7, blocking from dev8 after the §1.1 review of the run-2
-  screenshots.
-- Everything at font 2.0 except F1 (crashes always block). Decided: ux.md §12 allows hidden labels at ≥ 150 % and
-  Q-S5 (fitting cells at 200 %) is open, so at 2.0 only a crash or ANR is a dev7 blocker; the rest needs a human look.
-- T5, T6, A1, D3, D4a, G6, TH1, X1, X2 and P1.
+**Blocks dev8 only** (advisory under dev7):
+- L1–L5 and L7 on large-tier points (tablets, fold; see §4.1). L6/L8/L10/L12/L13 automated per #197; L9 needs Sprite (WindowInfoTracker); L11 deferred to dev9.
+- G1–G3 on tablets, landscape and the fold (Q2 resolved by #185 / ux.md §1.5).
+- **Manual edge drag-and-drop** (stable host only — hardware-accelerated emulator or a real device; software rendering hits SystemUI ANRs that limited the #194 review). Short checklist, not a matrix shard:
 
-G5b and G5c were pending until the #175 implementation landed, and block since #178 (merged); D1 blocks since #181.
-D4 (drawer contrast ≥ 3:1) blocks. The policy is approved as written (Christopher, #177).
+  | Size | Orientations |
+  |---|---|
+  | 411 dp phone | port + land |
+  | t7 (7") | port + land |
+  | t10 (10") | port + land |
+  | Fold open | flat |
+
+  For each: long-press a home item and drop on **every grid edge and corner**, then into each **side gutter**. Pass = drop snaps to a real cell on edges/corners; a gutter drop is **refused** (item returns); **no crash**. One pass per size/orientation is enough — no font/night variants.
+
+**Advisory everywhere:**
+- Everything at font 2.0 except F1 (crashes always block). ux.md §12 allows hidden labels at ≥ 150 % and Q-S5
+  (fitting cells at 200 %) is open.
+- T5, T6, A1, D3, D4a, G6, TH1, X1, X2, X3 and P1.
 
 **Minimum on-box gate** (when CI isn't available, see §5): `--gate` runs `s320-a51-v1`, `s320-a51-v2`, `s320-mdpi-v1`,
 `p411-a51-v1`, `p411-a51-v2` and `t7-land-v1`.
@@ -165,12 +179,56 @@ D4 (drawer contrast ≥ 3:1) blocks. The policy is approved as written (Christop
 scope (the config-driven title bar isn't required for v1.0), while dev7's headline is the #149 overflow-ladder fix,
 so dev7 can't be tagged with the ladder broken.
 
+### 4.1 L1–L13 (ux.md §1.5 / test-plan §20 / #197)
+
+Source of truth is **#197** (`docs/l-check-rulings`) updating docs/test-plan.md §20 and docs/ux.md §1.5. Severity
+follows the dev7/dev8 switch above. L14/L15 stay out of this pass (L15 ≈ G1 on `s360-mdpi-v2` after 56 dp icons).
+L5 is **advisory until the end-edge rail PR** lands (#197).
+
+| ID | Source | Measured | Threshold / pass | Severity | Points | Auto? |
+|---|---|---|---|---|---|---|
+| L1 | §20 L1 | `sha256` before/after one reverse-rotate | hashes equal | advisory→block at dev8 | large tier | **auto** (full ×4 / fold↔unfold manual) |
+| L2 | §20 L2 | `floor((centre − blockLeft) / pitchW)` vs fixture `(x,y)` | every matched tile on its cell | advisory→block at dev8 | large (home1) | **auto** |
+| L3 | §20 L3 (#197) | pitchW; cell W×H **in px**; L/R margins **inside safeDrawing** | pitchW ≤ 144 dp; `W ≤ 1.25·H + 1 px` and `H ≤ 1.5·W + 1 px`; abs(L−R) ≤ **1 px** inside safe area. SKIP Compact (< 600 dp) | advisory→block at dev8 | Medium/Expanded | **auto** |
+| L4 | §20 L4 (#197) | pitchH on t7/t10-land @ font 1.0; label heights | **Step-1 floor ≥ 84 dp** once rail (L5) present; else ladder ≥76 / ≥60 and report **depends on L5** (no plain fail for ≥84). Labels whole or absent always | advisory→block at dev8 | large | **auto** |
+| L5 | §20 L5 | `dock_is_rail` | rail on t7/t10-land (+ phone-land / RTL start once rail lands); bottom on port / fold-open | **advisory until rail PR** | large + phone-land | **auto** |
+| L6 | §20 L6 (#197) | fixture `dock7.json` | 7 slots ≥ 48 dp, file order; rail-geometry half **advisory** until rail (`L6r`) | advisory→block at dev8 (L6r always advisory) | dock7-t7-land/port, dock7-phone-land | **auto** |
+| L7 | §20 L7 | `home2-rot.xml` still page 2 | page id preserved | advisory→block at dev8 | large with home2 | **auto** |
+| L8 | §20 L8 (#197) | cancel mid-drag | cancelled, nothing written, old cell | unit + androidTest | JVM + instrumented | **auto** (unit in CI; rotate smoke in androidTest) |
+| L9 | §20 L9 (#197) | `WindowLayoutInfoPublisherRule` | no cell/card/dock ∩ hinge; book/tabletop/flat | — | androidTest | **deferred — needs Sprite** (`WindowInfoTracker` in production) |
+| L10 | §20 L10 (#197) | `Edits.freeCell` / `AddToHome` / `MoveToCell` | same answers for the same file (grid only) | unit (CI `testDebugUnitTest`) | JVM | **auto** |
+| L11 | §20 L11 | margin long-press / swipe / drop / column taps | per §20 | — | — | **deferred to dev9** |
+| L12 | §20 L12 (#197) | new rows | 599/600, 839/840 dp; phone-land 800×360; RTL t7-land | via L3/L5 on those points | bound-*, phone-land-v1, rtl-t7-land-v1 | **auto** |
+| L13 | §20 L13 (#197) | fixture `cards-large.json` | k ≤ 1.5, no stretch on t10-land | advisory→block at dev8 | cards-t10-land-v1 | **auto** |
+
+**safeDrawing insets (L3 / L5).** Driver writes `dumpsys window` → `insets.txt` after `home1`. Checker
+`parse_safe_drawing_insets` takes the max inset on each side from:
+
+1. Legacy lines `mSystemInsets` / `systemBarsInsets` / `mStableInsets` = `Insets{left, top, right, bottom}`
+2. `InsetsSource` frames for `ITYPE_STATUS_BARS`, `ITYPE_NAVIGATION_BARS`, `ITYPE_DISPLAY_CUTOUT` (and
+   `statusBars` / `navigationBars` / `displayCutout` spellings)
+
+That approximates `WindowInsets.safeDrawing` with IME closed. Content box = `[left, top, W−right, H−bottom]`.
+L3 left/right margins are tile-block edges minus that box, compared within **1 px**. Raw-edge asymmetry from a
+side nav/cutout is not a layout bias (#197).
+
+**Manual / remaining:**
+
+| ID | Status | Notes |
+|---|---|---|
+| L1 full | manual | rotate ×4 / fold↔unfold |
+| L9 | Sprite | production must consume `WindowInfoTracker` before hinge asserts |
+| L11 | dev9 | instrumented margins |
+| L8 full hash | matrix + androidTest | unit pins cancel contract; device rotate smoke is best-effort without seeded fixture |
+| Edge DnD | **manual, blocks dev8** | every grid edge/corner + side gutters; 411 / t7 / t10 port+land + fold open; stable host only (§4) |
+
 ## 5. CI vs on-box
 
 **CI** (`.github/workflows/screen-matrix.yml`, GitHub-hosted `ubuntu-latest` with KVM, free for this public repo):
 - **Triggers:**
-  - `workflow_dispatch`, with inputs `shards` (comma list or `all`) and `points` (an id regex).
-  - Pushes of `v*-dev*` / `v*-rc*` tags, so `v0.0.1-dev7` runs it.
+  - `workflow_dispatch`, with inputs `shards` (comma list or `all`), `points` (an id regex), and `gate`
+    (`dev7` advisory L*/large-G*, or `dev8` blocking; default `dev7`).
+  - Pushes of `v*-dev*` / `v*-rc*` tags, so `v0.0.1-dev7` runs it; a tag whose name contains `dev8` forces gate=dev8.
   - A PR getting the label `screen-matrix` (the label exists). Only the `labeled` event fires: pushing to a labelled
     PR doesn't rerun it, so re-apply the label or dispatch.
   - Not on every push or PR. The cheap per-PR smoke stays in emulator-smoke.yml.
@@ -217,6 +275,7 @@ python3 scripts/screen_matrix_check.py check screen-matrix-out/p411-a51-v1   # r
   on the software-only emulator (pr178); 1.6 s held 3/3.
 - The first touch after a cold start is often dropped (pr181: the first swipe never reached the launcher; main does
   the same). After F2 the driver spends it on a tap on empty grid space, which does nothing.
+- F1 treats `am start -W` `Status: timeout` as started when MainActivity is ours and there is no crash/ANR (software emulators often time out the idle wait).
 - F3, F4, F5 and F5b retry once when the expected menu or drawer isn't in the dump, and log it for X2 (§3).
 - On API 29, night mode may need `adb root` or the Settings UI (X1, §3). `adb root` stays on for the rest of the run.
 - A system ANR dialog (the image's own launcher, System UI) that appears between the ANR check and a dump replaces the
@@ -300,11 +359,8 @@ The script changes the display size, density, font scale, night mode and rotatio
 - Minutes: free while the repo is public; run 1's measured numbers are in §5.
 
 **Needs Christopher:**
-- **Q2 (needs Christopher)** Q-S2 / "Phones only in MVP" (ux.md §1.1): when do tablet, landscape and fold layout
-  checks (G1–G3) become blocking, and is the ux.md §1.1 landscape layout (same grid, dock on the right edge) final?
-  - **Interim (Grok Bot, 2026-10-26); pending Christopher's confirmation.** Christopher has been asked directly and
-    hasn't answered, so this isn't his decision:
-    - Tablet, landscape and fold layout checks stay **advisory through dev7**.
-    - They become **blocking at dev8**, once Pragma and Archimedes have reviewed ux.md §1.1 against the run-2
-      screenshots (`evidence/matrix/run2/layout-review/`).
-    - Crashes and ANRs (F1) stay **blocking at every point**, as now.
+- **Q2 (resolved by #185 / ux.md §1.5).** Tablet, landscape and fold layout checks (G1–G3 and L1–L13) stay
+  **advisory through dev7** and become **blocking at dev8**, via the `gate` / `MATRIX_GATE` switch (§4). The §1.5
+  defaults (file columns×rows, Medium/Expanded cell cap + centring, dock = rail when aspect ≥ 1.4 or height Compact)
+  replace the old "Phones only in MVP" interim. Baseline evidence before Sprite's §1.5 lands:
+  `evidence/matrix/dev8-baseline/`.
