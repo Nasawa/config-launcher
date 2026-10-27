@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -42,6 +43,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.time.ZonedDateTime
 
 /**
  * #173 L1 and the 320 dp label rule (Pragma's #175, ux.md §6.1 notice row and §12): the collapsed chips share the page
@@ -154,7 +156,10 @@ class NoticeRowTest {
             val chips: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = { ReviewCountChip(3, {}) }
             if (bar != null) {
                 if (chip) NoticeRow(null, chips = chips)
-                TitleBarRow(bar, pages, 0, enabled = true, labelBackdrop = false) {}
+                // Pin the bar's clock: a live date can change the overflow ladder (and thus bar height) by weekday width.
+                CompositionLocalProvider(LocalTitleBarNow provides ZonedDateTime.parse("2026-05-11T12:00:00Z")) {
+                    TitleBarRow(bar, pages, 0, enabled = true, labelBackdrop = false) {}
+                }
             } else if (chip) NoticeRow(if (PageList.showLabel(pages)) { { PageLabelButton(pages, 0, true, false) {} } } else null, chips = chips)
             else PageLabel(pages, 0, true, false) {}
             Box(Modifier.weight(1f).fillMaxWidth()) {
