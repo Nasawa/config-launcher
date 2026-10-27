@@ -93,7 +93,7 @@ class DndPlan(unittest.TestCase):
 
 
 class R1Mirror(unittest.TestCase):
-    def _run(self, rtl):
+    def _run(self, rtl, ids=('R1',), mirror=True):
         t = tempfile.mkdtemp()
         try:
             src = os.path.join(TD, 't7-land-v1')
@@ -105,10 +105,12 @@ class R1Mirror(unittest.TestCase):
             if rtl:
                 meta += '\nshape=rtl\nlocale=ar-EG\nforce_rtl=1\napp_locales=[ar-EG]\n'
                 W = c.screen_of(c.load(os.path.join(src, 'home1.xml')))[0]
-                mirror_xml(os.path.join(src, 'home1.xml'), os.path.join(t, 'home1.xml'), W)
+                if mirror:
+                    mirror_xml(os.path.join(src, 'home1.xml'), os.path.join(t, 'home1.xml'), W)
             open(os.path.join(t, 'meta.txt'), 'w').write(meta)
             _m, res = c.run_checks(t)
-            return next((x for x in res if x['id'] == 'R1'), None)
+            got = {x['id']: x for x in res}
+            return got.get(ids[0]) if len(ids) == 1 else {i: got.get(i) for i in ids}
         finally:
             shutil.rmtree(t)
 
@@ -119,6 +121,22 @@ class R1Mirror(unittest.TestCase):
     def test_rtl_mirrored_pass(self):
         r = self._run(True)
         self.assertIsNotNone(r); self.assertEqual(r['status'], 'PASS', r['detail'])
+
+
+    # L2/L3 must map physical → logical columns in RTL (PR #210 rtl-t7-* false FAIL).
+    def test_l2_l3_ltr_pass(self):
+        r = self._run(False, ids=('L2', 'L3'))
+        for i in ('L2', 'L3'):
+            self.assertEqual(r[i]['status'], 'PASS', r[i]['detail'])
+
+    def test_l2_l3_rtl_mirrored_pass(self):
+        r = self._run(True, ids=('L2', 'L3'))
+        for i in ('L2', 'L3'):
+            self.assertEqual(r[i]['status'], 'PASS', r[i]['detail'])
+
+    def test_l2_rtl_unmirrored_fails(self):
+        r = self._run(True, ids=('L2',), mirror=False)
+        self.assertEqual(r['status'], 'FAIL', r['detail'])
 
 
 if __name__ == '__main__':

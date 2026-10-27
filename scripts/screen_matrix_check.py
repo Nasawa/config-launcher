@@ -495,7 +495,7 @@ def pitch_of(tile_nodes, s):
     return pitchW, pitchH, block_left, block_top
 
 
-def pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture_name):
+def pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture_name, rtl=False):
     """pitch_of, refined with fixture (col,row) anchors so a single occupied icon row
     at y=4 does not collapse to row 0, and L3 can span fixture grid.columns (#205).
 
@@ -530,7 +530,9 @@ def pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture_name):
         key = (lab.text if lab else '') or (n.desc or '').split(',')[0]
         exp = next((it for it in items if it[0] and key.startswith(it[0][:12])), None)
         if exp is not None and exp[3] == 1:
-            col_anchors.append((float(n.cx), exp[1]))
+            # RTL (#187 / PR #210): fixture column x sits at physical column cols-1-x.
+            pc = (cols_fx - 1 - exp[1]) if (rtl and cols_fx) else exp[1]
+            col_anchors.append((float(n.cx), pc))
 
     # pitchH / block_top from distinct fixture rows (#205: icons alone at y=4).
     if len({r for _, r in row_anchors}) >= 2:
@@ -1279,7 +1281,10 @@ def run_checks(d):
         pairs, labels_l, dock = grid_tiles(nodes, tb, (W or 1, H or 1), s)
         tile_nodes = [n for n, _ in pairs]
         _labels_g, _tiles_g, _dock_g, card_nodes, _region = grid_parts(nodes, tb, (W or 1, H or 1))
-        pitch5 = pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture) if (tile_nodes or card_nodes) else None
+        # Layout direction for the L checks: mirrored only when RTL was requested and X4 saw it applied.
+        rtl_lay = bool(need_rtl) and not x4_rtl_failed
+        pitch5 = (pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture, rtl=rtl_lay)
+                  if (tile_nodes or card_nodes) else None)
         pitch = pitch5[:4] if pitch5 else None
         grid_columns = pitch5[4] if pitch5 else None
         width_dp = (W / s) if W and s else 0
@@ -1319,11 +1324,13 @@ def run_checks(d):
                 if exp is None:
                     continue
                 col = int((n.cx - block_left) // max(pitchW * s, 1))
+                if rtl_lay and grid_columns:
+                    col = grid_columns - 1 - col      # physical → logical column in RTL
                 row = int((n.cy - block_top) // max(pitchH * s, 1))
                 if col != exp[1] or row != exp[2]:
                     bad.append(f'{exp[0][:20]} got ({col},{row}) want ({exp[1]},{exp[2]})')
             add('L2', 'Positions are exact (column x, row y)', not bad,
-                f'pitch {pitchW:.0f}×{pitchH:.0f} dp; mismatches {bad[:4] or "none"}',
+                f'pitch {pitchW:.0f}×{pitchH:.0f} dp; rtl={rtl_lay}; mismatches {bad[:4] or "none"}',
                 'ux.md §1.5; test-plan §20 L2')
 
         # L3: cap and centring on Medium/Expanded (width ≥ 600 dp) — #197 / test-plan §20 L3
