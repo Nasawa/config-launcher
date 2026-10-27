@@ -81,7 +81,7 @@ Shape notes (ARCHITECTURE §3, §16):
 | Element | Spec |
 |---|---|
 | Grid | `grid.columns` × `grid.rows`, default **4 × 5**. The file allows **2–12 × 2–12** (validation rule). The Settings picker offers a narrower 3–6 × 4–7 (UX choice only); a file outside the picker range still renders, and the picker then shows the file's value. Cells fill the space between the banner slot and the page indicator evenly. The same columns × rows on every device and window: on Medium/Expanded-width windows (tablets, the open fold) cells are capped at **144 dp wide** and **1.25 : 1**, and the grid is centred (§1.5) |
-| Cell | Icon **56 dp** centred, label below. **Minimum cell 64 × 80 dp**. When a cell is too short for the icon plus one whole label line, the **icon ladder** (§1.5) steps down for the whole grid: 56 dp icon + label → 48 dp icon + label → 48 dp icon, label hidden. Never clipped. 56 dp is the size on every device; 48 dp is only this fallback |
+| Cell | Icon **56 dp** centred, label below. **Preferred minimum cell 64 × 80 dp** (§1.1 touch/design floor). Showing **56 dp + a whole label** needs row pitch ≥ **84 dp** (56 + 16 + 12 at font 1.0); when the cell is shorter, the **icon ladder** (§1.5) steps down for the whole grid: 56 dp icon + label → 48 dp icon + label → 48 dp icon, label hidden. Never clipped. 56 dp is the size on every device; 48 dp is only this fallback |
 | Label | 12 sp, 1 line, ellipsized at the end, centred, white with a soft shadow for wallpaper contrast (§12) |
 | Label backdrop (v1 setting, default off, Q-C4, §18.1) | When on: a rounded **60 % black** scrim behind each home-grid label (a background on the label, 6 dp side and 2 dp top/bottom padding, hugging the text width up to the cell width). The text shadow stays on. Applies to page items and folder tiles on home, not the dock (no labels) or inside the folder card. Stored in app settings (DataStore), not in `launcher.json` |
 | Pages | Horizontal pager. One page minimum. The page indicator shows only with ≥ 2 pages. Dots are 8 dp, current = filled |
@@ -175,27 +175,29 @@ the tools to facilitate it where possible." The config will be able to override:
   or as a phone.
 - **Icon and grid scale** (e.g. icons larger or smaller than 56 dp, within the §12 touch-target floor).
 
-**Staging.** dev8 ships the defaults only. The overrides come in a later release, with the schema shape Archimedes owns
-(Q-A11). Until that release, an override key is rejected exactly like any unknown key today (strict keys: B2 on the
-phone, an error in `validate.py`). No override may break positions: `x`/`y`/`w`/`h` and the `dock[]` order keep meaning
-the same thing, and a window change still never writes.
+**Staging.** dev8 ships the defaults only. Until then an override key is rejected like any unknown key (strict keys:
+B2 on the phone, an error in `validate.py`). The override schema and UX are in
+[`docs/design/layout-overrides.md`](design/layout-overrides.md) (Q-A11, merged #186): slices O1–O6 after dev8. A window
+change still **never writes**.
 
-**Columns/rows overrides and items that don't fit (agreed with Archimedes, 2026-10-26).** When an override gives a window a
-smaller grid than an item's position needs (an item at column 6 on a 4-column override, or row 5 on a 4-row one):
-- The item is **skipped on that window**: not drawn, not moved, not written. It shows again on any window whose grid
-  holds it. Its cells stay its own in the file, so nothing else is placed on top of it from a bigger window.
-- `status.json` gets a §15-style warning, worked out from the **file at load**, not the window (same rule as Q-A12), so
-  every device writes the same list. Draft: `pages[1].items[3]: column 6, row 2 is outside the 4 × 5 grid used for
-  compact portrait, so it isn't shown there. Move it, or widen that grid.`
-- Placement on a window (drag, `Move to…`, Undo, `Add to home`, the widget picker) uses that window's grid, so a tablet
-  can place in column 6 and the phone then skips that item with the warning above.
-- The file stays valid as long as each position fits the **largest** grid the file declares.
+**Config overrides (one device, several window shapes).** Full rules live in
+[`docs/design/layout-overrides.md`](design/layout-overrides.md) — this section is only the UX summary, not a second
+spec. One config describes **one device's** home; `windowOverrides` adapts it to rotation, fold/unfold and resize.
+Matchers are **`widthClass`**, **`orientation`** and **`posture`** (`book` | `tabletop`) only. Root **`orientationLock`**
+and **`scale`** are global (no matcher). Landscape **follows portrait** except where an item is placed on that layout;
+main stays strictly validated; an item with no main spot and no entry on a layout is unplaced there (`Hidden here` /
+`warn_override_hidden`). **`Show here`** scans the page on screen, then later pages, then earlier ones, then adds a
+page (disabled only at 20 full pages). **O4** ships override layouts **read-only** (main still editable); O5 unlocks
+edits on any layout. Entering edit on main shows the once-per-session **`edit_main_follow`** snackbar when override
+layouts with `grid` exist. The old "fits the largest grid" validation line is superseded: each layout has its own
+`positions`, and main does not have to hold every override placement.
 
 **One rule behind all of it.** Home is drawn from `launcher.json` plus the window (size, insets, cutout, hinge, font
 scale). A window change (rotate, fold, unfold, resize) re-lays out what's on screen and nothing else: it never adds or
 removes cells, never moves an item, and **never writes** (no `launcher.json`, `status.json`, `revision`, history or
-DataStore change). `grid.columns` × `grid.rows`, every `x`/`y` (and `w`/`h`) and the `dock[]` order mean the same
-thing on every device that reads the file.
+DataStore change). Without `windowOverrides`, `grid.columns` × `grid.rows`, every `x`/`y` (and `w`/`h`) and the
+`dock[]` order mean the same thing wherever the file is read. With overrides, placement is per layout as in the design
+doc above; the window still never writes.
 
 **What run 2 showed** (dp from the `home1.xml` dumps; pitch = centre-to-centre distance between cells):
 
@@ -225,8 +227,8 @@ that only changes chrome, never a position.
 **Columns and rows: the file's, everywhere (Q-L1, decided).** A tablet shows the same `grid.columns` × `grid.rows` as the phone,
 with bigger, centred cells. More columns on a tablet would change what `x` means per device: an item placed in column 5
 on the tablet would be outside the phone's 4-column grid, which is a B2 error for the whole file today. A per-class
-grid (e.g. 6 columns on Expanded) is planned as a config override (above, Q-A11); the dev8 defaults need no schema
-change.
+grid (e.g. 6 columns on Expanded) is a config override after dev8
+([`docs/design/layout-overrides.md`](design/layout-overrides.md), Q-A11); the dev8 defaults need no schema change.
 
 **Cell size: capped and centred (Q-L2).** Let `availW` × `availH` be the page area (after insets, the top row, notice
 row, page label or title bar, page indicator and a bottom dock), `W0 = availW / columns` and `H0 = availH / rows`:
@@ -268,8 +270,32 @@ with 0.6 dp spare, so it's **step 2: 48 dp icons, labels shown**. (At font 1.0 t
 56 dp needs a row pitch of about 84 dp at font 1.0.) A notice-row chip there (its own 48 dp row above the title bar,
 §6.1) takes about 10 dp per row and drops it to step 3.
 
-**Phone goldens move once.** Drawing 56 dp changes `PhoneOutputGoldenTest` on any phone whose cells reach step 1. They
-are re-baselined once, in the same PR as the icon change; after that, Compact stays unchanged.
+**Row-pitch floors for the ladder (font 1.0).** Content box = row pitch − 12 dp (4 dp cell pad + 8 dp tile pad). Label
+line ≈ 16 dp at font 1.0 (≈ 17 dp at 1.3). The first step that fits wins; **no step may show a clipped label**:
+1. **56 dp + label:** runs only when pitchH ≥ **84 dp** (56 + 16 + 12). That is the step-1 / L4 pass threshold. §1.1's
+   **80 dp** is the preferred cell floor (touch/design intent), not a pass number — between 80 and 84 the ladder is
+   already on step 2, so labels stay whole. With the end-edge rail reclaiming the dock on t7-land / t10-land, expected
+   pitch is about 85 dp and clears 84.
+2. **48 dp + label:** pitchH ≥ **76 dp** (48 + 16 + 12). Labels stay whole.
+3. **48 dp, label hidden:** pitchH ≥ **60 dp** (48 + 12). Labels are cleanly absent (still spoken by TalkBack), never
+   clipped.
+
+A short window that still has a bottom dock (e.g. t7-land before the rail lands, measured ~64.5 dp on #194) lands on
+step 3. The runtime ladder is what handles short windows; the §15 load-time fit check stays on a portrait bar at
+`smallestScreenWidthDp` and is not wired to window metrics (Q-A12). No extra title-bar step for landscape.
+
+**Centring is measured inside the safe area.** On Medium/Expanded the block is centred in the page area after
+`WindowInsets.safeDrawing` (system bars and cutouts). Left and right margins match within 1 px of that area; measuring
+from the raw screen edge can show a few dp of asymmetry from a side nav bar or cutout and is not a layout bias.
+
+**Aspect caps are applied in px with floor.** `pitchW` is derived so the on-screen cell never rounds *up* past 1.25 ×
+height (and height never past 1.5 × width). A check may allow +1 px of measurement slack; the user-visible intent stays
+a hard ≤ 1.25 : 1 / ≤ 1.5 : 1 cap.
+
+**Phone output stays identical.** There are no screenshot goldens in the repo. `PhoneOutputGoldenTest` pins
+only each fixture's config JSON errors or canonical SHA-256 (and load warnings) in `test-fixtures/phone-output.json`,
+shared with `scripts/validate.py`. Drawing 56 dp icons does not change that file; Compact layout stays the fill-width
+behaviour it always was, and the golden stays green without a re-baseline.
 
 **Content width for the rows above and below the grid.** On Medium and Expanded, the §6.1 banner, the notice row, the
 §1.3 page label, the §15 title bar and a bottom dock are centred on the grid block and use the **content width**: the
@@ -886,7 +912,7 @@ this table.
 ## 13. Build checklist (Sprite)
 
 - [ ] Home: pager + grid (`grid.columns/rows`, default 4 × 5, file allows 2–12) + dock (0–7), sizes from §1.1, wallpaper through.
-- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L15 in test-plan.md §20. dev8 builds the defaults only and still rejects any override key (O0); the config overrides (Q-A11, checks O1–O8) come after dev8.
+- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L15 in test-plan.md §20. dev8 builds the defaults only and still rejects any override key (O0); the config overrides after dev8 follow [`docs/design/layout-overrides.md`](design/layout-overrides.md) (Q-A11, slices O1–O6 / checks O9–O13).
 - [ ] Dimmed tiles and reconciliation (§1.2): not installed, unpublished shortcut, paused work apps, activity fallback, unplaced apps in the drawer only (`page` not offered in Settings), private space never placed. Never auto-delete.
 - [ ] Item sheet shows the real app name and package. Strip bidi and zero-width characters from labels at render.
 - [ ] Drawer: search (§2 match rules, focused with the keyboard up; TalkBack and hardware-keyboard rules, Back hides the keyboard first, `Open keyboard with drawer` setting), `drawer.sort` (label or installTime), `drawer.rules` groups, hidden apps section (package names), work tab.
@@ -1458,7 +1484,7 @@ element, `elements[]`, `requires`/feature level, `style`, skip-and-keep, Stage 1
 `status.json`, the Warnings section.
 
 **v1 capability kinds (closed list, Q-A1, #117):** `data.file` and `ui.reload` (Show), `ui.openApp` and `ui.openUrl` (Open), `net.fetch`
-(Internet, feature level 5). Phone data and Act tiers have **no kinds in v1**. Their UX below is kept ready for later.
+(Internet, feature level 6). Phone data and Act tiers have **no kinds in v1**. Their UX below is kept ready for later.
 Never-offered kinds aren't in the schema at all. On the phone, an unknown `kind` **skips only that element** (skip-and-keep,
 cells kept, consent tile `Update Config Launcher to show this`, §17.3). It doesn't B2-reject the whole file. `validate.py`/CI
 at the current feature level may still flag it as an error so agents catch typos ([#116 follow-up](https://github.com/Nasawa/config-launcher/pull/116) and [#117](https://github.com/Nasawa/config-launcher/pull/117)).
@@ -1491,7 +1517,7 @@ The prompt groups capabilities by what they mean to a person, not by API. Each t
 | **Show** | `ui.reload` (no fields) | A tap or button that re-reads this widget's own data file now | `Reload its data when you tap it` | **No** (#117: Show tier, silent). It only re-reads a file the card can already show (§17.9) |
 | **Open** | `ui.openApp` (`packages`) | Tap to open an app, or a launcher target (drawer, page list) | `Open Signal when you tap it` (the app label; the package if it isn't installed) | **No**, same rule as title-bar tap targets |
 | **Open** | `ui.openUrl` (bare, no fields) + the card's **`source`** (its data source site: `"https://blog.anigeek.com"`, `"http://nas.lan"`, or a bare host = https; exact match, IDNA, no subdomains, no port, path or user info). Both **confirmed by Archimedes** in [#146](https://github.com/Nasawa/config-launcher/pull/146) (Q-D5) | Tap to open a link in the browser | `Open links to its source, blog.anigeek.com, when you tap it` + `Links to other sites ask you each time.` An http source is written in full (`http://nas.lan`) with `cap_http_note_link` under it. Without `source`: `Open links when you tap it, asking you each time` (review list and detail, and in the prompt when another line makes the widget prompt; on its own it never prompts) | **Yes, when it has a `source`** (approve the source once; a new or changed `source` → `Needs your OK again`). Without `source` there's nothing to pre-approve, so `ui.openUrl` needs no Allow prompt and every tap confirms (§17.9). Removing `source` likewise needs no prompt (no `needsApprovalAgain`), since every tap then confirms. Both matches [#146](https://github.com/Nasawa/config-launcher/pull/146) (3237674). Taps to any host other than the approved source **always** show the confirm sheet, unless the user ticked `Always allow` for that host on this phone (Q-D5) |
-| **Internet** (feature level 5, a later release: Christopher's Q-C1/Q-C2, #117) | `net.fetch` (`origins`: full `https://host[:port]` or `http://host[:port]`, approved by name; literal URLs only) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (https hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable). An http origin is always written in full, `Connect to http://nas.lan:3001`, followed by `cap_http_note`: `The connection to http://nas.lan:3001 isn't private. Others on your network could see or change it. Only allow this if you trust this network. You're choosing a less secure connection.` Private-network origins get `cap_private_note` and self-signed ones `cap_tofu_note` (§17.13) | **Yes** |
+| **Internet** (feature level 6, a later release: Christopher's Q-C1/Q-C2, #117) | `net.fetch` (`origins`: full `https://host[:port]` or `http://host[:port]`, approved by name; literal URLs only) | Fetch from named origins | `Connect to status.anigeek.com and blog.anigeek.com` (https hosts shown without `https://`, with `:port` only when it isn't 443; more than 3 → `and 2 more`, expandable). An http origin is always written in full, `Connect to http://nas.lan:3001`, followed by `cap_http_note`: `The connection to http://nas.lan:3001 isn't private. Others on your network could see or change it. Only allow this if you trust this network. You're choosing a less secure connection.` Private-network origins get `cap_private_note` and self-signed ones `cap_tofu_note` (§17.13) | **Yes** |
 | **Phone data** (later, no v1 kinds) | — (future `phone.*`) | Calendar, next alarm, battery, notification counts | `Read your calendar` · `See notification counts` | **Yes.** After `Allow`, Android may ask for its own permission too |
 | **Act** (later, no v1 kinds) | — | Write back to the data file, toggles, webhooks. In v1 buttons only Open | `Change values in widgets-data/w-anigeek.json` | **Yes** |
 | **Never offered** | — (not in the schema) | Send SMS, place calls, read contacts or messages, mic, camera, location, VPN or tunnel control, run code | — | The schema has no kind for these (the iappyx lesson: one bridge for every widget). One written anyway is an unknown kind: the phone skips that element (§17.3), and `validate.py` reports it |
@@ -1597,7 +1623,7 @@ the §16.2 placeholder so every non-live widget looks like the same family:
 | Asks for more than a non-empty ceiling (including silent lines recorded while it was live) | `Needs your OK again` | Broadened prompt |
 | User chose `Keep off` on a prompt | Unchanged (`Needs your OK` / `Needs your OK again`) | Prompt again |
 | User revoked it | `Turned off` | Same |
-| Above this launcher's feature level (`requires`, e.g. `net.fetch` at 5 on a level-4 phone) | `Update Config Launcher to show this` | Hint sheet. Same skip-and-keep rule as §15, but it **keeps its cells and shows the tile**, because a dashboard card going missing looks broken |
+| Above this launcher's feature level (`requires`, e.g. `net.fetch` at 6 on a level-5 phone) | `Update Config Launcher to show this` | Hint sheet. Same skip-and-keep rule as §15, but it **keeps its cells and shows the tile**, because a dashboard card going missing looks broken |
 | Declares a capability `kind` this launcher doesn't know (a newer kind that's missing its `requires` bump, a typo, or a never-offered kind) | `Update Config Launcher to show this` | Same hint sheet and skip-and-keep: cells kept, the element stays in the file, and nothing is rendered or granted. The `status.json` warning names the kind (below), so a typo is visible to the agent even though the phone's copy suggests an update. No prompt, no B2 |
 | Data file missing or unreadable on first load | *(live; values show `—`, `as of` gets ▲, §17.9)* | — |
 
@@ -1892,7 +1918,7 @@ The same `launcher.json` syncs to a tablet. Cells are bigger there, up to the §
   declared `minSpan`, it renders at that span with the §16.5 amber outline + ▲ and the warning `elements[4]: span 2×1 is
   below this widget's minimum 3×2. Shown at 2×1 anyway.`
 - **Grid too small for the position** (an `x`+`w` past the columns): a validation error (B2, §6). There's no per-device
-  grid schema in v1 (Q-A6; config overrides are planned, Q-A11): one `grid` in the file, and cell size and `k` absorb phone vs tablet.
+  grid schema in v1 (Q-A6; config overrides after dev8 follow [layout-overrides.md](design/layout-overrides.md), Q-A11): one `grid` in the file by default, and cell size and `k` absorb phone vs tablet.
 - **Approval doesn't travel** (A1): on the tablet, the first load shows `Needs your OK`, the tile keeps the widget's
   real cells, and the dashboard comes alive one tap per widget.
 
@@ -1949,7 +1975,7 @@ Prompt: `ui.openUrl` only (`Open links to its source, blog.anigeek.com, when you
 each time.`). The blog tap opens straight away. The `http://nas.lan/status` list tap shows the confirm sheet every
 time, with the not-private note, until the user ticks `Always allow http://nas.lan`. `data.file` and `ui.reload` are Show-tier lines and don't prompt. Without the
 `ui.openUrl` capability, the card would be Show-only and go live with no prompt (Q-D1). `requires: 4` is the card + local-data level. Adding
-`net.fetch` would make it 5.
+`net.fetch` would make it 6.
 
 ### 17.12 Build checklist additions (Sprite, when scheduled)
 - [ ] Consent store (device-local), approved-set check on every load (it never shrinks), the states in §17.2, no dialog from a load.
@@ -2175,11 +2201,11 @@ Dashboard widgets (§17). All answered by Christopher; the original recommendati
 - ✅ **Q-D2** (accepted as recommended) Approval per widget as a whole, or per capability (e.g. allow the calendar but not the internet)? [Whole
   widget in the first release. Partial grants leave half-working cards that are hard to explain.]
 - ~~**Q-D3**~~ ✅ Answered by Christopher's Q-C1/Q-C2 in #117 (25a7d36): ship local data first (stage 3), and add
-  INTERNET with `net.fetch` in a later release (stage 5). Original question kept for the record: The schema now has `net.fetch` (exact origins, https by default, feature level 5). Should the launcher ship it? It
+  INTERNET with `net.fetch` in a later release (stage 5). Original question kept for the record: The schema now has `net.fetch` (exact origins, https by default, feature level 6; was proposed as 5 before #186 took level 5 for `windowOverrides`). Should the launcher ship it? It
   means adding the **INTERNET permission to the whole app**, for every user and every widget, which breaks the README's
   "no network access" promise even for people who never allow a fetch. [Ship level 4 first: your agent fetches on its
   own machine and writes `.configlauncher/widgets-data/<id>.json`, as the Claw card's numbers already could. Turn on
-  level 5 only if you want cards that work with no agent running, and update the README promise then. Claw, the agent
+  level 6 only if you want cards that work with no agent running, and update the README promise then. Claw, the agent
   whose card this is, notes that no-fetch-first costs the dashboard nothing: it already fetches on its own machine.]
   **Note:** this differs from Grok Bot's earlier direction ("the launcher fetches from approved sites only"). Pick
   either. If you choose fetch, http to hosts you approve by name is allowed (§17.1).
@@ -2208,7 +2234,7 @@ Tablets, landscape and foldables (§1.5). ✅ **All six decided by Christopher o
 as a starting point the config will be able to override later (§1.5 "Defaults now, overrides later", Q-A11). His
 principle: "if the user wants to do weird stuff, we should provide the tools to facilitate it where possible."
 - ✅ **Q-L1** More columns on a tablet? **Decided: the same grid everywhere by default** (Q-D4 stands). A per-class or
-  per-orientation grid is planned as an override (Q-A11).
+  per-orientation grid is a config override ([layout-overrides.md](design/layout-overrides.md), Q-A11).
 - ✅ **Q-L2** Big empty margins or stretched cells? **Decided: centred grid with a 144 dp cell cap** (1.25 : 1). Cap on/off
   and its size are planned overrides.
 - ✅ **Q-L3** Which edge does the dock move to in landscape? **Decided: the end edge** (right, or left in a right-to-left
@@ -2245,7 +2271,7 @@ Dashboard capability model (§17): all eight are answered in the [#116 comment](
 | ~~Q-A3~~ | ✅ `status.json` `consent` map keyed by element id: `state` (`needsApproval` / `needsApprovalAgain` / `off` / `allowed`) + optional `warning`. No approval secret in it |
 | ~~Q-A4~~ | ✅ Real optional field `author` (string, max 40). Quoted, never trusted |
 | ~~Q-A5~~ | ✅ `{data:…}` with dots + `[index]` only, `list` binds to an array, `updatedAt` at the data file root, `staleAfter` on the element. One file per widget: `.configlauncher/widgets-data/<elementId>.json` |
-| ~~Q-A6~~ | ✅ `minSpan` `{w,h}`, `layouts` keyed `"WxH"`, lowercase `x` confirmed (`"4x3"`; max 3), `priority` 0–9 (default 5), `showIn`. Proposed levels: container 1, titleBar 2, appWidget 3, card local data 4, `net.fetch` 5. No per-device grid schema in v1 |
+| ~~Q-A6~~ | ✅ `minSpan` `{w,h}`, `layouts` keyed `"WxH"`, lowercase `x` confirmed (`"4x3"`; max 3), `priority` 0–9 (default 5), `showIn`. Proposed levels: container 1, titleBar 2, appWidget 3, card local data 4, `windowOverrides` 5 (#186), `net.fetch` 6. No per-device grid schema in v1 |
 | ~~Q-A7~~ | ✅ Only APIs in the approved manifest are granted. **Revised:** an unknown `kind` skips only that element (warning, cells kept). New kinds ship with a feature-level bump, and elements using them set `requires`. `validate.py`/CI may stay strict |
 | ~~Q-A8~~ | ✅ Hosted AppWidgets stay outside; listed as read-only `Allowed by Android` |
 
@@ -2287,49 +2313,12 @@ Flags from Christopher's answers, both resolved in ARCHITECTURE §18:
 - ~~AQ-10~~ Label backdrop: 60 % black scrim. White on it over a pure white wallpaper is 5.7:1, which meets 4.5:1.
 - ~~AQ-11~~ Settled by AF-2: `unsorted.mode` is never acted on, so `page` behaves as the drawer, per Christopher.
 
-Tablets, landscape and foldables (§1.5; Archimedes' notes for this PR). dev8 needs no schema change; Q-A11 is the planned override work:
-- **Q-A11** Config overrides for §1.5 (**planned work, reopened 2026-10-26**; was "deferred"). Christopher decided Q-L1–Q-L6
-  as defaults and wants the config able to override each (§1.5 "Defaults now, overrides later"). **Archimedes owns and
-  finalises the schema shape.** Pragma's candidate, for discussion only:
-
-  ```json
-  "windowOverrides": [
-    { "when": { "widthClass": "expanded", "orientation": "landscape" },
-      "grid": { "columns": 6, "rows": 4 },
-      "cellCap": { "enabled": true, "maxWidthDp": 160 },
-      "dock": { "edge": "start" } },
-    { "when": { "orientation": "portrait" }, "dock": { "edge": "top" } },
-    { "when": { "posture": "halfOpened" }, "fold": { "halfOpened": "span" } },
-    { "when": { "posture": "flat" }, "fold": { "flat": "asPhone" } },
-    { "when": { "deviceClass": "phone" }, "orientationLock": "landscape" },
-    { "when": {}, "scale": { "icon": 1.15 } }
-  ]
-  ```
-
-  - **Name:** a top-level `windowOverrides` array. Not `layouts` (already the widget layouts keyed `"WxH"`, Q-A6) and not
-    `overrides` (easy to mix up with the title bar's per-page overrides).
-  - **`when`:** every key given must match; an empty `when` always matches. Keys: `widthClass` (`compact` | `medium` |
-    `expanded`), `orientation` (`portrait` | `landscape`), `posture` (`folded` | `flat` | `halfOpened`, maybe split into
-    `book` | `tabletop`), and `deviceClass` (`phone` | `tablet`, from `smallestScreenWidthDp` < / ≥ 600).
-  - **Fields:** `grid {columns, rows}` (2–12, as today), `cellCap {enabled, maxWidthDp}`, `dock {edge: top | bottom | start
-    | end}`, `fold {halfOpened: oneHalf | span, flat: asTablet | asPhone}`, `orientationLock` (`portrait` | `landscape` |
-    `system`), `scale {icon}` (e.g. 0.75–1.5 × 56 dp; touch targets stay ≥ 48 dp).
-  - **Order:** entries apply in file order, a later entry wins field by field. A window with no match uses the defaults.
-  - **Settled with Archimedes (2026-10-26)**, who takes `windowOverrides` as the baseline for
-    `docs/design/layout-overrides.md`:
-    - `orientationLock` may be keyed on `deviceClass` only (stable across rotation). Keying it on `orientation` or
-      `widthClass` is a validation error, because locking changes them and the rule would flip itself.
-    - `posture: folded` is flagged as hard and best-guess (`FoldingFeature` alone doesn't say it's the cover screen).
-      Archimedes picks the fold defaults and tests on emulators.
-    - Widen-only is dropped: smaller-grid overrides use the §1.5 "skipped on that window" state, never moved or written,
-      with a load-time warning per override.
-    - Still open (Archimedes): which coordinates a user edit writes while an override grid is active.
-  - **Constraints carried over:** the root and `grid` have `additionalProperties: false`, so older builds reject the file
-    (B2). It needs the Q-A10 pre-release route or `schemaVersion` 2, and FEATURE_LEVEL can't gate a root key on its own
-    (`requires` is only on `elements[]`); a FEATURE_LEVEL bump still marks the release that understands it. Positions are
-    validated against the largest declared grid, placement and the warnings stay file-derived, and a window change never
-    writes.
-  - **Until then:** dev8 ships the §1.5 defaults only, and an override key is rejected as any unknown key is today.
+Tablets, landscape and foldables (§1.5).
+- ~~**Q-A11**~~ ✅ Config overrides for §1.5: design landed in
+  [`docs/design/layout-overrides.md`](design/layout-overrides.md) (merged #186, e54eabe). One device, several window
+  shapes; `when` is `widthClass` / `orientation` / `posture` only; `orientationLock` and `scale` are global; UX summary
+  in §1.5 above. The candidate JSON and "largest grid" notes below this heading are superseded — do not implement from
+  them. dev8 still ships defaults only (O0); slices O1–O6 follow.
 - ~~Q-A12~~ ✅ Resolved by Archimedes (title-bar fit warnings vs "a resize never writes"): the fit check runs **only on
   config load or reload**, against a **portrait bar at `smallestScreenWidthDp`**, and never re-runs on rotation, fold or
   resize. A fold changes the warnings only at the next load, because `status.json` describes the last load, not the
