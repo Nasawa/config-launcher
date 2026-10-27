@@ -280,10 +280,10 @@ Honest holes in "local files + opt-in URL fetch + per-widget manifest":
 | 2 | `appWidget` host + tap-to-bind | 3 |
 | 3 | `card` + local `data.file` + consent UX (§17) | 4 |
 | 4 | Richer primitives if needed (parity with Outer Shell) | 4 |
-| 5 | `net.fetch` + Keystore + INTERNET permission | 5 |
+| 5 | `net.fetch` + Keystore + INTERNET permission | **6** (level 5 is `windowOverrides`, #186) |
 | 6 | Optional path pins, private-origin allow, phone.* | later |
 
-**Hard gates:** Stage 0 before any skip of grid elements (met). Consent tile before any `card` renders data. Local data before fetch (**Q-C2 decided:** ship stage 3 local-data-only first; fetch is a later release).
+**Hard gates:** Stage 0 before any skip of grid elements (met). Consent tile before any `card` renders data. Local data before fetch (**Q-C2 decided:** ship stage 3 local-data-only first; fetch is a later release). Feature levels: `windowOverrides` took **5** (#186), so `net.fetch` is **6**.
 
 ## 10. Open questions
 
