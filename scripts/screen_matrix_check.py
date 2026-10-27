@@ -682,7 +682,7 @@ def severity(cid, m):
     pending = set()     # add an id here for a merged spec not built yet
     # L5 stays advisory until the end-edge rail PR lands (#197 / test-plan §20).
     # L6r = rail-geometry half of L6 (also advisory until that rail PR).
-    advisory_always = {'P1', 'A1', 'A2', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'G7', 'X1', 'X2', 'X3', 'G3n', 'G3a', 'L5', 'L6r', 'L6s', 'Dnd1', 'R1'}
+    advisory_always = {'P1', 'A1', 'A2', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'G7', 'X1', 'X2', 'X3', 'G3n', 'G3a', 'L5', 'L6r', 'L6s', 'Dnd1'}
     if cid in pending:
         return 'pending'
     if cid == 'F1':
@@ -691,9 +691,9 @@ def severity(cid, m):
         return 'advisory'
     if fs >= 1.95:
         return 'advisory'
-    # L1–L13 (test-plan §20) and large-screen G1–G3: advisory through dev7, blocking from dev8
-    # (ux.md §1.5; #185). Crashes/ANRs stay blocking via F1 above.
-    if cid.startswith('L') or (tier != 'phone' and cid.startswith('G')):
+    # L1–L13 (test-plan §20), R1 (RTL grid order, #187 / #211) and large-screen G1–G3: advisory
+    # through dev7, blocking from dev8 (ux.md §1.5; #185). Crashes/ANRs stay blocking via F1 above.
+    if cid.startswith('L') or cid == 'R1' or (tier != 'phone' and cid.startswith('G')):
         return 'block' if gate_of(m) == 'dev8' else 'advisory'
     return 'block'
 
@@ -1242,7 +1242,8 @@ def run_checks(d):
                     'ux.md §6.1 Notice row (#173 L1; title bar: #183), §17.4 Count chip')
 
     # R1 (#187 / PR #210): grid columns mirror in RTL. Fixture launcher.json row 0 is QA Settings (x=0) …
-    # Wide WWWW (x=3); RTL wants x=0 physically rightmost, LTR leftmost. Advisory (geometry, not a gesture).
+    # Wide WWWW (x=3); RTL wants x=0 physically rightmost, LTR leftmost. Gated like L*: advisory at dev7,
+    # blocking at dev8 (severity()).
     if (m.get('fixture') or '') == 'launcher.json' and home.get('home1'):
         _row0 = ['QA Settings', 'A very long label that must ellipsize', 'Missing', 'Wide WWWW']
         _n1 = home['home1']
@@ -1260,14 +1261,14 @@ def run_checks(d):
                 _want = list(reversed(_want))
             if x4_rtl_failed:
                 add('R1', 'Grid column order follows layout direction (RTL mirrors)', None,
-                    'skipped: harness X4 RTL not applied', 'ux.md §1.5 RTL; #187', sev='advisory')
+                    'skipped: harness X4 RTL not applied', 'ux.md §1.5 RTL; #187')
             else:
                 add('R1', 'Grid column order follows layout direction (RTL mirrors)', _phys == _want,
                     f'rtl={_rtl}; row 0 left→right {[_k[:12] for _k in _phys]}; want {[_k[:12] for _k in _want]}',
-                    'ux.md §1.5 RTL; #187 / PR #210', sev='advisory')
+                    'ux.md §1.5 RTL; #187 / PR #210')
         else:
             add('R1', 'Grid column order follows layout direction (RTL mirrors)', None,
-                f'row-0 fixture tiles not found ({len(_cx)})', 'ux.md §1.5 RTL; #187', sev='advisory')
+                f'row-0 fixture tiles not found ({len(_cx)})', 'ux.md §1.5 RTL; #187')
 
     # ---------------------------------------------------------------- L1–L13 (ux.md §1.5 / test-plan §20 / #197)
     # L1–L5/L7 on large-tier (and phone-landscape for L5/L12). L6/L13 when their fixtures are seeded.

@@ -93,7 +93,7 @@ class DndPlan(unittest.TestCase):
 
 
 class R1Mirror(unittest.TestCase):
-    def _run(self, rtl, ids=('R1',), mirror=True):
+    def _run(self, rtl, ids=('R1',), mirror=True, gate=None, want_verdict=False):
         t = tempfile.mkdtemp()
         try:
             src = os.path.join(TD, 't7-land-v1')
@@ -107,16 +107,53 @@ class R1Mirror(unittest.TestCase):
                 W = c.screen_of(c.load(os.path.join(src, 'home1.xml')))[0]
                 if mirror:
                     mirror_xml(os.path.join(src, 'home1.xml'), os.path.join(t, 'home1.xml'), W)
+            if gate:
+                meta = re.sub(r'(?m)^gate=.*$', '', meta) + f'\ngate={gate}\n'
             open(os.path.join(t, 'meta.txt'), 'w').write(meta)
             _m, res = c.run_checks(t)
+            if want_verdict:
+                return c.verdict_of(_m, res), {x['id']: x for x in res}
             got = {x['id']: x for x in res}
             return got.get(ids[0]) if len(ids) == 1 else {i: got.get(i) for i in ids}
         finally:
             shutil.rmtree(t)
 
     def test_ltr_pass(self):
-        r = self._run(False)
-        self.assertIsNotNone(r); self.assertEqual(r['status'], 'PASS'); self.assertEqual(r['severity'], 'advisory')
+        r = self._run(False)       # fixture meta is gate=dev8 → R1 blocks
+        self.assertIsNotNone(r); self.assertEqual(r['status'], 'PASS'); self.assertEqual(r['severity'], 'block')
+
+    # R1 is gated like the L checks (#211): advisory at dev7, blocking at dev8.
+    def test_r1_severity_policy(self):
+        for gate, want in (('dev7', 'advisory'), ('dev8', 'block')):
+            for tier in ('phone', 'large'):
+                m = {'gate': gate, 'tier': tier, 'font_scale': '1.0'}
+                self.assertEqual(c.severity('R1', m), want, (gate, tier))
+                self.assertEqual(c.severity('R1p2', m), want, (gate, tier))
+                self.assertEqual(c.severity('L2', m), want, (gate, tier))   # same as L*
+                self.assertEqual(c.severity('F1', m), 'block', (gate, tier))  # crashes/ANRs always block
+        # font 2.0 stays advisory, as for L*
+        self.assertEqual(c.severity('R1', {'gate': 'dev8', 'tier': 'large', 'font_scale': '2.0'}), 'advisory')
+
+    def test_r1_fail_advisory_at_dev7(self):
+        # RTL requested, grid not mirrored → R1 FAIL; under dev7 it must not fail the point on its own.
+        _v, res = self._run(True, mirror=False, gate='dev7', want_verdict=True)
+        self.assertEqual(res['R1']['status'], 'FAIL', res['R1']['detail'])
+        self.assertEqual(res['R1']['severity'], 'advisory')
+        # The test fixture is a partial dump (other F*/T* SKIP), so judge R1's own contribution.
+        self.assertEqual(c.verdict_of({}, [res['R1']]), 'PASS')
+
+    def test_r1_fail_blocks_at_dev8(self):
+        v, res = self._run(True, mirror=False, gate='dev8', want_verdict=True)
+        self.assertEqual(res['R1']['status'], 'FAIL', res['R1']['detail'])
+        self.assertEqual(res['R1']['severity'], 'block')
+        self.assertEqual(c.verdict_of({}, [res['R1']]), 'FAIL')
+        self.assertEqual(v, 'FAIL')
+
+    def test_r1_mirrored_pass_blocking_at_dev8(self):
+        v, res = self._run(True, gate='dev8', want_verdict=True)
+        self.assertEqual(res['R1']['status'], 'PASS', res['R1']['detail'])
+        self.assertEqual(res['R1']['severity'], 'block')
+        self.assertEqual(c.verdict_of({}, [res['R1']]), 'PASS')
 
     def test_rtl_mirrored_pass(self):
         r = self._run(True)
