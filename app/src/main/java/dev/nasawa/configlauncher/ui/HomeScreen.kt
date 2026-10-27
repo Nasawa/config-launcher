@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.semantics.Role
 import android.widget.Toast
@@ -37,6 +38,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -185,7 +187,7 @@ fun HomeScreen(vm: HomeViewModel) {
     }
     // Merge results use the in-app snackbar (ux.md §9.1); other one-shot notices are toasts.
     val res = androidx.compose.ui.platform.LocalResources.current
-    // §1.4: the part of the system-gesture inset not already covered by systemBarsPadding.
+    // §1.4: the part of the system-gesture inset not already covered by safeDrawing padding.
     val density = androidx.compose.ui.platform.LocalDensity.current
     val gestureBottomPx = (WindowInsets.systemGestures.getBottom(density) - WindowInsets.navigationBars.getBottom(density)).coerceAtLeast(0).toFloat()
     LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it.resolve(res), Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
@@ -249,14 +251,55 @@ fun HomeScreen(vm: HomeViewModel) {
     LaunchedEffect(editing, ui.load.config) { if (editing) { kotlinx.coroutines.delay(30_000); if (drag.dragged == null) editing = false } }
     androidx.activity.compose.BackHandler(editing) { editing = false }
 
+    val winConfig = androidx.compose.ui.platform.LocalConfiguration.current
+    val winW = winConfig.screenWidthDp.toFloat()
+    val winH = winConfig.screenHeightDp.toFloat()
+    val useRail = HomeGeometry.useRail(winW, winH)
+    val widthClass = HomeGeometry.widthClass(winW)
+    drag.dockVertical = useRail
+
     HomeThemed(themeDark) {
         // Transparent over the system wallpaper (theme windowShowWallpaper, #58).
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
-            Column(Modifier.fillMaxSize().systemBarsPadding().swipeUpToOpen(
+            // §1.5: measure Apps/Done at the current font scale and locale; grow the rail past 80 dp when needed.
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val headMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
+            val headStyle = MaterialTheme.typography.labelLarge
+            val appsLabel = stringResource(R.string.apps)
+            val doneLabel = stringResource(R.string.done)
+            val headLabelWidthDp = run {
+                val appsW = headMeasurer.measure(appsLabel, headStyle, maxLines = 1, softWrap = false).size.width
+                val doneW = headMeasurer.measure(doneLabel, headStyle, maxLines = 1, softWrap = false).size.width
+                val textDp = with(density) { maxOf(appsW, doneW).toDp().value }
+                // Label backdrop adds 6 dp a side around the text inside the button.
+                textDp + if (backdrop) 12f else 0f
+            }
+            val railWidthDp = if (useRail) HomeGeometry.railWidthDp(headLabelWidthDp) else 0f
+            // Page column = window minus the rail inside safeDrawing; chrome centres inside this, not the window.
+            val pageAreaW = (winW - railWidthDp).coerceAtLeast(0f)
+            val chromeWidth = HomeGeometry.contentWidthDp(
+                pageAreaW,
+                minOf(pageAreaW, 4 * HomeGeometry.CAP_WIDTH_DP),
+                widthClass,
+            )
+            val chromeContent = chromeWidth.takeIf { widthClass != HomeGeometry.WidthClass.Compact }
+
+            val rootMod = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).swipeUpToOpen(
                 // §1.4: off in edit mode and while dragging; the bottom system-gesture strip belongs to the system.
-                { !editing && drag.dragged == null && !drawerOpen }, { gestureBottomPx }) { drawerOpen = true }) {
+                // Insets are safeDrawing (§1.5); the gesture strip is still nav-bar-relative.
+                { !editing && drag.dragged == null && !drawerOpen }, { gestureBottomPx }) { drawerOpen = true }
+            // Local body so the rail Row and the bottom-dock Column share the same chrome.
+            @Composable
+            fun HomeBody(mod: Modifier, railHead: Boolean) {
+            // Measure the page column (window − rail after safeDrawing) so title-bar padding
+            // keys off the laid-out height, not Configuration.screenHeightDp (Pragma #201).
+            BoxWithConstraints(mod) {
+            // Unbounded maxHeight is Dp.Infinity; treat as short so title-bar pad still absorbs.
+            val pageColH = maxHeight.value.let { if (it.isFinite()) it else 0f }
+            Column(Modifier.fillMaxSize()) {
                 // #75: the edit bar takes the top row's place at the same height, so the grid doesn't jump under the finger.
-                Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
+                // §1.5 rail: Apps/Done and ⋮ move onto the rail head; the source note and "Editing layout" are omitted.
+                if (!railHead) Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
                 if (editing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     // #182: on the wallpaper like Done, so white with the label shadow (and the scrim with Label backdrop on).
                     Box(Modifier.weight(1f)) { WallpaperText(stringResource(R.string.editing_layout), backdrop) }
@@ -319,12 +362,15 @@ fun HomeScreen(vm: HomeViewModel) {
                 }
                 // The banner slot. The collapsed count chip isn't here: it goes in the §6.1 notice row with the page label
                 // (#173 L1, #175), so the banners keep the full width and the chip costs no grid height.
+                // §1.5: banner / notice / title are content-width centred in the page column (window − rail).
                 val b9 = ConsentUi.B9.visible(reviewCount, b9DismissedAt, otherBanner = ui.load.conflict || ui.load.issue != null)
                 val countChip = !b9 && reviewCount > 0
-                if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
-                // B9 is the lowest-priority notice: only when no other banner is up. `×` collapses it to the chip.
-                if (b9) B9Banner(reviewCount, onReview = { b9DismissedAt = reviewCount; reviewOpen = true }, onDismiss = { b9DismissedAt = reviewCount })
-                ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
+                ContentWidthBox(chromeContent) {
+                    if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
+                    // B9 is the lowest-priority notice: only when no other banner is up. `×` collapses it to the chip.
+                    if (b9) B9Banner(reviewCount, onReview = { b9DismissedAt = reviewCount; reviewOpen = true }, onDismiss = { b9DismissedAt = reviewCount })
+                    ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
+                }
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
                 // ux.md §1 / §14 R4: Home on home leaves edit mode (saving first), closes drawer and folder, goes to page 1.
@@ -346,13 +392,15 @@ fun HomeScreen(vm: HomeViewModel) {
                 // §6.1 notice row (#173 L1): the collapsed chips (the §17.4 count chip; the B-banner ▲ chip once built) at the
                 // end, the page label centred in the same row. A title bar keeps its own row, so the chips get one above it.
                 val chips: @Composable RowScope.() -> Unit = { ReviewCountChip(reviewCount, { reviewOpen = true }) }
-                if (titleBar != null) {
-                    if (countChip) NoticeRow(null, chips = chips)
-                    TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop, onFit = { titleFit = it }) { pageList = true }
-                } else {
-                    LaunchedEffect(Unit) { titleFit = null }
-                    if (countChip) NoticeRow(if (PageList.showLabel(pages)) { { PageLabelButton(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true } } } else null, chips = chips)
-                    else PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true }
+                ContentWidthBox(chromeContent) {
+                    if (titleBar != null) {
+                        if (countChip) NoticeRow(null, chips = chips)
+                        TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop, pageColumnHeightDp = pageColH, onFit = { titleFit = it }) { pageList = true }
+                    } else {
+                        LaunchedEffect(Unit) { titleFit = null }
+                        if (countChip) NoticeRow(if (PageList.showLabel(pages)) { { PageLabelButton(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true } } } else null, chips = chips)
+                        else PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true }
+                    }
                 }
                 val listPages = stringResource(R.string.pages_action)
                 val openAppList = stringResource(R.string.a11y_open_drawer)
@@ -372,38 +420,120 @@ fun HomeScreen(vm: HomeViewModel) {
                         live = ConsentUi.live(ui.load.config, consentReport, it.id),
                         onWidgetLong = { s -> widgetSheet = s }, onPermissions = { id -> detailFor = id }) }
                 }
-                if (pages.size > 1) PageDots(pages.size, pager.settledPage)
+                if (pages.size > 1) ContentWidthBox(chromeContent) { PageDots(pages.size, pager.settledPage) }
                 // ux.md §1.3: page label → page list → jump. Nothing is written.
                 if (pageList) PageListSheet(PageList.rows(pages, pager.settledPage), onPick = { i ->
                     pageList = false
                     if (i != pager.settledPage) scope.launch { if (ReducedMotion.on(ctx)) pager.scrollToPage(i) else pager.animateScrollToPage(i) }
                 }, onDismiss = { pageList = false })
                 }
-                Dock(ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y)
-                ui.load.merge?.let { m ->
-                    MergeSnackbar(m, onUndo = { vm.store.undoMerge() }.takeIf { m.undo && ui.load.mergeUndo },
-                        onDismiss = { vm.store.engine.dismissMergeUndo() })
+                if (!railHead) BottomDock(
+                    ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y,
+                    contentWidthDp = chromeContent,
+                )
+                // §1.5: snackbars sit at the bottom of the page column (content-width on Medium/Expanded).
+                ContentWidthBox(chromeContent) {
+                    ui.load.merge?.let { m ->
+                        MergeSnackbar(m, onUndo = { vm.store.undoMerge() }.takeIf { m.undo && ui.load.mergeUndo },
+                            onDismiss = { vm.store.engine.dismissMergeUndo() })
+                    }
+                    if (agentSnack) AgentDocsSnackbar { agentSnack = false }
+                    changedSnack?.let { t ->
+                        // #142: Allow was refused because the card changed while the sheet was open. Polite live region (TalkBack).
+                        LaunchedEffect(t) { kotlinx.coroutines.delay(SHORT_SNACK_MS); if (changedSnack == t) changedSnack = null }
+                        // Over the review list or detail page when one is open (they're full-screen dialogs), else here.
+                        if (!reviewOpen && detailFor == null) Snackbar(Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite }) { Text(t) }
+                    }
+                    consentSnacks.forHome(detailFor, reviewOpen)?.let { ConsentSnackbar(it, consentSnacks::undo, Modifier.padding(8.dp)) }
+                    undoSnack?.let { u ->
+                        UndoSnackbar(u, onUndo = {
+                            undoSnack = null
+                            // Restore only fails when home has no room left; say so instead of doing nothing (Grace, #70).
+                            val cfg = vm.store.engine.state.value.config
+                            val undo = u.undo
+                            when {
+                                undo !is Edit.Restore || Edits.apply(cfg, undo).applied -> vm.store.edit(undo)
+                                cfg.allItems().none { it.id == undo.item.id } -> toast(res.getString(R.string.undo_no_room, u.label))
+                            }
+                        }, onDismiss = { if (undoSnack == u) undoSnack = null })
+                    }
                 }
-                if (agentSnack) AgentDocsSnackbar { agentSnack = false }
-                changedSnack?.let { t ->
-                    // #142: Allow was refused because the card changed while the sheet was open. Polite live region (TalkBack).
-                    LaunchedEffect(t) { kotlinx.coroutines.delay(SHORT_SNACK_MS); if (changedSnack == t) changedSnack = null }
-                    // Over the review list or detail page when one is open (they're full-screen dialogs), else here.
-                    if (!reviewOpen && detailFor == null) Snackbar(Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite }) { Text(t) }
-                }
-                consentSnacks.forHome(detailFor, reviewOpen)?.let { ConsentSnackbar(it, consentSnacks::undo, Modifier.padding(8.dp)) }
-                undoSnack?.let { u ->
-                    UndoSnackbar(u, onUndo = {
-                        undoSnack = null
-                        // Restore only fails when home has no room left; say so instead of doing nothing (Grace, #70).
-                        val cfg = vm.store.engine.state.value.config
-                        val undo = u.undo
-                        when {
-                            undo !is Edit.Restore || Edits.apply(cfg, undo).applied -> vm.store.edit(undo)
-                            cfg.allItems().none { it.id == undo.item.id } -> toast(res.getString(R.string.undo_no_room, u.label))
+            }
+            } // BoxWithConstraints (page column measure)
+            } // HomeBody
+
+            if (useRail) {
+                Row(rootMod) {
+                    HomeBody(
+                        Modifier.weight(1f).fillMaxHeight().semantics { traversalIndex = 1f },
+                        railHead = true,
+                    )
+                    val hint = stringResource(R.string.a11y_open_drawer_hint)
+                    val dotSaid = stringResource(R.string.menu_dot_a11y)
+                    DockRail(
+                        ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y,
+                        headLabelWidthDp = headLabelWidthDp,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            if (editing) {
+                                // Never clip/ellipsize/hide Apps/Done — the rail grows to fit (§1.5).
+                                WallpaperTextButton(leaveEdit, backdrop) {
+                                    Text(stringResource(R.string.done), maxLines = 1, softWrap = false, overflow = TextOverflow.Visible)
+                                }
+                            } else {
+                                WallpaperTextButton({ drawerOpen = true }, backdrop, Modifier.semantics { onClick(label = hint) { drawerOpen = true; true } }) {
+                                    Text(stringResource(R.string.apps), maxLines = 1, softWrap = false, overflow = TextOverflow.Visible)
+                                }
+                            }
+                            Box {
+                                WallpaperTextButton({ menuOpen = true }, backdrop) {
+                                    BadgedBox(badge = { if (reviewCount > 0) Badge(Modifier.semantics { contentDescription = dotSaid }) }) { Text("⋮") }
+                                }
+                                // Menu items live on the top-row DropdownMenu when !useRail; with a rail the same
+                                // menuOpen state is driven from here, so mirror the items.
+                                DropdownMenu(menuOpen, { menuOpen = false }) {
+                                    if (TitleBarEdits.state(ui.load.config) != TitleBarEdits.State.Unavailable)
+                                        DropdownMenuItem({ Text(stringResource(R.string.titlebar_title)) }, { menuOpen = false; titleBarSheet = true })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_config_folder)) }, { menuOpen = false; folderInfo = vm.store.engine.source.location ?: "" })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_pick_folder)) }, { menuOpen = false; moving = true; pickFolder.launch(null) })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_use_phone_storage)) }, { menuOpen = false; vm.store.useAppStorage() })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_label_backdrop)) }, {
+                                        backdrop = !backdrop; vm.store.prefs.labelBackdrop = backdrop
+                                    }, trailingIcon = { Checkbox(backdrop, null) })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_ask_before_merging)) }, {
+                                        askMerge = !askMerge; vm.store.setAskBeforeMerging(askMerge)
+                                    }, trailingIcon = { Checkbox(askMerge, null) })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_open_keyboard)) }, {
+                                        keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
+                                    }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
+                                    if (ui.load.reconnectable) {
+                                        val label = stringResource(R.string.menu_include_hidden_apps)
+                                        val spoken = label + ". " + stringResource(R.string.menu_include_hidden_apps_desc)
+                                        DropdownMenuItem({ Text(label) }, {
+                                            includeHidden = !includeHidden; vm.store.setIncludeHiddenApps(includeHidden)
+                                        }, Modifier.semantics {
+                                            contentDescription = spoken
+                                            toggleableState = androidx.compose.ui.state.ToggleableState(includeHidden)
+                                        }, trailingIcon = { Checkbox(includeHidden, null) })
+                                    }
+                                    if (agentAction != null) {
+                                        DropdownMenuItem({ Text(stringResource(R.string.menu_agent_docs)) }, {
+                                            agentDocs = !agentDocs; vm.store.prefs.agentDocs = agentDocs
+                                        }, trailingIcon = { Checkbox(agentDocs, null) })
+                                        DropdownMenuItem({ Text(stringResource(if (agentAction == AgentDocs.MenuAction.ADD) R.string.agent_docs_add else R.string.agent_docs_update)) },
+                                            { menuOpen = false; runAgentUpdate(false) })
+                                    }
+                                    if (consent != null) DropdownMenuItem({ Text(if (reviewCount > 0) pluralStringResource(R.plurals.menu_widgets_review, reviewCount, reviewCount) else stringResource(R.string.review_title)) },
+                                        { menuOpen = false; reviewOpen = true })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_reload)) }, { menuOpen = false; vm.store.pollNow() })
+                                    if (!isHome) DropdownMenuItem({ Text(stringResource(R.string.home_role_button)) }, { menuOpen = false; becomeHome() })
+                                }
+                            }
                         }
-                    }, onDismiss = { if (undoSnack == u) undoSnack = null })
+                    }
                 }
+            } else {
+                HomeBody(rootMod, railHead = false)
             }
         }
 
@@ -729,7 +859,8 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val availW = maxWidth.value
         val availH = maxHeight.value
-        val pitch = HomeGeometry.pitch(availW, availH, grid.columns, rows, widthClass)
+        val densityScale = androidx.compose.ui.platform.LocalDensity.current.density
+        val pitch = HomeGeometry.pitch(availW, availH, grid.columns, rows, widthClass, densityScale)
         val (originX, originY) = HomeGeometry.blockOrigin(availW, availH, pitch)
         // Compact still has the 8.dp grid pad inside the block; ladder uses the cell the tile actually gets.
         val pad = if (pitch.capped) 0f else 16f
@@ -761,20 +892,59 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                 for (y in 0 until rows) {
                     Row(Modifier.fillMaxWidth().weight(1f)) {
                         for (x in 0 until grid.columns) {
+                            // When pitchH < 48, a centred min-touch expansion climbs into the title bar
+                            // and Android a11y clips the {page} clickable to ~45 dp (split-phone-v1
+                            // home1.xml: clickable 73×45 while content stays 48). Grow short cells'
+                            // hit target to 48 dp downward only (Grace #201 T4).
+                            // Skip clipToBounds on short cells: clipped semantics bounds are re-inflated
+                            // centred to 48 dp, which undoes top alignment and re-invades the title bar.
+                            // Box centres an oversized requiredHeight child even with TopCenter; offset
+                            // by half the overflow so the 48 dp hit band starts at the cell top.
+                            val shortCell = cellH < HomeGeometry.MIN_TOUCH_DP
+                            val shortOverflow = if (shortCell) {
+                                ((HomeGeometry.MIN_TOUCH_DP - cellH) / 2f).coerceAtLeast(0f)
+                            } else 0f
                             Box(
-                                Modifier.weight(1f).fillMaxHeight().padding(2.dp).then(
+                                Modifier.weight(1f).fillMaxHeight().then(
+                                    if (shortCell) Modifier else Modifier.clipToBounds(),
+                                ).then(
                                     if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier,
                                 ),
-                                contentAlignment = Alignment.Center,
+                                contentAlignment = Alignment.TopCenter,
                             ) {
                                 byCell[x to y]?.let { r ->
-                                    with(drag) {
+                                    val tight = !step.showLabel && cellH < HomeGeometry.ICON_FALLBACK_DP + HomeGeometry.CONTENT_PAD_DP
+                                    val pad = if (tight) Modifier else Modifier.padding(2.dp)
+                                    val actions = a11y(r, TilePlace.PAGE)
+                                    val core = with(drag) {
+                                        Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = actions)
+                                    }
+                                    if (shortCell) {
+                                        Box(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .requiredHeight(HomeGeometry.MIN_TOUCH_DP.dp)
+                                                .offset(y = shortOverflow.dp)
+                                                .then(core)
+                                                .then(pad),
+                                        ) {
+                                            Tile(
+                                                r, apps,
+                                                Modifier.fillMaxSize(),
+                                                showLabel = true,
+                                                iconDp = step.iconDp,
+                                                drawLabel = step.showLabel,
+                                                tight = tight,
+                                            )
+                                        }
+                                    } else {
                                         Tile(
                                             r, apps,
-                                            Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.PAGE)),
+                                            Modifier.fillMaxSize().then(core).then(pad),
                                             showLabel = true,
                                             iconDp = step.iconDp,
                                             drawLabel = step.showLabel,
+                                            tight = tight,
                                         )
                                     }
                                 }
@@ -789,19 +959,24 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
             val cellHDp = if (pitch.capped) pitch.pitchH.dp else ((pitch.blockH - 2 * padDp) / rows).dp
             val baseXDp = (originX + padDp).dp
             val baseYDp = (originY + padDp).dp
+            // §17.8 / L13: host size capped at span × 80 × 1.5 and centred in the span.
             tiles.forEach { t ->
                 val p = t.placement
+                val (hostW, hostH) = HomeGeometry.widgetHostSizeDp(p.w, p.h, cellWDp.value, cellHDp.value)
+                val (offX, offY) = HomeGeometry.widgetHostOffsetDp(p.w, p.h, cellWDp.value, cellHDp.value)
                 ConsentTile(
                     t, onReview = { onTile(t) },
-                    modifier = Modifier.offset(baseXDp + cellWDp * p.x, baseYDp + cellHDp * p.y).size(cellWDp * p.w, cellHDp * p.h),
+                    modifier = Modifier.offset(baseXDp + cellWDp * p.x + offX.dp, baseYDp + cellHDp * p.y + offY.dp).size(hostW.dp, hostH.dp),
                     onLongPress = { onWidgetLong(WidgetSheetFor(t, null)) },
                 )
             }
             live.forEach { l ->
                 val p = l.placement
+                val (hostW, hostH) = HomeGeometry.widgetHostSizeDp(p.w, p.h, cellWDp.value, cellHDp.value)
+                val (offX, offY) = HomeGeometry.widgetHostOffsetDp(p.w, p.h, cellWDp.value, cellHDp.value)
                 LiveCardTarget(
                     l, onLongPress = { onWidgetLong(WidgetSheetFor(null, l)) }, onPermissions = { onPermissions(l.id) },
-                    modifier = Modifier.offset(baseXDp + cellWDp * p.x, baseYDp + cellHDp * p.y).size(cellWDp * p.w, cellHDp * p.h),
+                    modifier = Modifier.offset(baseXDp + cellWDp * p.x + offX.dp, baseYDp + cellHDp * p.y + offY.dp).size(hostW.dp, hostH.dp),
                 )
             }
         }
@@ -839,27 +1014,38 @@ internal fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragCont
  * the folder dialog), where it's the home theme's `onSurface` with no shadow or scrim, so it reads in light mode (#182).
  * [iconDp] / [showLabel]: §1.5 icon ladder (56 + label → 48 + label → 48, label hidden). The grid picks one step for
  * every cell; the dock always passes 56 dp with no label.
+ * [tight]: §1.5 step 4 — cell too short for content-pad + 48 dp icon; drop tile pad and centre the icon so it
+ * fills the cell without spilling into the neighbour (Pragma #201).
  */
 @Composable
-fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onWallpaper: Boolean = true, onClick: (() -> Unit)? = null, iconDp: Int = TileLabel.ICON_DP, drawLabel: Boolean = showLabel) {
+fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, showLabel: Boolean = true, onWallpaper: Boolean = true, onClick: (() -> Unit)? = null, iconDp: Int = TileLabel.ICON_DP, drawLabel: Boolean = showLabel, tight: Boolean = false) {
     val label = Labels.clean(r.title)
     val style = TileLabel.style(MaterialTheme.typography.labelSmall, onWallpaper)
     val labelColor = TileLabel.color(onWallpaper, MaterialTheme.colorScheme)
     val backdrop = onWallpaper && LocalLabelBackdrop.current
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val pad = if (tight) Modifier else Modifier.padding(4.dp)
     BoxWithConstraints(
-        modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(4.dp).alpha(if (r.missing || r.app?.paused == true) 0.4f else 1f),
-        contentAlignment = Alignment.TopCenter,
+        modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).then(pad).alpha(if (r.missing || r.app?.paused == true) 0.4f else 1f),
+        contentAlignment = if (tight || !drawLabel) Alignment.Center else Alignment.TopCenter,
     ) {
         // [showLabel]: this tile has a name (false on the dock). [drawLabel]: §1.5 ladder still drawing it.
         // When the name is hidden, TalkBack keeps it via contentDescription (§12).
         val fits = !constraints.hasBoundedHeight || maxHeight >= iconDp.dp + TileLabel.height(measurer, label, style, backdrop)
         val whole = showLabel && drawLabel && fits
+        // Cap the icon to the cell so density rounding can't push a 48 dp glyph past the neighbour.
+        val iconSize = if (constraints.hasBoundedHeight || constraints.hasBoundedWidth) {
+            val maxSide = minOf(
+                if (constraints.hasBoundedWidth) maxWidth.value.toInt() else iconDp,
+                if (constraints.hasBoundedHeight) maxHeight.value.toInt() else iconDp,
+            ).coerceAtLeast(0)
+            minOf(iconDp, maxSide)
+        } else iconDp
         Column(
             if (showLabel && !whole) Modifier.semantics { contentDescription = label } else Modifier,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (r.item is FolderItem) FolderIcon(r, apps, iconDp) else AppIconImage(r.app, apps, iconDp)
+            if (r.item is FolderItem) FolderIcon(r, apps, iconSize) else AppIconImage(r.app, apps, iconSize)
             if (whole) Text(
                 label, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
                 style = style, color = labelColor,

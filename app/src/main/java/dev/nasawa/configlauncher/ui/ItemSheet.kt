@@ -1,6 +1,8 @@
 package dev.nasawa.configlauncher.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -53,8 +55,11 @@ data class ItemSheetModel(
 @Composable
 fun ItemSheet(r: ResolvedItem, onAction: (ItemAction) -> Unit, onDismiss: () -> Unit) {
     val m = ItemSheetModel.of(r)
-    ModalBottomSheet(onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+    // #201 F3: phone landscape is short; skip the half-height stop (same as #181 drawer) and scroll
+    // so Edit layout / App info / Remove stay in the semantics tree.
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismiss, sheetState = sheet) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text(m.title, style = MaterialTheme.typography.titleMedium)
             when {
                 m.folderSize != null -> Text(pluralStringResource(R.plurals.sheet_folder_apps, m.folderSize, m.folderSize), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -97,8 +102,9 @@ object HomeMenu {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeMenuSheet(pageCount: Int, reviewCount: Int, onAction: (HomeAction) -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismiss, sheetState = sheet) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             HomeMenu.actions(pageCount, reviewCount).forEach { a ->
                 TextButton({ onAction(a) }, Modifier.fillMaxWidth()) {
                     if (a == HomeAction.WIDGETS_REVIEW) Text(
@@ -131,8 +137,9 @@ object DrawerMenu {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DrawerAppSheet(app: dev.nasawa.configlauncher.model.InstalledApp, includeWork: Boolean, onAction: (DrawerAction) -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismiss, sheetState = sheet) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text(Labels.clean(app.label), style = MaterialTheme.typography.titleMedium)
             Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))

@@ -356,9 +356,20 @@ private fun minuteClock(): ZonedDateTime {
  * holding `{page}` opens the page list (≥ 2 pages, 48 dp target) like the page label. [labelBackdrop] is the device's
  * Label backdrop setting, which `backdrop: "auto"` follows. [onFit] gets the §15.1 `warn_titlebar_fit` line (null once
  * the bar fits at step 0 or 1) whenever the overflow ladder's result changes.
+ * [pageColumnHeightDp] is the measured page-column height (§1.5 / #201); when null, falls back to
+ * Configuration.screenHeightDp. Short multi-window layouts must pass the measured value.
  */
 @Composable
-fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int, enabled: Boolean, labelBackdrop: Boolean, onFit: (String?) -> Unit = {}, onOpen: () -> Unit) {
+fun TitleBarRow(
+    bar: TitleBarModel.Bar,
+    pages: List<ResolvedPage>,
+    current: Int,
+    enabled: Boolean,
+    labelBackdrop: Boolean,
+    pageColumnHeightDp: Float? = null,
+    onFit: (String?) -> Unit = {},
+    onOpen: () -> Unit,
+) {
     val ctx = LocalContext.current
     val locale: Locale = LocalConfiguration.current.locales[0] ?: Locale.ROOT
     val now = minuteClock()
@@ -379,6 +390,13 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
     val spoken = shown.copy(date = { p -> if (p == null) fmt(null, dateSpoken) else fmt(p, dateDefault) })
 
     val st = bar.style
+    // §1.5 / #201 G3: on a short page column (< 480 dp), absorb style padding into the 48 dp budget
+    // so the title bar does not push home tiles under the §12 touch floor (phone landscape).
+    // Prefer the measured page-column height so short multi-window layouts match phone-land.
+    val pageColH = (pageColumnHeightDp ?: LocalConfiguration.current.screenHeightDp.toFloat()).let {
+        if (it.isFinite()) it else 0f
+    }
+    val padV = HomeGeometry.titleBarPaddingV(st.paddingV, pageColH)
     // #180: the light/dark variant follows the home theme (the system setting today, #156's `theme` key later).
     val dark = currentHomeDark()
     val scheme = MaterialTheme.colorScheme
@@ -421,8 +439,11 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
         val hidden = r.arrowOnly && TitleBarModel.hasPage(parts)
         if (hidden && !button) { Box(Modifier.semantics { contentDescription = said }); return }
         val align = st.align[s] ?: Align.CENTER
+        // Page button: exact 48 dp tall (not just heightIn) so SubcomposeLayout's placeable and the
+        // clickable a11y node both report ≥ 48 on short multi-window panes (Grace #201, 800×312).
         Box(
-            Modifier.heightIn(min = if (button) 48.dp else 0.dp)
+            Modifier
+                .then(if (button) Modifier.height(48.dp) else Modifier)
                 .then(if (button) Modifier.clickable(enabled = enabled, onClickLabel = hint, role = Role.Button, onClick = onOpen) else Modifier)
                 .semantics(mergeDescendants = true) { contentDescription = said },
             contentAlignment = if (hidden) androidx.compose.ui.Alignment.Center else androidx.compose.ui.Alignment.CenterStart,
@@ -451,9 +472,13 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
         }
     }
 
-    Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+    // Keep the bar's column slot ≥ 48 dp when {page} is tappable so the grid never starts
+    // inside the touch target (device a11y was clipping the clickable to 45 dp when tiles
+    // overlapped the bar's bottom edge on an 800×312 pane).
+    val barMin = if (tappable && pageSlot != null) 48.dp else 0.dp
+    Box(Modifier.fillMaxWidth().heightIn(min = barMin + (padV * 2).dp).padding(horizontal = 8.dp)) {
         SubcomposeLayout(
-            Modifier.fillMaxWidth().then(back).padding(horizontal = st.paddingH.dp, vertical = st.paddingV.dp),
+            Modifier.fillMaxWidth().then(back).padding(horizontal = st.paddingH.dp, vertical = padV.dp),
         ) { cs ->
             val w = cs.maxWidth
             val gap = TitleBarLayout.GAP_DP.dp.roundToPx()
@@ -480,11 +505,18 @@ fun TitleBarRow(bar: TitleBarModel.Bar, pages: List<ResolvedPage>, current: Int,
             // Step 1: the ▾-only button's touch area reaches past its slot ([TitleBarLayout.touchReach]), the ▾ centred in it.
             reach[0] = fit.touch.first; reach[1] = fit.touch.second
             val grow = { k: Int -> if (k == page) fit.touch else 0 to 0 }
+            // Force the {page} slot's measure min to 48 dp so the placeable (and clickable a11y
+            // bounds) cannot undershoot when the ladder passes minHeight = 0.
+            val pageMinH = if (page != null) TitleBarLayout.TOUCH_DP.dp.roundToPx() else 0
             val ps = listOf(sw, cw, ew).mapIndexed { k, width ->
                 val (l, rr) = grow(k)
-                ms[k].measure(Constraints.fixedWidth((width + l + rr).coerceAtLeast(0)).copy(minHeight = 0, maxHeight = cs.maxHeight))
+                val wFixed = (width + l + rr).coerceAtLeast(0)
+                val minH = if (k == page) pageMinH else 0
+                val maxH = if (cs.maxHeight == Constraints.Infinity) Constraints.Infinity
+                    else maxOf(cs.maxHeight, minH)
+                ms[k].measure(Constraints(minWidth = wFixed, maxWidth = wFixed, minHeight = minH, maxHeight = maxH))
             }
-            val h = ps.maxOf { it.height }
+            val h = maxOf(ps.maxOf { it.height }, pageMinH)
             layout(w, h) {
                 var x = 0
                 ps.forEachIndexed { k, p ->

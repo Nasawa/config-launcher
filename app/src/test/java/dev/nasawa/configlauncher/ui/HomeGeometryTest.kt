@@ -90,4 +90,49 @@ class HomeGeometryTest {
         assertEquals(56, TileLabel.ICON_DP)
         assertEquals(48, HomeGeometry.ICON_FALLBACK_DP)
     }
+
+    @Test fun aspectFloorAtNonIntegerDensity() {
+        // #197 L3: W derived from H in px with floor; +1 px slack allowed on the check.
+        val d = 3.5f
+        val p = HomeGeometry.pitch(880f, 400f, 4, 5, HomeGeometry.WidthClass.Expanded, d)
+        val wPx = p.pitchW * d
+        val hPx = p.pitchH * d
+        assertTrue(wPx <= 1.25f * hPx + 1f)
+        assertTrue(hPx <= 1.5f * wPx + 1f)
+    }
+
+    /**
+     * Grace #201 L13: cards-t10-land pitch is 144×120 (Medium/Expanded cap). Uncapped hosts would be
+     * 2×2 = 288×240 and 4×1 = 576×120, past k ≤ 1.5 → span × 80 × 1.5 (240×240 / 480×120).
+     */
+    @Test fun widgetHostRespectsL13CapOnCardsT10Land() {
+        val cellW = 144f
+        val cellH = 120f
+        // Uncapped would exceed; host must clamp each axis.
+        assertEquals(288f, cellW * 2f, 0.01f)
+        assertEquals(576f, cellW * 4f, 0.01f)
+        val (w22, h22) = HomeGeometry.widgetHostSizeDp(2, 2, cellW, cellH)
+        assertEquals(2f * HomeGeometry.CELL_REF_DP * HomeGeometry.WIDGET_K_MAX, w22, 0.01f) // 240
+        assertEquals(2f * HomeGeometry.CELL_REF_DP * HomeGeometry.WIDGET_K_MAX, h22, 0.01f) // 240
+        val (ox22, oy22) = HomeGeometry.widgetHostOffsetDp(2, 2, cellW, cellH)
+        assertEquals((288f - 240f) / 2f, ox22, 0.01f)
+        assertEquals(0f, oy22, 0.01f) // height already at cap
+
+        val (w41, h41) = HomeGeometry.widgetHostSizeDp(4, 1, cellW, cellH)
+        assertEquals(4f * HomeGeometry.CELL_REF_DP * HomeGeometry.WIDGET_K_MAX, w41, 0.01f) // 480
+        assertEquals(120f, h41, 0.01f) // pitchH already ≤ 80 × 1.5
+        val (ox41, oy41) = HomeGeometry.widgetHostOffsetDp(4, 1, cellW, cellH)
+        assertEquals((576f - 480f) / 2f, ox41, 0.01f)
+        assertEquals(0f, oy41, 0.01f)
+    }
+
+    @Test fun widgetHostUncappedWhenPitchUnderKMax() {
+        // Compact phone pitch 80×80: span × pitch stays under the cap.
+        val (w, h) = HomeGeometry.widgetHostSizeDp(2, 2, 80f, 80f)
+        assertEquals(160f, w, 0.01f)
+        assertEquals(160f, h, 0.01f)
+        val (ox, oy) = HomeGeometry.widgetHostOffsetDp(2, 2, 80f, 80f)
+        assertEquals(0f, ox, 0.01f)
+        assertEquals(0f, oy, 0.01f)
+    }
 }

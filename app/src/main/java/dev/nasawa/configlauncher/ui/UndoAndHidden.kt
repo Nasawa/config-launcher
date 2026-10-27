@@ -51,7 +51,8 @@ object HiddenApps {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HiddenAppsSheet(rows: List<HiddenRow>, apps: InstalledApps, onUnhide: (String) -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismiss) {
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismiss, sheetState = sheet) {
         Text(stringResource(R.string.hidden_apps), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         if (rows.isEmpty()) Text(stringResource(R.string.no_hidden_apps), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         LazyColumn(Modifier.padding(bottom = 24.dp)) {
