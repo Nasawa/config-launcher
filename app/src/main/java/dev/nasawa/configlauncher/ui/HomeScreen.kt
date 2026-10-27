@@ -31,7 +31,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -374,7 +373,8 @@ fun HomeScreen(vm: HomeViewModel) {
                     ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
                 }
                 val pages = ui.layout.pages
-                val pager = rememberPagerState { pages.size }
+                // #188: kept by page id across recreation (rotate/fold/resize) and reloads, not by index.
+                val pager = rememberPagerById(pages.map { it.id })
                 // ux.md §1 / §14 R4: Home on home leaves edit mode (saving first), closes drawer and folder, goes to page 1.
                 LaunchedEffect(Unit) {
                     vm.homePresses.collect {
