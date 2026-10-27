@@ -680,7 +680,7 @@ def severity(cid, m):
     pending = set()     # add an id here for a merged spec not built yet
     # L5 stays advisory until the end-edge rail PR lands (#197 / test-plan §20).
     # L6r = rail-geometry half of L6 (also advisory until that rail PR).
-    advisory_always = {'P1', 'A1', 'A2', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'G7', 'X1', 'X2', 'X3', 'G3n', 'L5', 'L6r', 'L6s', 'Dnd1'}
+    advisory_always = {'P1', 'A1', 'A2', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'G7', 'X1', 'X2', 'X3', 'G3n', 'G3a', 'L5', 'L6r', 'L6s', 'Dnd1'}
     if cid in pending:
         return 'pending'
     if cid == 'F1':
@@ -1084,6 +1084,34 @@ def run_checks(d):
         )
         g3_detail = (f'{len(tiles)} tiles, {len(dock)} dock; under 48 dp {small[:4]}; '
                      f'off-screen {off[:3]}; into bar {intobar[:3]}')
+        # Short-pane pitch (multi-window / wm-size stand-in): row tops decide whether 48×N can fit.
+        _pitch = pitch_of(tiles, s) if tiles else None
+        pitchH_g3 = _pitch[1] if _pitch else None
+        short_pane = (
+            (m.get('multiwindow_sim') or '') == 'wm_size_short_pane'
+            or (pitchH_g3 is not None and pitchH_g3 < 47.5
+                and (H / s if H else 999) < 480)
+        )
+        tr_path = os.path.join(d, 'tap-routing.json')
+        tr = None
+        if os.path.isfile(tr_path):
+            try:
+                with open(tr_path) as _tf:
+                    tr = json.load(_tf)
+            except (OSError, ValueError):
+                tr = None
+        overlap_upper_wins = False
+        tr_overlap_ok = True
+        if tr:
+            summ = tr.get('summary') or {}
+            findings = summ.get('overlap_findings') or []
+            # Upper-row steal = any overlap finding (winner == donor / upper cell).
+            overlap_upper_wins = bool(findings)
+            for r in (summ.get('results') or tr.get('results') or []):
+                if r.get('kind') == 'overlap' and not r.get('ok'):
+                    overlap_upper_wins = True
+            tr_overlap_ok = not overlap_upper_wins
+        g3_cite = ('ux.md §12 Touch targets, §1.1 Cell, §15 "Never overlaps icons"')
         if small and notice_chrome and not off and not intobar:
             add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar',
                 True,  # do not block #201
@@ -1092,10 +1120,57 @@ def run_checks(d):
                 'ux.md §12 / §1.5 step 4; #204 (banner/notice vs 48 floor)', sev='advisory')
             add('G3n' + sfx, 'Under-48 with notice/banner only (#204)', False,
                 g3_detail + '; filed #204', 'issue #204', sev='advisory')
+        elif small and short_pane and not off and not intobar and pitchH_g3 is not None:
+            # Pragma option (B) / docs PR #209: short multi-window panes where rows×48 cannot fit
+            # (e.g. 800×312: chrome 116 dp → 196 dp grid ≈ 39.2 dp/row). Gate G3 on *behaviour*
+            # (TR1: every point in a tile's visible area activates that tile; no cross-tile steal),
+            # not on strict a11y hit-size bounds. Overlapping accessibility-tree bounds are NOT a
+            # G3 finding — tracked as TalkBack tidy-up #208 (info only). Below 32 → L16 fails.
+            # Title bar still 48 (T4). Elsewhere G3 stays 48×48. Sprite OK at 686e98d.
+            cite_b = ('docs PR #209 (Pragma option B: short-pane G3 = pitchH≥32 + hit=visible); '
+                      'a11y bound overlap → #208 (info); ux.md §12 / L16')
+            if pitchH_g3 < 31.5:
+                add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar',
+                    False,
+                    g3_detail + f'; short-pane pitchH={pitchH_g3:.0f} < 32 — L16 floor',
+                    cite_b)
+                add('L16' + sfx, 'Short-pane / phone-land touch floor: pitchH ≥ 32 dp',
+                    False,
+                    f'pitchH={pitchH_g3:.1f} dp < 32; under-48 {small[:4]}',
+                    cite_b)
+            elif tr is None:
+                add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar',
+                    False,
+                    g3_detail + f'; short-pane pitchH={pitchH_g3:.0f}≥32 but no tap-routing.json '
+                    f'(TR1 required for option B)',
+                    cite_b)
+            elif not tr_overlap_ok:
+                add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar',
+                    False,
+                    g3_detail + f'; short-pane pitchH={pitchH_g3:.0f} but TR1 overlap upper-row wins '
+                    f'{((tr.get("summary") or {}).get("overlap_findings") or [])[:2]}',
+                    cite_b)
+            else:
+                add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar',
+                    True,
+                    g3_detail + f'; short-pane option B PASS (#209): pitchH={pitchH_g3:.0f}≥32, '
+                    f'TR1 hit=visible (no cross-tile steal); a11y under-48 / bound overlap '
+                    f'info-only → #208',
+                    cite_b)
+                add('L16' + sfx, 'Short-pane / phone-land touch floor: pitchH ≥ 32 dp '
+                    '(option B; hit=visible)',
+                    True,
+                    f'pitchH={pitchH_g3:.1f} dp; TR1 behaviour ok; a11y under-48 {small[:4]} '
+                    f'(#208 info, not G3)',
+                    cite_b, sev='advisory')
+                add('G3a' + sfx, 'A11y hit-bounds under 48 / overlap (TalkBack tidy-up)',
+                    False,
+                    f'info only — not a G3 finding (#208); under-48 {small[:4]}; '
+                    f'pitchH={pitchH_g3:.1f}',
+                    'issue #208', sev='advisory')
         else:
             add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar',
-                not small and not off and not intobar, g3_detail,
-                'ux.md §12 Touch targets, §1.1 Cell, §15 "Never overlaps icons"')
+                not small and not off and not intobar, g3_detail, g3_cite)
         # G6 grid label contrast against the wallpaper under it (advisory: photo wallpapers make the sample noisy)
         im = open_png(os.path.join(d, k + '.png'))
         if im is not None and labels:
