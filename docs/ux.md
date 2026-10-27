@@ -275,14 +275,18 @@ line ≈ 16 dp at font 1.0 (≈ 17 dp at 1.3). The first step that fits wins; **
 1. **56 dp + label:** runs only when pitchH ≥ **84 dp** (56 + 16 + 12). That is the step-1 / L4 pass threshold. §1.1's
    **80 dp** is the preferred cell floor (touch/design intent), not a pass number — between 80 and 84 the ladder is
    already on step 2, so labels stay whole. With the end-edge rail reclaiming the dock on t7-land / t10-land, expected
-   pitch is about 85 dp and clears 84.
+   pitch is about **85 dp** and clears 84. That ~85 figure assumes about **175 dp** of page-column chrome above/below the
+   grid (title bar + page dots, no banner, no top row, no bottom dock) on a 960 × 600 window with an 80 dp rail — a
+   harness / advisory estimate for L4 unit tests only. **Runtime layout measures the real remaining height** (Compose
+   constraints); it must not hardcode 175 into layout. A taller chrome (banner up, notice row) drops pitch and the
+   ladder steps down. The §15 load-time fit check stays on a portrait bar at `smallestScreenWidthDp` and is **not**
+   wired to this chrome estimate or to window metrics (Q-A12) — 175 dp does not feed `warn_titlebar_fit`.
 2. **48 dp + label:** pitchH ≥ **76 dp** (48 + 16 + 12). Labels stay whole.
 3. **48 dp, label hidden:** pitchH ≥ **60 dp** (48 + 12). Labels are cleanly absent (still spoken by TalkBack), never
    clipped.
 
 A short window that still has a bottom dock (e.g. t7-land before the rail lands, measured ~64.5 dp on #194) lands on
-step 3. The runtime ladder is what handles short windows; the §15 load-time fit check stays on a portrait bar at
-`smallestScreenWidthDp` and is not wired to window metrics (Q-A12). No extra title-bar step for landscape.
+step 3. The runtime ladder is what handles short windows. No extra title-bar step for landscape.
 
 **Centring is measured inside the safe area.** On Medium/Expanded the block is centred in the page area after
 `WindowInsets.safeDrawing` (system bars and cutouts). Left and right margins match within 1 px of that area; measuring
@@ -315,11 +319,14 @@ window (§15 "Fit warnings", Q-A12).
   on that side. The wallpaper still draws edge to edge.
 - **The rail holds the top row too.** From the top: `Apps` (or `Done` in edit mode) and `⋮`, then a 1 dp divider (white
   24 %), then the dock items **top → bottom in `dock[]` order**. With the top row gone from the page area, t7-land gets
-  about 48 dp of height back; the rail alone would leave its rows at about 78 dp. The rail is 80 dp wide, or wider when
-  `Apps`/`Done` at the current font scale needs it. The folder/storage note from the top row (`App storage`,
-  `Folder: …`) isn't shown in rail mode; it's in `⋮` → `Config folder`. Edit mode's `Editing layout` text isn't shown
-  either (the cell outlines and the announcement say it). While dragging, the §4.2 `Remove` and `App info` targets appear
-  at the top of the page area, over the notice row and page label or title bar, and go away when the drag ends.
+  about 48 dp of height back; the rail alone would leave its rows at about 78 dp. The rail is **80 dp** wide, or wider
+  when `Apps`/`Done` at the **current font scale** needs it: **measure** that label and grow the rail
+  (`max(80, measured + horizontal pad)`). Never clip, ellipsize or hide `Apps`/`Done` — they are primary controls, not
+  grid labels. The §1.5 icon ladder (56 → 48 → hide label) is for **grid cells only**; rail dock items have no labels.
+  The folder/storage note from the top row (`App storage`, `Folder: …`) isn't shown in rail mode; it's in `⋮` →
+  `Config folder`. Edit mode's `Editing layout` text isn't shown either (the cell outlines and the announcement say it).
+  While dragging, the §4.2 `Remove` and `App info` targets appear at the top of the page area, over the notice row and
+  page label or title bar, and go away when the drag ends.
 - **Slots:** 64 dp, shared evenly down the rail. If `count × 64` doesn't fit, slots shrink to 48 dp (icons 40 dp, the §12
   touch-target floor). If 7 × 48 still doesn't fit, the rail scrolls. Items are never hidden, dropped or reordered.
 - **Dragging into the dock:** the drop index follows the rail's vertical axis, and the write is the same `dock[]` index
@@ -336,6 +343,13 @@ window (§15 "Fit warnings", Q-A12).
 
 The §6.1 notice-row rules hold in every layout: chips share the page-label row; with a title bar the row is its own 48 dp
 row above the bar and the chips never go in the bar.
+
+**Page column vs rail.** With a rail, the banner, notice row (§6.1, chips at the **end**), page label / title bar, page
+dots and **snackbars** (§9) all live in the **page column** beside the rail — never under or over the rail, and never
+full-window width that includes the rail. The rail is a separate end-edge region like a dock. Chips sit at the end of
+the page column (toward the rail in both LTR and RTL). Snackbars sit at the bottom of the page column (where a bottom
+dock would be). On Medium/Expanded the content-width rule above still centres those chrome rows on the grid block
+**inside** the page column (page area = window minus the rail).
 
 **Foldables (Q-L4, Q-L5).** What the postures look like: **folded**, it's a normal phone, using the small screen on
 the outside. **Flat open**, it's a small, nearly square tablet. **Half open like a book**, it stands on its edge with the
