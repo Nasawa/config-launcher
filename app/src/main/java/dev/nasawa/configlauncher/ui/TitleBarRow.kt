@@ -329,9 +329,16 @@ object TitleBarLayout {
     fun cappedSp(sizeSp: Float, fontScale: Float) = minOf(sizeSp, 52f / fontScale.coerceAtLeast(0.1f))
 }
 
-/** Once-a-minute clock that runs only while home is started (title-bar.md §9). */
+/**
+ * Test override for the title bar's clock. Null (the default) means the device clock via [minuteClock].
+ * Production never sets this; render tests pin a measured worst-case date so layout doesn't flake by weekday width.
+ */
+val LocalTitleBarNow = compositionLocalOf<ZonedDateTime?> { null }
+
+/** Once-a-minute clock that runs only while home is started (title-bar.md §9). Honours [LocalTitleBarNow]. */
 @Composable
 private fun minuteClock(): ZonedDateTime {
+    LocalTitleBarNow.current?.let { return it }
     val started = LocalLifecycleOwner.current.lifecycle.currentStateAsState().value.isAtLeast(Lifecycle.State.STARTED)
     var now by remember { mutableStateOf(ZonedDateTime.now()) }
     LaunchedEffect(started) {
