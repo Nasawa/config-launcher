@@ -257,6 +257,8 @@ fun HomeScreen(vm: HomeViewModel) {
     val useRail = HomeGeometry.useRail(winW, winH)
     val widthClass = HomeGeometry.widthClass(winW)
     drag.dockVertical = useRail
+    // §1.5 RTL (#187): drop math mirrors columns and the bottom dock; the rail itself is placed by the Row.
+    drag.rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
 
     HomeThemed(themeDark) {
         // Transparent over the system wallpaper (theme windowShowWallpaper, #58).
@@ -870,14 +872,16 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
         val contentH = (cellH - HomeGeometry.CONTENT_PAD_DP).coerceAtLeast(0f)
         val step = HomeGeometry.iconStep(contentW, contentH, labelLineDp)
         // Long-press on the whole pager slot: margins and empty cells open the home menu (§1.5 / #75).
+        // Pointer x is physical; the block is centred (symmetric), so only the column mirrors in RTL (#187).
+        val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
         Box(
-            Modifier.fillMaxSize().pointerInput(grid, pitch, originX, originY) {
+            Modifier.fillMaxSize().pointerInput(grid, pitch, originX, originY, rtl) {
                 detectTapGestures(onLongPress = { pos ->
                     val cell = GridHit.cellInBlock(
                         pos.x, pos.y,
                         originX * density, originY * density,
                         pitch.blockW * density, pitch.blockH * density,
-                        grid.columns, rows,
+                        grid.columns, rows, rtl,
                     )
                     if (cell == null || cell !in occupied) onEmpty()
                 })
