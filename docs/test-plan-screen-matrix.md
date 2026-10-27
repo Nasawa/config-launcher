@@ -153,7 +153,7 @@ lands. Under `dev8` they block. F1 (crashes/ANRs) always blocks.
 6. G5b, G5c, D1, D4 wherever they apply (same as dev7).
 
 **Blocks dev8 only** (advisory under dev7):
-- L1–L5 and L7 on large-tier points (tablets, fold; see §4.1). L6 and L8–L13 stay manual until fixtures/points land.
+- L1–L5 and L7 on large-tier points (tablets, fold; see §4.1). L6/L8/L10/L12/L13 automated per #197; L9 needs Sprite (WindowInfoTracker); L11 deferred to dev9.
 - G1–G3 on tablets, landscape and the fold (Q2 resolved by #185 / ux.md §1.5).
 
 **Advisory everywhere:**
@@ -168,35 +168,47 @@ lands. Under `dev8` they block. F1 (crashes/ANRs) always blocks.
 scope (the config-driven title bar isn't required for v1.0), while dev7's headline is the #149 overflow-ladder fix,
 so dev7 can't be tagged with the ladder broken.
 
-### 4.1 L1–L13 (ux.md §1.5 / test-plan §20)
+### 4.1 L1–L13 (ux.md §1.5 / test-plan §20 / #197)
 
-Source of truth for the expected behaviour is docs/test-plan.md §20 and docs/ux.md §1.5 (merged via #185). The matrix
-automates what the existing dumps / one reverse-rotate can measure; the rest is a short manual checklist. Severity
-follows the dev7/dev8 switch above. L14/L15 exist in §20 but are out of this matrix pass (L15 ≈ G1 on
-`s360-mdpi-v2` after the 56 dp icon change).
+Source of truth is **#197** (`docs/l-check-rulings`) updating docs/test-plan.md §20 and docs/ux.md §1.5. Severity
+follows the dev7/dev8 switch above. L14/L15 stay out of this pass (L15 ≈ G1 on `s360-mdpi-v2` after 56 dp icons).
+L5 is **advisory until the end-edge rail PR** lands (#197).
 
 | ID | Source | Measured | Threshold / pass | Severity | Points | Auto? |
 |---|---|---|---|---|---|---|
-| L1 | §1.5 "never writes"; §20 L1 | `sha256` of on-device `launcher.json` before and after one reverse-rotate (`hash-before.txt` / `hash-after-rot.txt`) | hashes equal and non-empty | advisory→block at dev8 | large tier | **auto** (smoke: one reverse-rotate; full ×4 / fold↔unfold is manual) |
-| L2 | §1.5; §20 L2 | `floor((centre − blockLeft) / pitchW)` (and row) vs fixture `(x,y)` | every matched tile lands on its fixture cell | advisory→block at dev8 | large tier (home1) | **auto** |
-| L3 | §1.5 Q-L2; §20 L3 | pitchW, cell W/H and H/W, left vs right margin of the tile block | pitchW ≤ 144 dp; W/H ≤ 1.25; H/W ≤ 1.5; abs(L-R) ≤ 2 dp. SKIP on Compact (< 600 dp) | advisory→block at dev8 | Medium/Expanded large points | **auto** |
-| L4 | §1.5 cell min / icon ladder; §20 L4 | pitchH on t7-land / t10-land @ font 1.0; every label height ≥ 12 sp × font × 0.85 or absent | pitchH ≥ 80 dp on those two; no clipped labels anywhere | advisory→block at dev8 | large tier | **auto** |
-| L5 | §1.5 Q-L3/Q-L4; §20 L5 | dock cluster geometry (`dock_is_rail`) | rail on `t7-land*` / `t10-land*`; bottom on `t7-port*` / `t10-port*` / `fold-open*` | advisory→block at dev8 | large tier | **auto** (safeDrawing / RTL rail side is manual) |
-| L7 | §1.5 page id; §20 L7 | after reverse-rotate while on page 2, `home2-rot.xml` still shows `Second` / page 2 of 2 | page id preserved | advisory→block at dev8 | large tier with home2 | **auto** (fold↔unfold continuity is manual) |
+| L1 | §20 L1 | `sha256` before/after one reverse-rotate | hashes equal | advisory→block at dev8 | large tier | **auto** (full ×4 / fold↔unfold manual) |
+| L2 | §20 L2 | `floor((centre − blockLeft) / pitchW)` vs fixture `(x,y)` | every matched tile on its cell | advisory→block at dev8 | large (home1) | **auto** |
+| L3 | §20 L3 (#197) | pitchW; cell W×H **in px**; L/R margins **inside safeDrawing** | pitchW ≤ 144 dp; `W ≤ 1.25·H + 1 px` and `H ≤ 1.5·W + 1 px`; abs(L−R) ≤ **1 px** inside safe area. SKIP Compact (< 600 dp) | advisory→block at dev8 | Medium/Expanded | **auto** |
+| L4 | §20 L4 (#197) | pitchH on t7/t10-land @ font 1.0; label heights | **Step-1 floor ≥ 84 dp** once rail (L5) present; else ladder ≥76 / ≥60 and report **depends on L5** (no plain fail for ≥84). Labels whole or absent always | advisory→block at dev8 | large | **auto** |
+| L5 | §20 L5 | `dock_is_rail` | rail on t7/t10-land (+ phone-land / RTL start once rail lands); bottom on port / fold-open | **advisory until rail PR** | large + phone-land | **auto** |
+| L6 | §20 L6 (#197) | fixture `dock7.json` | 7 slots ≥ 48 dp, file order; rail-geometry half **advisory** until rail (`L6r`) | advisory→block at dev8 (L6r always advisory) | dock7-t7-land/port, dock7-phone-land | **auto** |
+| L7 | §20 L7 | `home2-rot.xml` still page 2 | page id preserved | advisory→block at dev8 | large with home2 | **auto** |
+| L8 | §20 L8 (#197) | cancel mid-drag | cancelled, nothing written, old cell | unit + androidTest | JVM + instrumented | **auto** (unit in CI; rotate smoke in androidTest) |
+| L9 | §20 L9 (#197) | `WindowLayoutInfoPublisherRule` | no cell/card/dock ∩ hinge; book/tabletop/flat | — | androidTest | **deferred — needs Sprite** (`WindowInfoTracker` in production) |
+| L10 | §20 L10 (#197) | `Edits.freeCell` / `AddToHome` / `MoveToCell` | same answers for the same file (grid only) | unit (CI `testDebugUnitTest`) | JVM | **auto** |
+| L11 | §20 L11 | margin long-press / swipe / drop / column taps | per §20 | — | — | **deferred to dev9** |
+| L12 | §20 L12 (#197) | new rows | 599/600, 839/840 dp; phone-land 800×360; RTL t7-land | via L3/L5 on those points | bound-*, phone-land-v1, rtl-t7-land-v1 | **auto** |
+| L13 | §20 L13 (#197) | fixture `cards-large.json` | k ≤ 1.5, no stretch on t10-land | advisory→block at dev8 | cards-t10-land-v1 | **auto** |
 
-**Manual checklist** (not automated yet; painless, run once per dev8 candidate on a large point):
+**safeDrawing insets (L3 / L5).** Driver writes `dumpsys window` → `insets.txt` after `home1`. Checker
+`parse_safe_drawing_insets` takes the max inset on each side from:
 
-| ID | Why not auto | What to do |
+1. Legacy lines `mSystemInsets` / `systemBarsInsets` / `mStableInsets` = `Insets{left, top, right, bottom}`
+2. `InsetsSource` frames for `ITYPE_STATUS_BARS`, `ITYPE_NAVIGATION_BARS`, `ITYPE_DISPLAY_CUTOUT` (and
+   `statusBars` / `navigationBars` / `displayCutout` spellings)
+
+That approximates `WindowInsets.safeDrawing` with IME closed. Content box = `[left, top, W−right, H−bottom]`.
+L3 left/right margins are tile-block edges minus that box, compared within **1 px**. Raw-edge asymmetry from a
+side nav/cutout is not a layout bias (#197).
+
+**Manual / remaining:**
+
+| ID | Status | Notes |
 |---|---|---|
-| L1 full | Matrix only reverse-rotates once | On t7-land: rotate ×4 and confirm `launcher.json` hash + revision unchanged; no `status.json` write |
-| L6 | Needs fixture `dock7` | Seed 7 dock items; confirm all fit ≥ 48 dp in file order on t7-land (rail), phone land, t7-port |
-| L8 | Needs instrumented drag | Start a drag on t7-land, rotate; drag cancels, nothing written, item in old cell |
-| L9 | Needs real `FoldingFeature` | Emulator HALF_OPENED book + tabletop: no cell/card/dock intersects hinge; flat ignores hinge |
-| L10 | Unit + one UI check | `Move to…` shows Column 1–4 / Row 1–5 everywhere; Undo / Add to home / widget picker agree across points |
-| L11 | Instrumented | Long-press in a side margin → home menu; swipe-up there → drawer; drop refused; column-centre taps hit the right item |
-| L12 | New matrix rows | Add 599/600 and 839/840 dp, one phone-landscape, one RTL point; re-run L3/L5 |
-| L13 | Needs fixture `cards-large` | 2×2 + 4×1 cards: k ≤ 1.5 on t10-land, no stretch, nothing across the hinge |
-| L5 insets | Needs insets dump | Rail sits inside `safeDrawing` (nav bar / cutout on the same side) |
+| L1 full | manual | rotate ×4 / fold↔unfold |
+| L9 | Sprite | production must consume `WindowInfoTracker` before hinge asserts |
+| L11 | dev9 | instrumented margins |
+| L8 full hash | matrix + androidTest | unit pins cancel contract; device rotate smoke is best-effort without seeded fixture |
 
 ## 5. CI vs on-box
 
