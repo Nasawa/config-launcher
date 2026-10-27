@@ -680,7 +680,7 @@ def severity(cid, m):
     pending = set()     # add an id here for a merged spec not built yet
     # L5 stays advisory until the end-edge rail PR lands (#197 / test-plan §20).
     # L6r = rail-geometry half of L6 (also advisory until that rail PR).
-    advisory_always = {'P1', 'A1', 'A2', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'G7', 'X1', 'X2', 'X3', 'G3n', 'G3a', 'L5', 'L6r', 'L6s', 'Dnd1'}
+    advisory_always = {'P1', 'A1', 'A2', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'G7', 'X1', 'X2', 'X3', 'G3n', 'G3a', 'L5', 'L6r', 'L6s', 'Dnd1', 'R1'}
     if cid in pending:
         return 'pending'
     if cid == 'F1':
@@ -965,9 +965,9 @@ def run_checks(d):
 
     # F6 Pages switch
     pg = load(os.path.join(d, 'pages.xml')); h2 = home['home2']
-    ok6 = None if (pg is None or h2 is None) else pg is not None and find(pg, 'desc', r'page 2 of 2') is not None and h2 is not None and find(h2, 'desc', r'^Second, Pages$') is not None
+    ok6 = None if (pg is None or h2 is None) else pg is not None and find(pg, 'desc', r'page [2٢] of [2٢]') is not None and h2 is not None and find(h2, 'desc', r'^Second, Pages$') is not None
     add('F6', 'Pages list opens from the {page} slot and switches to page 2', ok6,
-        f"pages list {'ok' if pg is not None and find(pg, 'desc', 'page 2 of 2') else 'missing'}, page 2 {'ok' if h2 is not None and find(h2, 'desc', '^Second, Pages$') else 'missing'}",
+        f"pages list {'ok' if pg is not None and find(pg, 'desc', r'page [2٢] of [2٢]') else 'missing'}, page 2 {'ok' if h2 is not None and find(h2, 'desc', '^Second, Pages$') else 'missing'}",
         'ux.md §1.3; §15 #78 tap target')
 
     # F7 warnings list; T3 exactly once
@@ -1238,6 +1238,34 @@ def run_checks(d):
                         det = f'no title bar: chip y {chip.b[1]}-{chip.b[3]}, page label y {pl.b[1]}-{pl.b[3]}, same row {same}'
                 add('G5b', 'Collapsed chip in the notice row (no overlay on the grid)', ok5, f'{det}; over grid {over[:3]}',
                     'ux.md §6.1 Notice row (#173 L1; title bar: #183), §17.4 Count chip')
+
+    # R1 (#187 / PR #210): grid columns mirror in RTL. Fixture launcher.json row 0 is QA Settings (x=0) …
+    # Wide WWWW (x=3); RTL wants x=0 physically rightmost, LTR leftmost. Advisory (geometry, not a gesture).
+    if (m.get('fixture') or '') == 'launcher.json' and home.get('home1'):
+        _row0 = ['QA Settings', 'A very long label that must ellipsize', 'Missing', 'Wide WWWW']
+        _n1 = home['home1']
+        _cx = {}
+        for _lab in _row0:
+            _hit = next((n for n in _n1 if (n.text or n.desc) == _lab and n.w > 0), None)
+            if _hit is not None:
+                _cx[_lab] = _hit.cx
+        _loc = (m.get('locale') or '').lower()
+        _rtl = 'rtl' in (m.get('shape') or '').lower() or _loc.startswith('ar')
+        if len(_cx) >= 2:
+            _phys = [k for k, _ in sorted(_cx.items(), key=lambda t: t[1])]
+            _want = [k for k in _row0 if k in _cx]
+            if _rtl:
+                _want = list(reversed(_want))
+            if x4_rtl_failed:
+                add('R1', 'Grid column order follows layout direction (RTL mirrors)', None,
+                    'skipped: harness X4 RTL not applied', 'ux.md §1.5 RTL; #187', sev='advisory')
+            else:
+                add('R1', 'Grid column order follows layout direction (RTL mirrors)', _phys == _want,
+                    f'rtl={_rtl}; row 0 left→right {[_k[:12] for _k in _phys]}; want {[_k[:12] for _k in _want]}',
+                    'ux.md §1.5 RTL; #187 / PR #210', sev='advisory')
+        else:
+            add('R1', 'Grid column order follows layout direction (RTL mirrors)', None,
+                f'row-0 fixture tiles not found ({len(_cx)})', 'ux.md §1.5 RTL; #187', sev='advisory')
 
     # ---------------------------------------------------------------- L1–L13 (ux.md §1.5 / test-plan §20 / #197)
     # L1–L5/L7 on large-tier (and phone-landscape for L5/L12). L6/L13 when their fixtures are seeded.
@@ -1549,7 +1577,7 @@ def run_checks(d):
                     'not captured (needs home2 then a reverse-rotate dump)',
                     'ux.md §1.5 "same page stays shown, by page id"; test-plan §20 L7')
         else:
-            still = any(re.search(r'^Second,|, page 2 of 2', n.desc) or n.text == 'Second'
+            still = any(re.search(r'^Second,|, page [2٢] of [2٢]', n.desc) or n.text == 'Second'
                         for n in h2r)
             add('L7', 'Page continuity after rotate (still page 2)', still,
                 f'Second/page 2 visible after rotate: {still}',

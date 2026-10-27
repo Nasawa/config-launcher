@@ -22,6 +22,10 @@ ROOT=$(cd "$HERE/.." && pwd)
 FIX=$HERE/screen-matrix
 CHECK="python3 $HERE/screen_matrix_check.py"
 TAP_ROUTING="python3 $HERE/screen_matrix_tap_routing.py"
+DND="python3 $HERE/screen_matrix_dnd.py"
+# Live DnD / pager probe (#187, PR #210): MATRIX_PROBES=dnd enables it on these points (launcher.json fixture only).
+MATRIX_PROBES=${MATRIX_PROBES:-}
+DND_POINTS=${DND_POINTS:-'^(rtl-.*|t7-land-v1|t7-port-v1|phone-land-v1|p411-a51-v1)$'}
 GATE_RE='^(s320-a51-v1|s320-a51-v2|s320-mdpi-v1|p411-a51-v1|p411-a51-v2|t7-land-v1)$'
 
 SHARD=''; POINTS='.'; OUT=screen-matrix-out; SETTLE=4; APK=''
@@ -383,7 +387,7 @@ run_point() {
   if ! grep -q 'Search apps' "$d/drawer.xml"; then
     home; tap "$hd" text '^Apps$' && { pause; dump "$d" drawer; echo button > "$d/drawer-via.txt"; }
   fi
-  if longpress "$d/drawer.xml" text '^(Calendar|Camera|Clock|Contacts|Settings)$'; then
+  if longpress "$d/drawer.xml" text '^(Calendar|Camera|Clock|Contacts|Settings|التقويم|الكاميرا|الساعة|جهات الاتصال|الإعدادات)$'; then
     pause 2; dump "$d" drawer-lp
     if ! grep -q 'App info' "$d/drawer-lp.xml"; then
       retried "$d" F5b; sh_ input keyevent BACK; pause 1
@@ -392,7 +396,7 @@ run_point() {
         home; sh_ input swipe "$cx" $((sh * 70 / 100)) "$cx" $((sh * 25 / 100)) 300; pause
       fi
       rm -f "$d"/.dr.*
-      longpress "$d/drawer.xml" text '^(Calendar|Camera|Clock|Contacts|Settings)$'; pause 2; dump "$d" drawer-lp
+      longpress "$d/drawer.xml" text '^(Calendar|Camera|Clock|Contacts|Settings|التقويم|الكاميرا|الساعة|جهات الاتصال|الإعدادات)$'; pause 2; dump "$d" drawer-lp
     fi
   fi
   sh_ input keyevent BACK; pause 1; home
@@ -401,7 +405,7 @@ run_point() {
   dump "$d" .home
   if tap "$d/.home.xml" desc ', Pages$'; then
     pause; anr "$d"; dump "$d" pages
-    tap "$d/pages.xml" desc '^Second, page 2 of 2' && { pause; anr "$d"; dump "$d" home2; }
+    tap "$d/pages.xml" desc '^Second, page [2٢] of [2٢]' && { pause; anr "$d"; dump "$d" home2; }
   fi
   rm -f "$d/.home.xml" "$d/.home.png"
 
@@ -429,7 +433,7 @@ run_point() {
       if tap "$d/.home-rot.xml" desc ', Pages$'; then
         pause
         dump "$d" .pages-rot
-        tap "$d/.pages-rot.xml" desc '^Second, page 2 of 2' && { pause; dump "$d" home2-rot; }
+        tap "$d/.pages-rot.xml" desc '^Second, page [2٢] of [2٢]' && { pause; dump "$d" home2-rot; }
       fi
       rm -f "$d"/.home-rot.* "$d"/.pages-rot.*
     fi
@@ -451,6 +455,66 @@ run_point() {
 
   $CHECK check "$d" > /dev/null || echo "checker error for $id" >&2
   grep -m1 '^#' "$d/result.md" 2> /dev/null
+
+  # DnD / pager probe after the checker: it rewrites the layout, so it must not feed F*/L* dumps.
+  if [[ ",$MATRIX_PROBES," == *,dnd,* ]] && [[ $id =~ $DND_POINTS ]] && [ "$fixture" = launcher.json ] && [ "$seed_ok" -eq 1 ]; then
+    dnd_probe "$d" "$dens"
+  fi
+}
+
+# --- DnD / pager probe (scripts/screen_matrix_dnd.py). Each case starts from the seeded fixture.
+dnd_reset() {
+  sh_ am force-stop "$PKG"
+  sh_ "run-as $PKG sh -c 'cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'"
+  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1; pause 3; anr "$1"
+}
+# Enter edit mode the way a user does without dragging: long-press empty grid → Edit layout.
+dnd_edit() {
+  local d=$1 p x y
+  dump "$d" .dnde
+  p=$($CHECK find-empty "$d/.dnde.xml" "$2") || { rm -f "$d"/.dnde.*; return 1; }
+  read -r x y <<< "$p"; hold "$x" "$y"; pause 2; dump "$d" .dnde
+  tap "$d/.dnde.xml" text '^Edit layout$' || { rm -f "$d"/.dnde.*; sh_ input keyevent BACK; return 1; }
+  pause 2; rm -f "$d"/.dnde.*
+}
+# drag x1 y1 x2 y2: DOWN, hold past the long-press timeout, 8 MOVE steps, settle, UP (input motionevent, API 33+).
+dnd_drag() {
+  local cmd i mx my
+  cmd="input motionevent DOWN $1 $2; sleep 1.6"
+  for i in 1 2 3 4 5 6 7 8; do
+    mx=$(( $1 + ($3 - $1) * i / 8 )); my=$(( $2 + ($4 - $2) * i / 8 ))
+    cmd="$cmd; input motionevent MOVE $mx $my"
+  done
+  sh_ "$cmd; sleep 0.5; input motionevent UP $3 $4"
+}
+dnd_probe() {
+  local d=$1 dens=$2 cid how x1 y1 x2 y2
+  echo "== dnd probe ($id)" >> "$d/run.txt"
+  dnd_reset "$d"
+  dnd_edit "$d" "$dens" || echo "dnd: could not enter edit mode for the plan dump" >> "$d/run.txt"
+  dump "$d" dnd-edit
+  $DND plan "$d" "$dens" >> "$d/run.txt" 2>&1 || { echo "dnd plan failed" >> "$d/run.txt"; dnd_reset "$d"; return; }
+  while IFS=$'\t' read -r cid how x1 y1 x2 y2; do
+    case $cid in id|'') continue;; esac
+    echo "dnd $cid $how $x1,$y1 -> $x2,$y2" >> "$d/run.txt"
+    [ "$cid" = pg-fwd ] || dnd_reset "$d"
+    sh_ logcat -b all -c > /dev/null 2>&1
+    case $how in
+      drag)
+        if dnd_edit "$d" "$dens"; then dnd_drag "$x1" "$y1" "$x2" "$y2"; else echo "dnd $cid: no edit mode" >> "$d/run.txt"; fi
+        pause 3;;   # 750 ms debounce + flush
+      hold) hold "$x1" "$y1"; pause 2;;
+      swipe) sh_ input swipe "$x1" "$y1" "$x2" "$y2" 300; pause 2;;
+    esac
+    dump "$d" "dnd-$cid-after"
+    sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/dnd-$cid-config.json" 2> /dev/null || true
+    sh_ dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -m1 -E 'topResumedActivity|mResumedActivity' > "$d/dnd-$cid-top.txt" || true
+    { sh_ logcat -d -b crash; sh_ logcat -d -b main -b system | grep -E "ANR in $PKG|FATAL EXCEPTION.*$PKG"; } > "$d/dnd-$cid-crash.txt" 2>&1
+    grep -q "isn't responding\|isn&apos;t responding" "$d/dnd-$cid-after.xml" 2>/dev/null && echo "ANR dialog in dump" >> "$d/dnd-$cid-crash.txt"
+    [ "$how" = hold ] && { sh_ input keyevent BACK; pause 1; }
+  done < "$d/dnd-cases.tsv"
+  $DND score "$d" >> "$d/run.txt" 2>&1 || echo "dnd score non-zero" >> "$d/run.txt"
+  dnd_reset "$d"; home
 }
 
 # Live tap-routing probe: plan from home1.xml, long-press/tap each target, score.

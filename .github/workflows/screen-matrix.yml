@@ -19,6 +19,10 @@ on:
         default: dev7
         type: choice
         options: [dev7, dev8]
+      probes:
+        description: 'Extra live probes, comma-separated (dnd = scripted drag-and-drop + pager direction, #187). Empty = none.'
+        default: ''
+        type: string
   push:
     tags: ['v*-dev*', 'v*-rc*']
   pull_request:
@@ -104,6 +108,7 @@ jobs:
           POINTS: ${{ inputs.points || '.' }}
           SHARD: ${{ matrix.shard }}
           MATRIX_GATE: ${{ inputs.gate || (contains(github.ref, 'dev8') && 'dev8' || 'dev7') }}
+          MATRIX_PROBES: ${{ inputs.probes || '' }}
         with:
           api-level: ${{ matrix.api }}
           target: ${{ matrix.target }}
