@@ -21,6 +21,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 FIX=$HERE/screen-matrix
 CHECK="python3 $HERE/screen_matrix_check.py"
+TAP_ROUTING="python3 $HERE/screen_matrix_tap_routing.py"
 GATE_RE='^(s320-a51-v1|s320-a51-v2|s320-mdpi-v1|p411-a51-v1|p411-a51-v2|t7-land-v1)$'
 
 SHARD=''; POINTS='.'; OUT=screen-matrix-out; SETTLE=4; APK=''
@@ -148,16 +149,50 @@ run_point() {
   echo "== $id ($shape)"
 
   # Display + system settings for this point
-  # L12 RTL: shape containing "rtl" → Arabic locale (rail on start/left once L5 lands).
+  # Locale from shape keywords: rtl → ar-EG; longlabel/de → de-DE; enxa → en-XA; else en-US.
+  # API 35 CI images ignore `settings put system system_locales` for layoutDirection / app
+  # resources (meta recorded ar-EG while status bar + chrome stayed LTR English). Apply with
+  # cmd locale set-app-locales (API 33+) and, for RTL shapes, debug.force_rtl + SystemUI bounce.
   if echo "$shape" | grep -qi rtl; then
-    sh_ "settings put system system_locales ar-EG"
-    echo "locale=ar-EG" >> "$d/meta.txt"
+    loc=ar-EG
+  elif echo "$shape" | grep -qiE 'longlabel|\bde\b'; then
+    loc=de-DE
+  elif echo "$shape" | grep -qi enxa; then
+    loc=en-XA
   else
-    sh_ "settings put system system_locales en-US" >/dev/null 2>&1 || true
-    echo "locale=en-US" >> "$d/meta.txt"
+    loc=en-US
   fi
+  sh_ "settings put system system_locales $loc" >/dev/null 2>&1 || true
+  sh_ "cmd locale set-app-locales $PKG --locales $loc" >/dev/null 2>&1 || true
+  if echo "$shape" | grep -qi rtl; then
+    sh_ "settings put global debug.force_rtl 1" >/dev/null 2>&1 || true
+  else
+    sh_ "settings put global debug.force_rtl 0" >/dev/null 2>&1 || true
+  fi
+  # Bounce SystemUI so status-bar mirroring picks up force_rtl (best-effort on CI images).
+  if echo "$shape" | grep -qi rtl; then
+    sh_ "am crash com.android.systemui" >/dev/null 2>&1       || sh_ "pkill -f com.android.systemui" >/dev/null 2>&1       || true
+    pause 2
+  fi
+  echo "locale=$loc" >> "$d/meta.txt"
   sh_ "wm size $size; wm density $dens; settings put system font_scale $fs; cmd uimode night $night"
   sh_ "settings put system accelerometer_rotation 0; settings put system user_rotation $rot"
+  # One-side cutout in landscape: enable tall cutout overlay (becomes a side inset when rotated).
+  if echo "$shape" | grep -qi cutout; then
+    sh_ "cmd overlay enable --user 0 com.android.internal.display.cutout.emulation.tall" >/dev/null 2>&1 \
+      || sh_ "cmd overlay enable com.android.internal.display.cutout.emulation.tall" >/dev/null 2>&1 \
+      || true
+    echo "cutout_overlay=tall" >> "$d/meta.txt"
+  else
+    sh_ "cmd overlay disable --user 0 com.android.internal.display.cutout.emulation.tall" >/dev/null 2>&1 || true
+  fi
+  # Short multi-window: true split-screen is not reliably scriptable on CI AVDs (needs a second
+  # visible task + --windowingMode). Simulate the top-half pane with wm size on a short window
+  # (points.tsv size_px already set); record how we simulated it for the report.
+  if echo "$shape" | grep -qiE 'multi-window|multiwindow|split'; then
+    echo "multiwindow_sim=wm_size_short_pane" >> "$d/meta.txt"
+    echo "multiwindow_note=true split-screen not scripted; wm size ${size} @ dens ${dens} stands in for a short page column so titleBarPaddingV keys off measured height" >> "$d/meta.txt"
+  fi
   pause 3
   sh_ "wm size; wm density; settings get system font_scale; cmd uimode night" > "$d/run.txt" 2>&1
   # Android clamps a wm size override to a multiple of the physical panel (2x on API 29, less on 35/36), so record
@@ -213,6 +248,38 @@ run_point() {
   done
   echo "seed_ok=$seed_ok" >> "$d/meta.txt"
   echo "seed_attempts=$seed_attempt" >> "$d/meta.txt"
+  # Locale / RTL application probe (X4). set-app-locales survives pm clear; re-assert after seed start.
+  sh_ "cmd locale set-app-locales $PKG --locales $loc" >/dev/null 2>&1 || true
+  if echo "$shape" | grep -qi rtl; then
+    sh_ "settings put global debug.force_rtl 1" >/dev/null 2>&1 || true
+  else
+    sh_ "settings put global debug.force_rtl 0" >/dev/null 2>&1 || true
+  fi
+  # Recreate only when a non-default locale/RTL variant is in play (avoid doubling every point).
+  if [ "$seed_ok" -eq 1 ] && { [ "$loc" != en-US ] || echo "$shape" | grep -qi rtl; }; then
+    sh_ am force-stop "$PKG"
+    # Re-copy prefs after stop (belt-and-suspenders; pm clear is not used here).
+    sh_ "run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'" >/dev/null 2>&1 || true
+    sh_ "am start -W -n $PKG/.MainActivity" >> "$d/run.txt" 2>&1
+    pause 2
+    sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" >> "$d/run.txt" 2>&1
+    pause 2
+    dump "$d" home1
+  fi
+  app_loc=$(sh_ "cmd locale get-app-locales $PKG" 2>/dev/null | tr -d '\r' | tr '\n' ' ' | sed 's/[[:space:]]\+$//')
+  force_rtl=$(sh_ "settings get global debug.force_rtl" 2>/dev/null | tr -d '\r')
+  # layoutDir from the focused activity config (1 = RTL). Fall back to dumpsys package.
+  layout_dir=$(sh_ "dumpsys activity activities" 2>/dev/null | tr -d '\r' | grep -oE 'layoutDir=[01]' | head -1 | cut -d= -f2)
+  [ -n "$layout_dir" ] || layout_dir=$(sh_ "dumpsys activity top" 2>/dev/null | tr -d '\r' | grep -oE 'layoutDir=[01]' | head -1 | cut -d= -f2)
+  echo "app_locales=$app_loc" >> "$d/meta.txt"
+  echo "force_rtl=${force_rtl:-}" >> "$d/meta.txt"
+  echo "layout_dir=${layout_dir:-}" >> "$d/meta.txt"
+  {
+    echo "app_locales=$app_loc"
+    echo "force_rtl=$force_rtl"
+    echo "layout_dir=$layout_dir"
+    echo "want_locale=$loc"
+  } > "$d/locale.txt"
   if [ "$seed_ok" -ne 1 ]; then
     echo "home1 still not seeded after $seed_attempt attempts (first-run or missing Home/dock)" > "$d/seed-failed.txt"
     echo "partial=yes" >> "$d/meta.txt"
@@ -225,6 +292,20 @@ run_point() {
   # Warm-up + F3–F7 only when seed produced home (else product checks would score FirstRun as app bugs).
   hd="$d/home1.xml"
   if [ "$seed_ok" -eq 1 ]; then
+  # L6s: dock7 on a short rail — swipe the rail toward the end so Dock7 is reachable, then dump.
+  # DnD into/out of the rail is left on the manual dev8 checklist (input draganddrop is unreliable on CI).
+  if [ "$fixture" = dock7.json ] && echo "$id" | grep -q land; then
+    read -r _sw _sh <<< "$($CHECK screen "$d/home1.xml" 2>/dev/null || echo "$sw $sh")"
+    # Rail is on the end edge: swipe up inside the rail column to reveal lower slots.
+    rail_x=$((_sw * 92 / 100))
+    echo "$shape" | grep -qi rtl && rail_x=$((_sw * 8 / 100)) || true
+    sh_ input swipe "$rail_x" $((_sh * 75 / 100)) "$rail_x" $((_sh * 25 / 100)) 400
+    pause 2
+    dump "$d" home-dock-end
+    # Swipe back so later LP/menu taps still see the head.
+    sh_ input swipe "$rail_x" $((_sh * 25 / 100)) "$rail_x" $((_sh * 75 / 100)) 400
+    pause 1
+  fi
   # Warm-up: the first touch after a cold start is often dropped on the emulator (pr181: the first swipe never
   # reached the launcher; main does the same), so spend it on a tap on empty grid space, which does nothing.
   if p=$($CHECK find-empty "$d/home1.xml" "$dens"); then read -r x y <<< "$p"; sh_ input tap "$x" "$y"; pause 2; fi
@@ -326,6 +407,51 @@ run_point() {
 
   $CHECK check "$d" > /dev/null || echo "checker error for $id" >&2
   grep -m1 '^#' "$d/result.md" 2> /dev/null
+
+  # #201 / #197 short-pane tap-routing probe (split-phone* / wm-size short column).
+  case $id in
+    split-phone*|*-split-phone*) tap_routing_probe "$d" "$dens";;
+  esac
+}
+
+# Live tap-routing probe: plan from home1.xml, long-press/tap each target, score.
+# Artifacts: tap-routing-plan.json, tap-*.xml, tap-routing.md / .json
+tap_routing_probe() {
+  local d=$1 dens=$2 tid how x y expect line
+  [ -s "$d/home1.xml" ] || { echo "tap-routing: no home1.xml" >> "$d/run.txt"; return; }
+  echo "== tap-routing probe ($id)" >> "$d/run.txt"
+  $TAP_ROUTING plan "$d" "$dens" >> "$d/run.txt" 2>&1 || {
+    echo "tap-routing plan failed" >> "$d/run.txt"; return
+  }
+  [ -s "$d/tap-routing-taps.tsv" ] || return
+  # Ensure launcher is foreground before probing
+  home
+  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1 || true
+  pause 2
+  while IFS=$'\t' read -r tid kind how x y expect; do
+    case $tid in id|'') continue;; esac
+    echo "tap-routing $tid $how @ $x,$y expect=$expect" >> "$d/run.txt"
+    if [ "$how" = longpress ]; then
+      hold "$x" "$y"
+    else
+      sh_ input tap "$x" "$y"
+    fi
+    pause 2
+    anr "$d"
+    dump "$d" "tap-$tid"
+    sh_ dumpsys activity activities 2>/dev/null | tr -d '\r' \
+      | grep -m1 -E 'topResumedActivity|mResumedActivity' > "$d/tap-$tid-top.txt" || true
+    # Dismiss sheet / return home for the next tap
+    sh_ input keyevent BACK; pause 1
+    home
+    # Re-assert launcher (a launch may have left another app on top)
+    if ! grep -q "$PKG" "$d/tap-$tid-top.txt" 2>/dev/null; then
+      sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1 || true
+      pause 2
+    fi
+  done < "$d/tap-routing-taps.tsv"
+  $TAP_ROUTING score "$d" >> "$d/run.txt" 2>&1 || echo "tap-routing score non-zero" >> "$d/run.txt"
+  grep -m1 '^# Tap-routing' "$d/tap-routing.md" 2>/dev/null || true
 }
 
 A wait-for-device < /dev/null
@@ -346,6 +472,9 @@ done 3< "$FIX/points.tsv"
 
 # Restore the emulator
 sh_ "wm size reset; wm density reset; settings put system font_scale 1.0; cmd uimode night no; settings put system user_rotation 0; settings put system system_locales en-US"
+sh_ "settings put global debug.force_rtl 0" >/dev/null 2>&1 || true
+sh_ "cmd locale set-app-locales $PKG --locales en-US" >/dev/null 2>&1 || true
+sh_ "cmd overlay disable --user 0 com.android.internal.display.cutout.emulation.tall" >/dev/null 2>&1 || true
 
 [ "$n" -gt 0 ] || { echo "no points matched (shard='$SHARD' points='$POINTS')" >&2; exit 2; }
 $CHECK summarize "$OUT"

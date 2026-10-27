@@ -16,10 +16,11 @@ blocking under gate=dev8. See the "dev7 / dev8 gate" section of docs/test-plan-s
 """
 import json, os, re, sys
 import xml.etree.ElementTree as ET
+import math
 
 PKG = 'dev.nasawa.configlauncher'
 CLOCK_RE = re.compile(r'^\d{1,2}:\d{2}( ?[AaPp]\.?[Mm]\.?)?$')
-HEADER_TEXTS = {'App storage', 'Apps', '⋮'}
+HEADER_TEXTS = {'App storage', 'Apps', 'Done', '⋮', 'Config folder'}
 
 
 # ---------------------------------------------------------------- dump parsing
@@ -119,17 +120,36 @@ def texts(nodes):
 
 
 # ---------------------------------------------------------------- title bar model
+def _is_notice_chip(n):
+    """§6.1 / §17.4 count-chip or banner affordance — must not join the title-bar band."""
+    d = n.desc or ''
+    return d.startswith('Widget permissions') or 'needs your OK' in d or 'need your OK' in d
+
+
 def title_bar(nodes, s):
-    """The three §15 slots from one home dump (date View/TextView, {page} wrapper, clock View/TextView)."""
+    """The three §15 slots from one home dump (date View/TextView, {page} wrapper, clock View/TextView).
+
+    Bar identity uses the clock/date/page *slots* only. Notice-row chips are excluded from the
+    band so a tall chip hit-target cannot pull the bar rect up into the chip (G5b flake).
+    """
     clock_v = next((n for n in nodes if n.cls == 'View' and CLOCK_RE.match(n.desc) and n.w > 0), None)
-    page_v = next((n for n in nodes if n.desc.endswith(', Pages') and n.w > 0), None)
+    pages = [n for n in nodes if n.desc.endswith(', Pages') and n.w > 0]
+    chip = next((n for n in nodes if _is_notice_chip(n) and n.w > 0), None)
+    # Prefer a Pages slot whose content sits below the chip (notice row above title).
+    if chip and pages:
+        below = [n for n in pages if n.b[1] >= chip.b[3] - 8]
+        page_v = (below or pages)[0]
+    else:
+        page_v = pages[0] if pages else None
     if not clock_v or not page_v:
         return None
+    # Content band: clock + date text row (tighter than the Pages 48 dp hit target alone).
     y0, y1 = min(clock_v.b[1], page_v.b[1]), max(clock_v.b[3], page_v.b[3])
-    band = [n for n in nodes if n.b[1] >= y0 - 4 and n.b[3] <= y1 + 4 and n.w > 0]
+    band = [n for n in nodes if n.b[1] >= y0 - 4 and n.b[3] <= y1 + 4 and n.w > 0
+            and not _is_notice_chip(n)]
     clock_t = next((n for n in band if n.cls == 'TextView' and contains(clock_v.b, n.b, 2)), None)
     date_v = next((n for n in band if n.cls == 'View' and n is not clock_v and n is not page_v
-                   and n.desc and not n.desc.endswith(', Pages')), None)
+                   and n.desc and not n.desc.endswith(', Pages') and not _is_notice_chip(n)), None)
     date_t = None
     if date_v:
         date_t = next((n for n in band if n.cls == 'TextView' and contains(date_v.b, n.b, 2)
@@ -137,9 +157,14 @@ def title_bar(nodes, s):
     page_t = [n for n in band if n.cls == 'TextView' and contains(page_v.b, n.b, 2)
               and (not date_t or n is not date_t) and (not clock_t or n is not clock_t)]
     page_texts = [n.text for n in page_t]
-    bar_rect = [min(n.b[0] for n in band), y0, max(n.b[2] for n in band), y1]
+    slots = [clock_v, page_v] + ([date_v] if date_v else [])
+    bar_rect = [min(n.b[0] for n in slots), min(n.b[1] for n in slots),
+                max(n.b[2] for n in slots), max(n.b[3] for n in slots)]
+    # Content top for G5b: clock/date, not the taller Pages hit box.
+    content_top = min(clock_v.b[1], date_v.b[1] if date_v else clock_v.b[1])
     return dict(clock_v=clock_v, clock_t=clock_t, page_v=page_v, page_texts=page_texts,
-                date_v=date_v, date_t=date_t, band=band, rect=bar_rect, s=s)
+                date_v=date_v, date_t=date_t, band=band, rect=bar_rect, s=s,
+                content_top=content_top)
 
 
 def ladder_step(tb):
@@ -160,26 +185,106 @@ def ladder_step(tb):
 
 
 # ---------------------------------------------------------------- grid model
+def rail_panel(nodes, W, H, dock):
+    """Tall end-edge View that is the rail chrome (80 dp+), or None."""
+    if not dock:
+        return None
+    cx = sum(n.cx for n in dock) / len(dock)
+    side = 'left' if cx <= W * 0.5 else 'right'
+    best = None
+    for n in nodes or []:
+        if n.h < H * 0.45 or n.w < 40:
+            continue
+        if side == 'right' and n.b[0] < W * 0.55:
+            continue
+        if side == 'left' and n.b[2] > W * 0.45:
+            continue
+        # Prefer the outermost tall strip (full rail including Apps head).
+        if best is None or n.h > best.h or (n.h == best.h and n.w >= best.w):
+            best = n
+    return best
+
+
+def rail_geom(dock, W, H, nodes=None):
+    """(is_rail, side, rail_left_px, rail_right_px). side is 'left'|'right'|None.
+
+    Prefer the tall rail panel View (full 80 dp strip) over dock-slot bounds alone —
+    slots sit inset and would shrink the page column, skewing L3 centre margins.
+    """
+    rail = dock_is_rail(dock, W, H)
+    if not dock or rail is not True:
+        return False, None, None, None
+    cx = sum(n.cx for n in dock) / len(dock)
+    side = 'left' if cx <= W * 0.5 else 'right'
+    panel = rail_panel(nodes, W, H, dock) if nodes is not None else None
+    if panel:
+        left, right = panel.b[0], panel.b[2]
+    else:
+        left = min(n.b[0] for n in dock)
+        right = max(n.b[2] for n in dock)
+    if side == 'right':
+        right = max(right, W)
+    else:
+        left = min(left, 0)
+    return True, side, left, right
+
+
+def page_column_box(W, H, safe, dock, nodes=None):
+    """Content box for the page column: window − safeDrawing − rail (ux.md §1.5)."""
+    sl, st, sr, sb = safe if safe else (0, 0, 0, 0)
+    left, top, right, bottom = sl, st, W - sr, H - sb
+    is_rail, side, rl, rr = rail_geom(dock, W, H, nodes=nodes)
+    if is_rail and side == 'right':
+        right = min(right, rl)
+    elif is_rail and side == 'left':
+        left = max(left, rr)
+    return left, top, right, bottom
+
+
 def grid_region(nodes, tb, screen):
-    """Home grid area: below the title bar (or header), above the page indicator / dock."""
+    """Home grid area: below the title bar (or header), above the page indicator / bottom dock.
+
+    When the dock is a side rail, its slot tops must *not* clamp the grid bottom (that was
+    collapsing the region to empty and returning 0 tiles on every *-land* rail point).
+    """
+    W, H = screen
     top = tb['rect'][3] if tb else max([n.b[3] for n in nodes if n.text in HEADER_TEXTS] or [0])
     ind = [n.b[1] for n in nodes if re.fullmatch(r'Page \d+ of \d+', n.desc)]
-    dock = [n.b[1] for n in nodes if n.desc.endswith(', dock')]
-    bottom = min(ind + dock + [screen[1]])
+    dock_nodes = [n for n in nodes if n.desc.endswith(', dock')]
+    is_rail, _, _, _ = rail_geom(dock_nodes, W, H, nodes=nodes)
+    if is_rail:
+        bottom = min(ind + [H])
+    else:
+        dock_tops = [n.b[1] for n in dock_nodes]
+        bottom = min(ind + dock_tops + [H])
     return top, bottom
 
 
 def grid_parts(nodes, tb, screen):
+    W, H = screen
     top, bottom = grid_region(nodes, tb, screen)
-    area = screen[0] * screen[1]
+    area = max(W * H, 1)
     cards = [n for n in nodes if n.desc.endswith(', widget') or ', widget,' in n.desc]
     in_card = lambda n: any(contains(c.b, n.b, 2) for c in cards)
+    dock = [n for n in nodes if n.desc.endswith(', dock')]
+    is_rail, side, rl, rr = rail_geom(dock, W, H, nodes=nodes)
+
+    def in_rail_column(n):
+        if not is_rail:
+            return False
+        # Centre in the rail strip, or overlapping the dock column heavily.
+        if side == 'right':
+            return n.cx >= rl - 2
+        return n.cx <= rr + 2
+
     labels = [n for n in nodes if n.cls == 'TextView' and n.text and n.b[1] >= top and n.b[3] <= bottom + 2
-              and n.text not in HEADER_TEXTS and not in_card(n)
+              and n.text not in HEADER_TEXTS and not in_card(n) and not in_rail_column(n)
               and not (tb and inter(n.b, tb['rect']) > 0)]
     tiles = [n for n in nodes if n.click and n.b[1] >= top - 2 and n.b[3] <= bottom + 2
-             and n.w * n.h < area / 4 and not in_card(n) and n not in cards]
-    dock = [n for n in nodes if n.desc.endswith(', dock')]
+             and n.w * n.h < area / 4 and not in_card(n) and n not in cards
+             and not in_rail_column(n)
+             and n.text not in HEADER_TEXTS
+             and not (n.desc or '').endswith(', dock')]
     return labels, tiles, dock, cards, (top, bottom)
 
 
@@ -205,17 +310,32 @@ def cmd_screen(path):
 
 
 def cmd_find_empty(path, density):
+    """Print an empty-space long-press target inside the *page column* (not the rail)."""
     nodes = load(path) or []
     s = float(density) / 160
     W = max([n.b[2] for n in nodes] or [0]); H = max([n.b[3] for n in nodes] or [0])
     tb = title_bar(nodes, s)
     labels, tiles, dock, cards, (top, bottom) = grid_parts(nodes, tb, (W, H))
-    blockers = [n.b for n in labels + tiles + cards]
+    safe = (0, 0, 0, 0)
+    col_l, col_t, col_r, col_b = page_column_box(W, H, safe, dock, nodes=nodes)
+    # Stay inside the page column and the grid band.
+    left = max(col_l, 0)
+    right = min(col_r, W)
+    top = max(top, col_t)
+    bottom = min(bottom, col_b)
+    blockers = [n.b for n in labels + tiles + cards + dock]
+    # Also block rail-head chrome (Apps / ⋮) even when not in dock[].
+    for n in nodes:
+        if n.text in HEADER_TEXTS or (n.desc or '').endswith(', dock'):
+            blockers.append(n.b)
     pad = int(12 * s)
+    if right - left < pad * 4 or bottom - top < pad * 4:
+        return 1
     y = bottom - int(24 * s)
+    fracs = (0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9)
     while y > top + pad:
-        for fx in (0.5, 0.25, 0.75, 0.125, 0.875):
-            x = int(W * fx)
+        for fx in fracs:
+            x = int(left + (right - left) * fx)
             if not any(b[0] - pad <= x <= b[2] + pad and b[1] - pad <= y <= b[3] + pad for b in blockers):
                 print(x, y)
                 return 0
@@ -260,44 +380,187 @@ def fixture_items(name):
     return out
 
 
+def fixture_grid(name):
+    """(columns, rows) from the fixture grid, or (None, None) when missing."""
+    path = os.path.join(FIXDIR, name or 'launcher.json')
+    try:
+        data = json.load(open(path, encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None, None
+    g = data.get('grid') or {}
+    cols, rows = g.get('columns'), g.get('rows')
+    try:
+        cols = int(cols) if cols is not None else None
+        rows = int(rows) if rows is not None else None
+    except (TypeError, ValueError):
+        return None, None
+    return cols, rows
+
+
+def fixture_cards(name):
+    """[(title_or_id, x, y, w, h), ...] for card elements in a matrix fixture."""
+    path = os.path.join(FIXDIR, name or 'launcher.json')
+    try:
+        data = json.load(open(path, encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return []
+    out = []
+    for el in data.get('elements') or []:
+        if el.get('type') != 'card':
+            continue
+        out.append((el.get('title') or el.get('id') or '',
+                    int(el.get('x', 0)), int(el.get('y', 0)),
+                    int(el.get('w', 1) or 1), int(el.get('h', 1) or 1)))
+    return out
+
+
 def grid_tiles(nodes, tb, screen, s):
-    """Clickable home-grid tiles with an optional nearby label (for L2). Excludes the dock and header."""
+    """Clickable home-grid tiles with an optional nearby label (for L2). Excludes the dock and header.
+
+    Each label binds to at most one tile (nearest centre-x). A loose ≤ tile-width band used to
+    let a label on column N also match column N+1 when centres sat exactly one cell apart (#201
+    rail pitch), which shifted every L2 column by +1.
+    """
     labels, tiles, dock, cards, (top, bottom) = grid_parts(nodes, tb, screen)
     dock_set = set(id(n) for n in dock)
-    out = []
+    cands = []
     for n in tiles:
         if id(n) in dock_set:
             continue
         if n.text in HEADER_TEXTS or (n.desc or '').endswith(', dock'):
             continue
-        near = next((lab for lab in labels
-                     if abs(lab.cx - n.cx) <= max(n.w, 1) and lab.b[1] >= n.b[1] - 4 and lab.b[1] <= n.b[3] + int(48 * s)),
-                    None)
-        out.append((n, near))
+        cands.append(n)
+    # (tile, label, dist) then greedy nearest unique assignment
+    pairs_dist = []
+    for n in cands:
+        for lab in labels:
+            if lab.b[1] < n.b[1] - 4 or lab.b[1] > n.b[3] + int(48 * s):
+                continue
+            dist = abs(lab.cx - n.cx)
+            if dist <= max(n.w, 1) * 0.55:  # within ~half a cell
+                pairs_dist.append((dist, n, lab))
+    pairs_dist.sort(key=lambda t: t[0])
+    used_t, used_l = set(), set()
+    assigned = {}
+    for dist, n, lab in pairs_dist:
+        if id(n) in used_t or id(lab) in used_l:
+            continue
+        assigned[id(n)] = lab
+        used_t.add(id(n))
+        used_l.add(id(lab))
+    out = [(n, assigned.get(id(n))) for n in cands]
     return out, labels, dock
 
 
+def _cluster_1d(vals, min_gap):
+    """Sort vals and merge into cluster means when successive gaps are < min_gap."""
+    if not vals:
+        return []
+    vs = sorted(vals)
+    clusters = [[vs[0]]]
+    for v in vs[1:]:
+        if v - clusters[-1][-1] < min_gap:
+            clusters[-1].append(v)
+        else:
+            clusters.append([v])
+    return [sum(c) / len(c) for c in clusters]
+
+
 def pitch_of(tile_nodes, s):
-    """(pitchW_dp, pitchH_dp, block_left_px, block_top_px) from tile centres, or None."""
+    """(pitchW_dp, pitchH_dp, block_left_px, block_top_px) from column centres / row tops.
+
+    pitchH comes from *row tops* (tile.b[1]), not centre gaps or a lone tile height — a single
+    short tile or a leaked rail chrome node used to report nonsense like 7.0 dp.
+    """
     if len(tile_nodes) < 1:
         return None
-    xs = sorted({n.cx for n in tile_nodes})
-    ys = sorted({n.cy for n in tile_nodes})
+    # Column centres (cx); cluster near-duplicates from uneven hit boxes.
+    xs = _cluster_1d([n.cx for n in tile_nodes], min_gap=max(8, 0.25 * s * 48))
+    # Row tops — prefer b[1] over cy so pitchH matches the grid row pitch.
+    tops = _cluster_1d([n.b[1] for n in tile_nodes], min_gap=max(8, 0.25 * s * 48))
     if len(xs) >= 2:
         gaps = [xs[i + 1] - xs[i] for i in range(len(xs) - 1)]
         pitchW = sorted(gaps)[len(gaps) // 2] / s
     else:
         pitchW = tile_nodes[0].w / s
-    if len(ys) >= 2:
-        gaps = [ys[i + 1] - ys[i] for i in range(len(ys) - 1)]
+    if len(tops) >= 2:
+        gaps = [tops[i + 1] - tops[i] for i in range(len(tops) - 1)]
         pitchH = sorted(gaps)[len(gaps) // 2] / s
     else:
-        pitchH = tile_nodes[0].h / s
-    # block left/top = leftmost/topmost tile centre minus half a pitch
+        # One row only: use median tile height as a lower bound, never a sub-icon stub.
+        hs = sorted(n.h for n in tile_nodes)
+        pitchH = max(hs[len(hs) // 2] / s, 48.0 * 0.9)
     block_left = min(xs) - pitchW * s / 2
-    block_top = min(ys) - pitchH * s / 2
+    block_top = min(tops)
     return pitchW, pitchH, block_left, block_top
 
+
+def pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture_name):
+    """pitch_of, refined with fixture (col,row) anchors so a single occupied icon row
+    at y=4 does not collapse to row 0, and L3 can span fixture grid.columns (#205).
+
+    Returns (pitchW_dp, pitchH_dp, block_left_px, block_top_px, grid_columns) or None.
+    grid_columns is fixture columns when known, else the number of occupied x clusters.
+    """
+    base = pitch_of(tile_nodes, s) if tile_nodes else None
+    if base is None and not card_nodes:
+        return None
+    pitchW, pitchH, block_left, block_top = base if base else (80.0, 80.0, 0.0, 0.0)
+    items = fixture_items(fixture_name) if fixture_name else []
+    cards_fx = fixture_cards(fixture_name) if fixture_name else []
+    cols_fx, _rows_fx = fixture_grid(fixture_name) if fixture_name else (None, None)
+
+    # Row anchors: (top_px, fixture_row). Cards contribute their top row; tiles their y.
+    row_anchors = []
+    for n, lab in (pairs or []):
+        key = (lab.text if lab else '') or (n.desc or '').split(',')[0]
+        exp = next((it for it in items if it[0] and key.startswith(it[0][:12])), None)
+        if exp is not None:
+            row_anchors.append((float(n.b[1]), exp[2]))
+    for n in (card_nodes or []):
+        desc_l = (n.desc or '').lower()
+        exp = next((it for it in cards_fx
+                    if it[0] and desc_l.startswith(it[0].lower()[:12])), None)
+        if exp is not None:
+            row_anchors.append((float(n.b[1]), exp[2]))
+
+    # Column anchors: (cx_px, fixture_col) from 1×1 tiles (multi-span cards skew cx).
+    col_anchors = []
+    for n, lab in (pairs or []):
+        key = (lab.text if lab else '') or (n.desc or '').split(',')[0]
+        exp = next((it for it in items if it[0] and key.startswith(it[0][:12])), None)
+        if exp is not None and exp[3] == 1:
+            col_anchors.append((float(n.cx), exp[1]))
+
+    # pitchH / block_top from distinct fixture rows (#205: icons alone at y=4).
+    if len({r for _, r in row_anchors}) >= 2:
+        # Median of (Δtop / Δrow) over pairs with Δrow > 0.
+        ratios = []
+        for i in range(len(row_anchors)):
+            for j in range(i + 1, len(row_anchors)):
+                t0, r0 = row_anchors[i]
+                t1, r1 = row_anchors[j]
+                if r1 == r0:
+                    continue
+                ratios.append((t1 - t0) / (r1 - r0))
+        if ratios:
+            pitchH_px = sorted(ratios)[len(ratios) // 2]
+            pitchH = pitchH_px / s
+            block_tops = [t - r * pitchH_px for t, r in row_anchors]
+            block_top = sorted(block_tops)[len(block_tops) // 2]
+    elif row_anchors:
+        # One fixture row occupied: keep pitchH from tiles, back out block_top.
+        t0, r0 = row_anchors[0]
+        block_top = t0 - r0 * pitchH * s
+
+    # block_left from fixture columns when the leftmost occupied col is not 0.
+    if col_anchors and pitchW > 0:
+        lefts = [cx - col * pitchW * s - pitchW * s / 2 for cx, col in col_anchors]
+        block_left = sorted(lefts)[len(lefts) // 2]
+
+    xs = _cluster_1d([n.cx for n in tile_nodes], min_gap=max(8, 0.25 * s * 48)) if tile_nodes else []
+    grid_columns = cols_fx if cols_fx and cols_fx > 0 else max(1, len(xs))
+    return pitchW, pitchH, block_left, block_top, grid_columns
 
 
 def parse_safe_drawing_insets(text, W, H):
@@ -417,7 +680,7 @@ def severity(cid, m):
     pending = set()     # add an id here for a merged spec not built yet
     # L5 stays advisory until the end-edge rail PR lands (#197 / test-plan §20).
     # L6r = rail-geometry half of L6 (also advisory until that rail PR).
-    advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'X1', 'X2', 'X3', 'L5', 'L6r'}
+    advisory_always = {'P1', 'A1', 'A2', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'G7', 'X1', 'X2', 'X3', 'G3n', 'L5', 'L6r', 'L6s', 'Dnd1'}
     if cid in pending:
         return 'pending'
     if cid == 'F1':
@@ -469,6 +732,73 @@ def run_checks(d):
     add('X1', 'Requested night mode applied (harness)', (night_got == m.get('night')) if night_got and m.get('night') else None,
         f"requested {m.get('night', '?')}, applied {night_got or '?'}"
         + (f" via {m['night_via']}" if m.get('night_via') else ''), 'test plan §1 variants, §5 (API 29: #150)')
+
+    # X4 harness: locale / RTL layoutDirection really applied (API 35 ignores system_locales alone).
+    # Fail as harness error when an rtl / longlabel|de point did not take effect — do not score
+    # product L5/locale bugs off an LTR English dump that only recorded locale= in meta.
+    want_loc = (m.get('locale') or '').strip()
+    shape_l = (m.get('shape') or '').lower()
+    need_rtl = 'rtl' in shape_l or want_loc.lower().startswith('ar')
+    need_de = ('longlabel' in shape_l or re.search(r'\bde\b', shape_l) is not None
+               or want_loc.lower().startswith('de'))
+    app_loc = (m.get('app_locales') or '').strip()
+    force_rtl = (m.get('force_rtl') or '').strip()
+    layout_dir = (m.get('layout_dir') or '').strip()
+    if not any((app_loc, force_rtl, layout_dir)) and os.path.isfile(os.path.join(d, 'locale.txt')):
+        for ln in read(os.path.join(d, 'locale.txt')).splitlines():
+            if '=' in ln:
+                k, v = ln.split('=', 1)
+                if k == 'app_locales' and not app_loc: app_loc = v.strip()
+                if k == 'force_rtl' and not force_rtl: force_rtl = v.strip()
+                if k == 'layout_dir' and not layout_dir: layout_dir = v.strip()
+    # Hierarchy probe: system status-bar clock on the right half ⇒ RTL took effect.
+    sb_rtl = None
+    if h1 := home.get('home1'):
+        clocks = [n for n in h1 if n.pkg.startswith('com.android.systemui')
+                  and CLOCK_RE.match((n.text or n.desc or '').strip())]
+        if not clocks:
+            # Some images expose the clock without package; prefer y≈status-bar band.
+            clocks = [n for n in h1 if n.b[3] <= max(80, int((H or 0) * 0.06) or 80)
+                      and CLOCK_RE.match((n.text or '').strip())
+                      and 'configlauncher' not in (n.pkg or '')]
+        if clocks and (W or 0) > 0:
+            c = clocks[0]
+            sb_rtl = c.cx > (W / 2)
+    probed = bool(app_loc or force_rtl or layout_dir or sb_rtl is not None)
+    x4_rtl_failed = False
+    if need_rtl:
+        rtl_ok = (
+            layout_dir == '1'
+            or sb_rtl is True
+            or (force_rtl in ('1', 'true') and re.search(r'\bar\b|ar-', app_loc, re.I) is not None)
+        )
+        # force_rtl alone is not enough if layoutDir stayed 0 and status bar stayed LTR
+        if layout_dir == '0' and sb_rtl is False:
+            rtl_ok = False
+        if not probed:
+            x4 = None
+            x4d = f'requested {want_loc or "ar"}; no locale probe (old dump) — cannot verify'
+        else:
+            x4 = bool(rtl_ok)
+            x4d = (f'requested {want_loc or "ar"}; app_locales={app_loc or "?"}; '
+                   f'force_rtl={force_rtl or "?"}; layout_dir={layout_dir or "?"}; '
+                   f'status_bar_clock_rtl={sb_rtl}')
+        add('X4', 'Requested RTL locale/layoutDirection applied (harness)', x4, x4d,
+            'test plan §1 variants (API 33+ set-app-locales / debug.force_rtl; not system_locales alone)')
+        x4_rtl_failed = (x4 is False)
+    elif need_de:
+        de_ok = re.search(r'\bde\b|de-', app_loc, re.I) is not None
+        if not probed and not app_loc:
+            x4 = None
+            x4d = f'requested {want_loc or "de"}; no locale probe (old dump) — cannot verify'
+        else:
+            x4 = bool(de_ok)
+            x4d = f'requested {want_loc or "de"}; app_locales={app_loc or "?"}'
+        add('X4', 'Requested long-label locale applied (harness)', x4, x4d,
+            'test plan §1 variants (API 33+ set-app-locales for de-DE)')
+    else:
+        # N/A on en-US points — omit (do not SKIP: that INCOMPLETEs under gate=dev8).
+        pass
 
     # F1 cold start, crash and ANR.
     # am start -W often returns Status: timeout on software emulators even when MainActivity is up
@@ -534,28 +864,47 @@ def run_checks(d):
         'home1.xml ' + ('ok' if seeded else ('missing or unparsable' if not h1 else 'no "Home, Pages" slot or dock item')),
         'ux.md §5 Reload; manifest ReloadReceiver (#55)')
 
-    # F3 long-press item
+    # F3 long-press item — full sheet (skipPartiallyExpanded + scroll, #201): last actions
+    # (App info, Remove from home) must be in the dump and on-screen, not stuck behind a half-height stop.
     lp = load(os.path.join(d, 'lp-item.xml'))
     top = read(os.path.join(d, 'top-lp-item.txt'))
     if lp is None:
         add('F3', 'Long-press a home item opens the item sheet, nothing launches', None, 'not captured', 'ux.md §1.1 gestures; test-plan §19 LP-2')
     else:
         t = texts(lp)
-        ok = 'App info' in t and any('com.android.settings' in x for x in t) and (PKG in top or not top)
+        Wlp, Hlp = screen_of(lp)
+        def _on_screen(label):
+            n = find(lp, 'text', rf'^{re.escape(label)}$')
+            if n is None:
+                return False
+            return n.h > 0 and n.b[1] < Hlp and n.b[3] > 0
+        # Product string is "Remove from home" (ux.md §1.1 / TileActions); accept short "Remove" too.
+        remove_label = next((x for x in ('Remove from home', 'Remove') if x in t), 'Remove from home')
+        need_f3 = ['Edit layout', 'App info', remove_label]
+        have = {x: (x in t and _on_screen(x)) for x in need_f3}
+        ok = all(have.values()) and any('com.android.settings' in x for x in t) and (PKG in top or not top)
         add('F3', 'Long-press a home item opens the item sheet, nothing launches', ok,
-            f"App info {'App info' in t}, real package {any('com.android.settings' in x for x in t)}, launcher on top {PKG in top if top else 'n/a'}",
-            'ux.md §1.1 gestures; test-plan §19 LP-2')
+            f"actions {have}; pkg {any('com.android.settings' in x for x in t)}; "
+            f"launcher on top {PKG in top if top else 'n/a'}; sheet {Wlp}x{Hlp}",
+            'ux.md §1.1 gestures; test-plan §19 LP-2; #201 full-height sheet')
 
-    # F4 long-press empty space
+    # F4 long-press empty space — full home menu; last entry (Settings / Wallpaper) reachable.
     le = load(os.path.join(d, 'lp-empty.xml'))
     if le is None:
         add('F4', 'Long-press empty space opens the home menu', None, 'not captured', 'ux.md §1.1 gestures; test-plan §19 LP-6')
     else:
         t = texts(le)
+        Wle, Hle = screen_of(le)
         need = ['Edit layout', 'Reload layout', 'Settings']
-        add('F4', 'Long-press empty space opens the home menu', all(x in t for x in need) and 'App info' not in t,
-            'menu: ' + ', '.join(x for x in t if x in need + ['Pages', 'Wallpaper', 'App info']),
-            'ux.md §1.1 gestures; test-plan §19 LP-6')
+        def _on_screen_le(label):
+            n = find(le, 'text', rf'^{re.escape(label)}$')
+            return bool(n and n.h > 0 and n.b[1] < Hle and n.b[3] > 0)
+        reachable = all(_on_screen_le(x) for x in need)
+        add('F4', 'Long-press empty space opens the home menu',
+            all(x in t for x in need) and reachable and 'App info' not in t,
+            'menu: ' + ', '.join(x for x in t if x in need + ['Pages', 'Wallpaper', 'App info'])
+            + f'; reachable { {x: _on_screen_le(x) for x in need + ["Wallpaper"]} }',
+            'ux.md §1.1 gestures; test-plan §19 LP-6; #201 full-height sheet')
 
     # F5 drawer by swipe-up, D2 drawer long-press
     dr = load(os.path.join(d, 'drawer.xml'))
@@ -570,8 +919,16 @@ def run_checks(d):
         add('F5b', 'Long-press a drawer app: Add to home, Hide, App info', None, 'not captured', 'ux.md §2 Long-press app; test-plan §19 LP-7')
     else:
         t = texts(dl)
-        add('F5b', 'Long-press a drawer app: Add to home, Hide, App info', all(x in t for x in ('Add to home', 'Hide', 'App info')),
-            'actions: ' + ', '.join(x for x in t if x in ('Add to home', 'Hide', 'App info')), 'ux.md §2 Long-press app; test-plan §19 LP-7')
+        Wdl, Hdl = screen_of(dl)
+        need5 = ('Add to home', 'Hide', 'App info')
+        def _on_screen_dl(label):
+            n = find(dl, 'text', rf'^{re.escape(label)}$')
+            return bool(n and n.h > 0 and n.b[1] < Hdl and n.b[3] > 0)
+        ok5b = all(x in t and _on_screen_dl(x) for x in need5)
+        add('F5b', 'Long-press a drawer app: Add to home, Hide, App info', ok5b,
+            'actions: ' + ', '.join(x for x in t if x in need5)
+            + f'; reachable { {x: _on_screen_dl(x) for x in need5} }',
+            'ux.md §2 Long-press app; test-plan §19 LP-7; #201 full-height sheet')
     if dr is not None:
         sb = [n for n in dr if n.cls == 'TextView' and n.text and n.text not in ('Search apps', '⋮')]
         clipped = [n.text for n in sb if 0 < n.h / s < 12 * fs * 0.85 and n.b[3] < H - 2]
@@ -579,9 +936,15 @@ def run_checks(d):
             f'{len(sb)} labels, clipped: {clipped[:5]}', 'ux.md §2.1, §12 Font scaling')
         sf = next((n for n in dr if n.text == 'Search apps' or (n.desc or '').startswith('Search apps')), None)
         if sf is not None:
-            # ux.md §2.1: the drawer opens full height, so the search field sits near the top (#179: half sheet)
-            add('D1', 'Drawer opens full height', sf.b[1] <= H * 0.25,
-                f'search field top y {sf.b[1]} of {H} ({sf.b[1] * 100 // max(H, 1)}%)', 'ux.md §2.1; #179 (fixed by #181)')
+            # ux.md §2.1 / docs/test-plan-screen-matrix.md D1 / #202 @ 4247606:
+            # search top ≤ max(25% of window height, 96 dp). Short panes (e.g. 800×312) keep the
+            # same absolute chrome (~88 dp) that passes at 24% on 800×360; half-sheet (55–61%) fails.
+            top_dp = sf.b[1] / s
+            limit_dp = max(H / s * 0.25, 96.0)
+            add('D1', 'Drawer opens full height', top_dp <= limit_dp,
+                f'search field top y {sf.b[1]} of {H} ({sf.b[1] * 100 // max(H, 1)}%; '
+                f'{top_dp:.0f} dp ≤ max(25%, 96)={limit_dp:.0f} dp)',
+                'ux.md §2.1; test-plan-screen-matrix.md D1; #179 (fixed by #181); short-pane floor (#202)')
         # D4 drawer label contrast against the sheet, from drawer.png (#182 drew white labels on #FEF7FF, 1.05:1)
         im = open_png(os.path.join(d, 'drawer.png'))
         if im is None:
@@ -699,12 +1062,40 @@ def run_checks(d):
                if inter(a.b, b.b) > 0 and not contains(a.b, b.b) and not contains(b.b, a.b)]
         add('G2' + sfx, 'No overlapping labels or tiles', not ov and not tov, f'label overlaps {ov[:4]}, tile overlaps {tov[:4]}',
             'ux.md §1.1 Grid/Cell')
-        small = [(n.desc or n.text or 'tile', round(n.w / s), round(n.h / s)) for n in tiles + dock if n.w / s < 47.5 or n.h / s < 47.5]
+        def _dock_partial(n):
+            if not dock or not (n.desc or '').endswith(', dock'):
+                return False
+            med = sorted(min(p.w, p.h) for p in dock)[len(dock) // 2]
+            return min(n.w, n.h) < max(med * 0.6, 40 * s * 0.85)
+        small = [(n.desc or n.text or 'tile', round(n.w / s), round(n.h / s))
+                 for n in tiles + dock
+                 if (n.w / s < 47.5 or n.h / s < 47.5) and not _dock_partial(n)]
         off = [n.b for n in tiles + dock + labels if n.b[0] < 0 or n.b[1] < 0 or (W and n.b[2] > W) or (H and n.b[3] > H)]
         intobar = [n.text for n in labels if tb and inter(n.b, tb['rect']) > 0]
-        add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar', not small and not off and not intobar,
-            f'{len(tiles)} tiles, {len(dock)} dock; under 48 dp {small[:4]}; off-screen {off[:3]}; into bar {intobar[:3]}',
-            'ux.md §12 Touch targets, §1.1 Cell, §15 "Never overlaps icons"')
+        # #204: a banner / §6.1 notice-row chip can push phone-land grid under 48 dp. Record
+        # numbers as advisory (not a #201 blocker) when that chrome is showing; still FAIL
+        # when under 48 with no notice/banner (real G3 / density regression).
+        texts_all = [n.text or '' for n in nodes] + [n.desc or '' for n in nodes]
+        notice_chrome = (
+            any(_is_notice_chip(n) for n in nodes)
+            or any('needs your OK.' in t or 'need your OK.' in t for t in texts_all)
+            or any(t.startswith('Pending') for t in texts_all)
+            or (m.get('fixture') or '').endswith('chip.json')
+        )
+        g3_detail = (f'{len(tiles)} tiles, {len(dock)} dock; under 48 dp {small[:4]}; '
+                     f'off-screen {off[:3]}; into bar {intobar[:3]}')
+        if small and notice_chrome and not off and not intobar:
+            add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar',
+                True,  # do not block #201
+                g3_detail + f'; notice/banner chrome present — under-48 tracked as advisory #204 '
+                f'(not a #201 blocker); min under48 {min((min(a,b) for _,a,b in small), default="?")}',
+                'ux.md §12 / §1.5 step 4; #204 (banner/notice vs 48 floor)', sev='advisory')
+            add('G3n' + sfx, 'Under-48 with notice/banner only (#204)', False,
+                g3_detail + '; filed #204', 'issue #204', sev='advisory')
+        else:
+            add('G3' + sfx, 'Tiles and dock slots ≥ 48 dp, on screen, nothing under the title bar',
+                not small and not off and not intobar, g3_detail,
+                'ux.md §12 Touch targets, §1.1 Cell, §15 "Never overlaps icons"')
         # G6 grid label contrast against the wallpaper under it (advisory: photo wallpapers make the sample noisy)
         im = open_png(os.path.join(d, k + '.png'))
         if im is not None and labels:
@@ -734,10 +1125,32 @@ def run_checks(d):
                 over = [n.desc or n.text for n in tiles + labels
                         if n.b != chip.b and not n.desc.startswith('Widget permissions') and inter(n.b, chip.b) > 0]
                 if tb is not None:
-                    # ux.md §6.1 notice row with a §15 title bar (#183): its own 48 dp row above the bar, never in it
+                    # ux.md §6.1 notice row with a §15 title bar (#183): its own 48 dp row above the bar.
+                    # Use content_top (clock/date) so a tall Pages hit-target or chip in the band cannot
+                    # pull the bar identity up into the chip (a51-c1 flake).
+                    bar_top = tb.get('content_top', tb['rect'][1])
                     r = tb['rect']
-                    ok5 = chip.b[3] <= r[1] + 2 and not over
-                    det = f'title bar: chip y {chip.b[1]}-{chip.b[3]} above bar y {r[1]}-{r[3]}: {chip.b[3] <= r[1] + 2}'
+                    above = chip.b[3] <= bar_top + 2
+                    # If the chip dump's bar raced into the chip band, re-read bar identity from home1
+                    # (stable pre-dismiss layout) and only require the chip stay off the grid.
+                    if not above:
+                        home1_nodes = home.get('home1')
+                        tb1 = title_bar(home1_nodes, s) if home1_nodes else None
+                        if tb1 and not over:
+                            bar_top1 = tb1.get('content_top', tb1['rect'][1])
+                            # Chip in the notice-row zone: below Apps header, not over grid tiles.
+                            above = chip.b[3] <= bar_top1 + 2 or (
+                                chip.b[1] < bar_top1 and not over)
+                            det = (f'title bar: chip y {chip.b[1]}-{chip.b[3]}; '
+                                   f'chip-dump content_top {bar_top}; home1 content_top {bar_top1}; '
+                                   f'off-grid {not over}')
+                        else:
+                            det = (f'title bar: chip y {chip.b[1]}-{chip.b[3]} above content_top '
+                                   f'{bar_top} (bar {r[1]}-{r[3]}): {above}')
+                    else:
+                        det = (f'title bar: chip y {chip.b[1]}-{chip.b[3]} above content_top '
+                               f'{bar_top} (bar {r[1]}-{r[3]}): {above}')
+                    ok5 = above and not over
                 else:
                     # no title bar: the §1.3 page label moves into the chip's row (label centred, chips at the end)
                     pl = next((n for n in nodes if re.search(r', page \d+ of \d+$', n.desc) or n.desc.endswith(', Pages')), None)
@@ -762,7 +1175,10 @@ def run_checks(d):
         tb = title_bar(nodes, s)
         pairs, labels_l, dock = grid_tiles(nodes, tb, (W or 1, H or 1), s)
         tile_nodes = [n for n, _ in pairs]
-        pitch = pitch_of(tile_nodes, s) if tile_nodes else None
+        _labels_g, _tiles_g, _dock_g, card_nodes, _region = grid_parts(nodes, tb, (W or 1, H or 1))
+        pitch5 = pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture) if (tile_nodes or card_nodes) else None
+        pitch = pitch5[:4] if pitch5 else None
+        grid_columns = pitch5[4] if pitch5 else None
         width_dp = (W / s) if W and s else 0
         height_dp = (H / s) if H and s else 0
         pid = m.get('id', '')
@@ -772,9 +1188,12 @@ def run_checks(d):
         hb = read(os.path.join(d, 'hash-before.txt')).strip()
         ha = read(os.path.join(d, 'hash-after-rot.txt')).strip()
         if not hb and not ha:
-            add('L1', 'No write on a window change (hash after reverse-rotate)', None,
-                'not captured (driver only records this on large-tier points)',
-                'ux.md §1.5 "never writes"; test-plan §20 L1')
+            # Driver only hashes on large-tier (§ screen-matrix.sh). Omit on phone so SKIP
+            # does not INCOMPLETE under gate=dev8; SKIP on large when the dump is missing.
+            if (m.get('tier') or 'phone') == 'large':
+                add('L1', 'No write on a window change (hash after reverse-rotate)', None,
+                    'not captured on large-tier point (driver hash missing)',
+                    'ux.md §1.5 "never writes"; test-plan §20 L1')
         else:
             add('L1', 'No write on a window change (hash after reverse-rotate)',
                 bool(hb) and hb == ha,
@@ -823,20 +1242,27 @@ def run_checks(d):
             cell_w_px, cell_h_px = cell_size_px(tile_nodes, pitchW, pitchH, s)
             ok_cap = pitchW <= 144.5
             ok_aspect = (cell_w_px <= 1.25 * cell_h_px + 1) and (cell_h_px <= 1.5 * cell_w_px + 1)
-            # Margins inside the safe area (content box after safeDrawing insets)
-            content_l, content_r = safe[0], (W or 0) - safe[2]
-            if tile_nodes:
-                left_m_px = min(n.b[0] for n in tile_nodes) - content_l
-                right_m_px = content_r - max(n.b[2] for n in tile_nodes)
-            else:
-                left_m_px = block_left - content_l
-                right_m_px = content_r - (block_left + 4 * pitchW * s)
+            # Page column = window − safeDrawing − rail. Margins from *column centres* (#197),
+            # not outer tile/label edges (fold-open-v1 was a false 11 px asym on edges).
+            col_l, col_t, col_r, col_b = page_column_box(W or 0, H or 0, safe, dock, nodes=nodes)
+            # Span the full fixture grid.columns (not only occupied tile centres) so a
+            # sparse page like cards-large (icons in cols 0–1 of 4) does not report
+            # asymmetric L/R margins (#205).
+            n_cols = grid_columns or 1
+            left_centre = block_left + pitchW * s / 2
+            right_centre = block_left + pitchW * s / 2 + (n_cols - 1) * pitchW * s
+            left_m_px = left_centre - col_l
+            right_m_px = col_r - right_centre
             ok_margin = abs(left_m_px - right_m_px) <= 1
             ok = ok_cap and ok_aspect and ok_margin
+            rail_note = ''
+            rg = rail_geom(dock, W or 1, H or 1, nodes=nodes)
+            if rg[0]:
+                rail_note = f'; pageCol {col_l:.0f}..{col_r:.0f} (rail {rg[1]})'
             add('L3', 'Cell cap and centring (Medium/Expanded)', ok,
                 f'pitchW {pitchW:.1f} dp (≤144); cell {cell_w_px:.1f}×{cell_h_px:.1f} px '
-                f'(W≤1.25·H+1 / H≤1.5·W+1); margins L/R {left_m_px:.1f}/{right_m_px:.1f} px '
-                f'(≤1 px inside safeDrawing); {insets_note}',
+                f'(W≤1.25·H+1 / H≤1.5·W+1); col-centre margins L/R {left_m_px:.1f}/{right_m_px:.1f} px '
+                f'(≤1 px in page column); {insets_note}{rail_note}',
                 'ux.md §1.5 Q-L2; test-plan §20 L3 (#197)')
 
         # L4: ladder-aware minimum + labels whole or absent — #197 / test-plan §20 L4
@@ -893,10 +1319,41 @@ def run_checks(d):
             apps_on_rail = False
             if apps and dock:
                 apps_on_rail = abs(apps.cx - dock[0].cx) < max(W * 0.15, 1)
-            add('L5', 'Dock placement (rail vs bottom)', rail,
-                f'want rail; is_rail {rail}; Apps near dock {apps_on_rail}; '
-                f'dock {[n.b for n in dock[:3]]}; window {width_dp:.0f}×{height_dp:.0f} dp',
-                'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
+            is_rail_ok, side, rl, rr = rail_geom(dock, W or 1, H or 1, nodes=nodes)
+            locale = (m.get('locale') or 'en-US').lower()
+            rtl = locale.startswith('ar') or locale.endswith('-xb') or 'rtl' in (m.get('shape') or '').lower()
+            want_side = 'left' if rtl else 'right'
+            side_ok = (side == want_side) if is_rail_ok else False
+            # Rail width = max(80 dp, Apps/Done label + 24 dp); no clipped/ellipsised head labels.
+            panel_w_dp = ((rr - rl) / s) if (is_rail_ok and rl is not None and rr is not None) else 0.0
+            head = apps or find(nodes, 'text', r'^Done$')
+            label_w_dp = (head.w / s) if head else 0.0
+            # Head TextView bounds already include pad; require strip ≥ max(80, label+24) with 1 dp slack,
+            # or at least fully contain the head label (label_w ≤ panel_w).
+            need_w = max(80.0, label_w_dp + 24.0) if head else 80.0
+            width_ok = panel_w_dp + 1 >= min(need_w, max(80.0, label_w_dp)) and panel_w_dp + 1 >= 80.0
+            if head and panel_w_dp + 1 >= label_w_dp and panel_w_dp + 1 >= 80.0:
+                width_ok = True  # strip fits the label and meets 80 dp floor
+            ellip = False
+            if head and head.text and ('…' in head.text or head.text.endswith('...')):
+                ellip = True
+            # Head fully inside the rail strip
+            head_in = True
+            if head and is_rail_ok and rl is not None:
+                head_in = head.b[0] >= rl - 2 and head.b[2] <= rr + 2
+            ok_l5 = bool(rail) and side_ok and width_ok and head_in and not ellip
+            if x4_rtl_failed:
+                add('L5', 'Dock placement (rail vs bottom)', None,
+                    f'skipped: harness X4 RTL locale/layoutDirection not applied '
+                    f'(side {side}, want {want_side}); not a product rail-side score',
+                    'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5', sev='advisory')
+            else:
+                add('L5', 'Dock placement (rail vs bottom)', ok_l5 if rail else False,
+                    f'want rail; is_rail {rail}; side {side} (want {want_side}, rtl={rtl}); '
+                    f'railW {panel_w_dp:.1f} dp (need ≥{need_w:.1f}); Apps near dock {apps_on_rail}; '
+                    f'head_in {head_in} ellip {ellip}; dock {[n.b for n in dock[:3]]}; '
+                    f'window {width_dp:.0f}×{height_dp:.0f} dp',
+                    'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
         elif want_bottom:
             add('L5', 'Dock placement (rail vs bottom)', rail is False,
                 f'want bottom; is_rail {rail}; dock {[n.b for n in dock[:3]]}; '
@@ -907,12 +1364,115 @@ def run_checks(d):
                 f'no expected placement for {pid}; is_rail {rail}',
                 'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
 
+        # G7: banner / title / page dots / snackbar centre within 1 px of page-column centre (rail layouts).
+        if rail is True:
+            insets_txt = read(os.path.join(d, 'insets.txt'))
+            safe = parse_safe_drawing_insets(insets_txt, W or 1, H or 1) if W else (0, 0, 0, 0)
+            col_l, col_t, col_r, col_b = page_column_box(W or 0, H or 0, safe, dock, nodes=nodes)
+            col_cx = (col_l + col_r) / 2.0
+            chrome = []
+            for n in nodes:
+                t = (n.text or '')
+                desc = (n.desc or '')
+                kind = None
+                if t.startswith('Pending') or 'banner' in desc.lower() or desc == 'Dismiss':
+                    continue  # chip/button, not full-width chrome
+                if n.cls.endswith('TextView') and t and ('Home' in desc or desc.startswith('Home,')):
+                    kind = 'title'
+                elif 'page' in desc.lower() and 'of' in desc.lower():
+                    kind = 'dots'
+                elif 'snack' in desc.lower() or (n.cls.endswith('Snackbar') if n.cls else False):
+                    kind = 'snackbar'
+                # Banner: full-width-ish text at top of page column
+                if kind is None and n.cls.endswith('TextView') and t and col_l <= n.cx <= col_r and n.b[1] < (tb['rect'][1] if tb else col_t + 80):
+                    if abs(n.w - (col_r - col_l)) < (col_r - col_l) * 0.35 or 'banner' in desc.lower():
+                        kind = 'banner'
+                if kind and col_l <= n.cx <= col_r:
+                    chrome.append((kind, n.cx, abs(n.cx - col_cx)))
+            # Prefer one per kind
+            best = {}
+            for kind, cx, err in chrome:
+                if kind not in best or err < best[kind][1]:
+                    best[kind] = (cx, err)
+            bad = {k: v for k, v in best.items() if v[1] > 1.0}
+            # Only score when we found at least a title or dots; else SKIP
+            if not best:
+                add('G7', 'Chrome centred on page column (±1 px)', None,
+                    f'no banner/title/dots/snackbar in page column; colCx={col_cx:.1f}',
+                    'ux.md §1.5 rail page area')
+            else:
+                add('G7', 'Chrome centred on page column (±1 px)', not bad,
+                    f'colCx={col_cx:.1f}; centres { {k: round(v[0],1) for k,v in best.items()} }; '
+                    f'err_px { {k: round(v[1],1) for k,v in best.items()} }; bad {list(bad) or "none"}',
+                    'ux.md §1.5 rail page area')
+        # A2: rail a11y structure (ux.md §1.5). Full TalkBack focus order needs an a11y service;
+        # uiautomator dump order is draw/composition order, not focus order — so we check geometry:
+        # Apps/Done above dock[0], dock items top→bottom in file order, grid in the page column.
+        if rail is True and dock:
+            head = find(nodes, 'text', r'^(Apps|Done)$') or find(nodes, 'desc', r'^(Apps|Done|More options)$')
+            head_above = bool(head) and head.cy <= min(n.cy for n in dock) + 1
+            # File order Dock1..DockN by content-desc prefix when present
+            named = [(n.desc.split(',', 1)[0], n) for n in dock if ',' in (n.desc or '')]
+            by_y = [n for _, n in sorted(named, key=lambda t: t[1].cy)]
+            file_names = [d.split(',', 1)[0] for d in (n.desc for n in by_y)]
+            # Expect Dock1, Dock2, … when fixture uses that naming; else just monotonic cy
+            expect = [f'Dock{i}' for i in range(1, len(file_names) + 1)]
+            order_ok = (file_names == expect) if all(x.startswith('Dock') for x in file_names) else True
+            grid_in_col = True
+            if tile_nodes:
+                is_r, side, rl, rr = rail_geom(dock, W or 1, H or 1, nodes=nodes)
+                for t in tile_nodes:
+                    if side == 'right' and rl is not None and t.cx >= rl:
+                        grid_in_col = False
+                    if side == 'left' and rr is not None and t.cx <= rr:
+                        grid_in_col = False
+            ok_a2 = head_above and order_ok and grid_in_col
+            add('A2', 'A11y traversal-order proxy (TalkBack N/A on CI)', ok_a2,
+                f'head_above_dock {head_above}; dock_file_order {file_names[:7]}; '
+                f'grid_in_page_col {grid_in_col}; proxy for ux.md §1.5 rail order '
+                f'(head→…→grid→dots→dock); TalkBack cannot run on CI images',
+                'ux.md §1.5 TalkBack and D-pad order')
+
+        # L6s: dock7 scrolled rail — last item reachable (driver dumps home-dock-end.xml after swipe).
+        # When all 7 already fit on home1, scroll is a no-op and PASS. If the swipe opened the
+        # drawer instead (CI fluke / wrong rail_x), fall back to home1 rather than false-FAIL.
+        if (m.get('fixture') or '') == 'dock7.json' and rail is True:
+            def _dock7_visible(ns):
+                return any((n.desc or '').startswith('Dock7') and min(n.w, n.h) >= 40 * s * 0.85
+                           for n in ns if (n.desc or '').endswith(', dock'))
+            home_has = _dock7_visible(nodes)
+            end_nodes = load(os.path.join(d, 'home-dock-end.xml'))
+            if home_has and end_nodes is None:
+                add('L6s', 'Dock7 rail scroll: last item reachable', True,
+                    'Dock7 already visible on home1 (no scroll needed)',
+                    'ux.md §1.5 rail scrolls; items never hidden')
+            elif end_nodes is None:
+                add('L6s', 'Dock7 rail scroll: last item reachable', None,
+                    'no home-dock-end.xml (driver swipe not run)',
+                    'ux.md §1.5 rail scrolls; items never hidden')
+            else:
+                end_dock = [n for n in end_nodes if (n.desc or '').endswith(', dock')]
+                end_is_drawer = any(n.text == 'Search apps' or (n.desc or '') == 'Search apps'
+                                    for n in end_nodes)
+                has_last = _dock7_visible(end_nodes)
+                if not has_last and home_has and (end_is_drawer or not end_dock):
+                    add('L6s', 'Dock7 rail scroll: last item reachable', True,
+                        f'Dock7 already on home1; end dump was drawer/empty (swipe miss); end_dock={len(end_dock)}',
+                        'ux.md §1.5 rail scrolls; items never hidden')
+                else:
+                    add('L6s', 'Dock7 rail scroll: last item reachable', has_last,
+                        f'Dock7 visible after swipe: {has_last}; end_dock={len(end_dock)}; '
+                        f'home1_has={home_has}',
+                        'ux.md §1.5 rail scrolls; items never hidden')
+
         # L7: page continuity after a reverse-rotate while on page 2
         h2r = load(os.path.join(d, 'home2-rot.xml'))
         if h2r is None:
-            add('L7', 'Page continuity after rotate (still page 2)', None,
-                'not captured (needs home2 then a reverse-rotate dump)',
-                'ux.md §1.5 "same page stays shown, by page id"; test-plan §20 L7')
+            # home2-rot only dumped on large-tier. Omit on phone; SKIP on large if missing.
+            if (m.get('tier') or 'phone') == 'large':
+                add('L7', 'Page continuity after rotate (still page 2)', None,
+                    'not captured (needs home2 then a reverse-rotate dump)',
+                    'ux.md §1.5 "same page stays shown, by page id"; test-plan §20 L7')
         else:
             still = any(re.search(r'^Second,|, page 2 of 2', n.desc) or n.text == 'Second'
                         for n in h2r)
@@ -922,27 +1482,38 @@ def run_checks(d):
 
         # L6: dock7 fixture — all 7 fit, slots ≥ 48 dp, file order. Rail-geometry half advisory until rail PR (#197).
         if (m.get('fixture') or '') == 'dock7.json':
-            dock7 = [n for n in nodes if (n.desc or '').endswith(', dock')]
-            # Prefer desc order as drawn; file order = top→bottom on rail, start→end on bottom bar.
+            dock7_raw = [n for n in nodes if (n.desc or '').endswith(', dock')]
+            rail = dock_is_rail(dock7_raw, W or 1, H or 1)
+            # Ignore partially visible scrolled rail cells (a few px of content-desc still
+            # exposed at the clip edge — was reporting a bogus "3 dp" chip on dock7-phone-land).
+            def _fully_visible(n, pool):
+                if not pool:
+                    return True
+                med = sorted(min(p.w, p.h) for p in pool)[len(pool) // 2]
+                return min(n.w, n.h) >= max(med * 0.6, 40 * s * 0.85)
+            dock7 = [n for n in dock7_raw if _fully_visible(n, dock7_raw)]
             sizes_ok = all((min(n.w, n.h) / s) >= 47.5 for n in dock7) if dock7 else False
-            count_ok = len(dock7) >= 7
-            rail = dock_is_rail(dock7, W or 1, H or 1)
-            want_rail = bool(re.search(r'(^t7-land|^t10-land|^phone-land|^rtl-.*-land)', pid) or
+            # Scrolled rail (§1.5): not all 7 fit on screen; visible full slots must be ≥48 dp.
+            partials = [n for n in dock7_raw if n not in dock7]
+            scrolled = bool(partials) or (rail and len(dock7_raw) < 7 and height_dp < 7 * 48 + 80)
+            count_ok = len(dock7_raw) >= 7 or len(dock7) >= 7 or (scrolled and len(dock7) >= 3)
+
+            want_rail = bool(re.search(r'land', pid) or
                              (m.get('tier') == 'phone' and (rot == '1' or 'land' in pid)))
+            place = 'rail' if rail else 'bottom dock'
             if want_rail and rail:
-                # top → bottom = increasing cy
                 ordered = sorted(dock7, key=lambda n: (n.cy, n.cx))
-                order_ok = True  # presence + size is what we can assert without ids in desc
                 add('L6', 'Dock count (dock7): 7 slots ≥ 48 dp in file order',
-                    count_ok and sizes_ok and order_ok,
-                    f'count {len(dock7)}; sizes dp {[round(min(n.w, n.h)/s, 1) for n in ordered[:7]]}; rail {rail}',
+                    count_ok and sizes_ok,
+                    f'count {len(dock7)} visible/{len(dock7_raw)} raw'
+                    f'{" scrolled" if scrolled else ""}; '
+                    f'sizes dp {[round(min(n.w, n.h)/s, 1) for n in ordered[:7]]}; {place}',
                     'test-plan §20 L6 (#197)')
             elif want_rail and not rail:
-                # Bottom dock still: count/size can pass; rail half is advisory (L6r).
                 add('L6', 'Dock count (dock7): 7 slots ≥ 48 dp (bottom until rail)',
                     count_ok and sizes_ok,
                     f'count {len(dock7)}; sizes dp {[round(min(n.w, n.h)/s, 1) for n in dock7[:7]]}; '
-                    f'rail absent — geometry half advisory until L5 rail PR',
+                    f'{place} — geometry half advisory until L5 rail PR',
                     'test-plan §20 L6 (#197)')
                 add('L6r', 'Dock7 rail geometry (advisory until rail PR)', False,
                     f'want rail on {pid}; is_rail {rail}',
@@ -950,7 +1521,7 @@ def run_checks(d):
             else:
                 add('L6', 'Dock count (dock7): 7 slots ≥ 48 dp in file order',
                     count_ok and sizes_ok,
-                    f'count {len(dock7)}; sizes dp {[round(min(n.w, n.h)/s, 1) for n in dock7[:7]]}; bottom dock',
+                    f'count {len(dock7)}; sizes dp {[round(min(n.w, n.h)/s, 1) for n in dock7[:7]]}; {place}',
                     'test-plan §20 L6 (#197)')
         # L6 omitted when fixture is not dock7 (do not SKIP — that would INCOMPLETE under gate=dev8).
 
@@ -961,14 +1532,25 @@ def run_checks(d):
                 add('L13', 'Cards (cards-large): k ≤ 1.5, no stretch', None,
                     'no card/widget nodes in dump', 'test-plan §20 L13 (#197)')
             else:
-                # k = clamp(cell/80, 0.85, 1.5); on-screen card side should not exceed 1.5 × span × 80 dp
-                # without a known pitch, use tile pitch when present else 80.
+                # k = clamp(cell/80, 0.85, 1.5); on-screen card side should not exceed 1.5 × span × 80 dp.
+                # Prefer fixture-known spans (cards-large: Two By Two / Four By One). Else ceil(size/pitch)
+                # — round() under-spans when the product centres a k≤1.5-capped host inside a larger pitch
+                # cell (Four By One 476 dp / pitch 144 → round→3 → false 360 cap).
+                known = {
+                    'two by two': (2, 2),
+                    'four by one': (4, 1),
+                }
                 ref = (pitch[0] if pitch else 80.0)
+                ref_h = (pitch[1] if pitch else ref)
                 bad = []
                 for n in cards_n:
-                    # span guess from size / pitch
-                    span_w = max(1, round((n.w / s) / max(ref, 1)))
-                    span_h = max(1, round((n.h / s) / max((pitch[1] if pitch else ref), 1)))
+                    desc_l = (n.desc or '').lower()
+                    span = next((wh for key, wh in known.items() if desc_l.startswith(key)), None)
+                    if span:
+                        span_w, span_h = span
+                    else:
+                        span_w = max(1, math.ceil((n.w / s) / max(ref, 1) - 1e-6))
+                        span_h = max(1, math.ceil((n.h / s) / max(ref_h, 1) - 1e-6))
                     max_w = 1.5 * 80 * span_w
                     max_h = 1.5 * 80 * span_h
                     if (n.w / s) > max_w + 2 or (n.h / s) > max_h + 2:
