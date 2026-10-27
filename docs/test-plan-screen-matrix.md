@@ -154,7 +154,8 @@ lands. Under `dev8` they block. F1 (crashes/ANRs) always blocks.
 6. G5b, G5c, D1, D4 wherever they apply (same as dev7).
 
 **Blocks dev8 only** (advisory under dev7):
-- L1–L5 and L7 on large-tier points (tablets, fold; see §4.1). L6/L8/L10/L12/L13 automated per #197; L9 needs Sprite (WindowInfoTracker); L11 deferred to dev9.
+- L1–L5 and L7 on large-tier points (tablets, fold; see §4.1); L5 also on phone-landscape points. L5 is gated
+  exactly like the other L checks (advisory under dev7, blocking under dev8, advisory at font 2.0). L6/L8/L10/L12/L13 automated per #197; L9 needs Sprite (WindowInfoTracker); L11 deferred to dev9.
 - G1–G3 on tablets, landscape and the fold (Q2 resolved by #185 / ux.md §1.5).
 - **R1** (grid column order follows the layout direction: RTL mirrors, LTR doesn't; #187 / #210) at every point
   that seeds `launcher.json`, phones included. It's gated exactly like L*: advisory under dev7, blocking under
@@ -186,7 +187,25 @@ so dev7 can't be tagged with the ladder broken.
 
 Source of truth is **#197** (`docs/l-check-rulings`) updating docs/test-plan.md §20 and docs/ux.md §1.5. Severity
 follows the dev7/dev8 switch above. L14/L15 stay out of this pass (L15 ≈ G1 on `s360-mdpi-v2` after 56 dp icons).
-L5 is **advisory until the end-edge rail PR** lands (#197).
+**L5 end edge.** On landscape / rail points the rail must sit on the **end edge**: flush with the right
+window edge in LTR, the left edge in RTL. Concretely, on the `rail_panel` View's raw bounds (not the clamped
+`rail_geom` ones), with tol = max(2 px, 1 dp):
+
+- **side**: rail centre on the end-edge half of the window; a rail on the start edge FAILs;
+- **hug**: the outer edge is within tol of the safeDrawing edge (`W − safeR` in LTR, `safeL` in RTL), or of the
+  raw window edge when that side has an inset (rail painted edge-to-edge), and every rail slot and the Apps/Done
+  head stay inside safeDrawing;
+- **page column on the other side**: every grid tile ends at or before the rail's inner edge (LTR) / starts at or
+  after it (RTL).
+
+Layout direction comes from the point's config or the dump, **never from where the rail is**: dumped
+`layout_dir` (1/rtl, 0/ltr) first, then `force_rtl=1`, then an RTL locale (`ar`/`he`/`iw`/`fa`/`ur`, `*-XB`) or an
+`rtl` shape, else LTR. If X4 says the RTL request wasn't applied, L5 SKIPs (harness fault, not a product score).
+Points with no placement rule (bound-599/600/839/840) score the end-edge part only when a rail is drawn
+(bound-840) and omit L5 otherwise. The L5 detail line records the measured side, x range, outer-edge gap, safe
+inset and tolerance. Unit tests: `L5EndEdge` in `scripts/test_screen_matrix_dnd.py` (the four LTR/RTL ×
+left/right cases, dev7/dev8 severity, a fabricated 40 px gap and real run-40581041514 captures under a swapped
+direction and mirrored).
 
 ### 4.2 R1: RTL grid order (#187 / #210 / #211)
 
@@ -202,7 +221,7 @@ L2/L3 map physical columns to logical ones under RTL, so a correctly mirrored gr
 | L2 | §20 L2 | `floor((centre − blockLeft) / pitchW)` vs fixture `(x,y)` | every matched tile on its cell | advisory→block at dev8 | large (home1) | **auto** |
 | L3 | §20 L3 (#197) | pitchW; cell W×H **in px**; L/R margins **inside safeDrawing** | pitchW ≤ 144 dp; `W ≤ 1.25·H + 1 px` and `H ≤ 1.5·W + 1 px`; abs(L−R) ≤ **1 px** inside safe area. SKIP Compact (< 600 dp) | advisory→block at dev8 | Medium/Expanded | **auto** |
 | L4 | §20 L4 (#197) | pitchH on t7/t10-land @ font 1.0; label heights | **Step-1 floor ≥ 84 dp** once rail (L5) present; else ladder ≥76 / ≥60 and report **depends on L5** (no plain fail for ≥84). Labels whole or absent always | advisory→block at dev8 | large | **auto** |
-| L5 | §20 L5 | `dock_is_rail` | rail on t7/t10-land (+ phone-land / RTL start once rail lands); bottom on port / fold-open | **advisory until rail PR** | large + phone-land | **auto** |
+| L5 | §20 L5; ux.md §1.5 Q-L3/Q-L4; #187 | `dock_is_rail`, `rail_panel` raw bounds, `layout_rtl_of`, `rail_end_edge` | rail on t7/t10-land + phone-land, on the **end edge** (right in LTR, left in RTL), hugging safeDrawing, page column on the other side; width ≥ 80 dp, head with the rail; bottom on port / fold-open | advisory→block at dev8 (advisory at font 2.0) | large + phone-land (+ bound-840 end edge) | **auto** |
 | L6 | §20 L6 (#197) | fixture `dock7.json` | 7 slots ≥ 48 dp, file order; rail-geometry half **advisory** until rail (`L6r`) | advisory→block at dev8 (L6r always advisory) | dock7-t7-land/port, dock7-phone-land | **auto** |
 | L7 | §20 L7 | `home2-rot.xml` still page 2 | page id preserved | advisory→block at dev8 | large with home2 | **auto** |
 | L8 | §20 L8 (#197) | cancel mid-drag | cancelled, nothing written, old cell | unit + androidTest | JVM + instrumented | **auto** (unit in CI; rotate smoke in androidTest) |
