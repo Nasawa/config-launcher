@@ -892,27 +892,55 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                 for (y in 0 until rows) {
                     Row(Modifier.fillMaxWidth().weight(1f)) {
                         for (x in 0 until grid.columns) {
+                            // When pitchH < 48, a centred min-touch expansion climbs into the title bar
+                            // and Android a11y clips the {page} clickable to ~45 dp (split-phone-v1
+                            // home1.xml: clickable 73×45 while content stays 48). Grow short cells'
+                            // hit target to 48 dp downward only (Grace #201 T4).
+                            // Skip clipToBounds on short cells: clipped semantics bounds are re-inflated
+                            // centred to 48 dp, which undoes top alignment and re-invades the title bar.
+                            // Box centres an oversized requiredHeight child even with TopCenter; offset
+                            // by half the overflow so the 48 dp hit band starts at the cell top.
+                            val shortCell = cellH < HomeGeometry.MIN_TOUCH_DP
+                            val shortOverflow = if (shortCell) {
+                                ((HomeGeometry.MIN_TOUCH_DP - cellH) / 2f).coerceAtLeast(0f)
+                            } else 0f
                             Box(
-                                // Editing outline sits on the cell; 2.dp gap is inside the touch target so
-                                // pitchH ≥ 48 keeps a 48×48 hit area (§12 / #201 G3).
-                                // clipToBounds: step-4 48 dp icons may fill the cell; density rounding must
-                                // not let them paint into the neighbour (Pragma #201).
-                                Modifier.weight(1f).fillMaxHeight().clipToBounds().then(
+                                Modifier.weight(1f).fillMaxHeight().then(
+                                    if (shortCell) Modifier else Modifier.clipToBounds(),
+                                ).then(
                                     if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier,
                                 ),
-                                contentAlignment = Alignment.Center,
+                                contentAlignment = Alignment.TopCenter,
                             ) {
                                 byCell[x to y]?.let { r ->
-                                    with(drag) {
-                                        // fillMaxSize + tile before padding: touch bounds = full cell.
-                                        // When the cell is too short for content-pad + icon, drop the 2 dp
-                                        // visual gap so a 48 dp icon fills the cell instead of overflowing.
-                                        val tight = !step.showLabel && cellH < HomeGeometry.ICON_FALLBACK_DP + HomeGeometry.CONTENT_PAD_DP
+                                    val tight = !step.showLabel && cellH < HomeGeometry.ICON_FALLBACK_DP + HomeGeometry.CONTENT_PAD_DP
+                                    val pad = if (tight) Modifier else Modifier.padding(2.dp)
+                                    val actions = a11y(r, TilePlace.PAGE)
+                                    val core = with(drag) {
+                                        Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = actions)
+                                    }
+                                    if (shortCell) {
+                                        Box(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .requiredHeight(HomeGeometry.MIN_TOUCH_DP.dp)
+                                                .offset(y = shortOverflow.dp)
+                                                .then(core)
+                                                .then(pad),
+                                        ) {
+                                            Tile(
+                                                r, apps,
+                                                Modifier.fillMaxSize(),
+                                                showLabel = true,
+                                                iconDp = step.iconDp,
+                                                drawLabel = step.showLabel,
+                                                tight = tight,
+                                            )
+                                        }
+                                    } else {
                                         Tile(
                                             r, apps,
-                                            Modifier.fillMaxSize().tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.PAGE)).then(
-                                                if (tight) Modifier else Modifier.padding(2.dp),
-                                            ),
+                                            Modifier.fillMaxSize().then(core).then(pad),
                                             showLabel = true,
                                             iconDp = step.iconDp,
                                             drawLabel = step.showLabel,

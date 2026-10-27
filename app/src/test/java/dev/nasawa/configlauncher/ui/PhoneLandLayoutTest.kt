@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -315,25 +317,39 @@ class PhoneLandLayoutTest {
 
 
     /**
-     * Grace #201 blocker 2: 800×312 dp wm-size pane (split-phone-v1). Title-bar {page} touch
-     * must stay ≥ 48 dp tall — pad absorb alone was not enough when SubcomposeLayout measured
-     * the page slot with minHeight = 0 and a11y clipped the clickable against the grid.
+     * Grace #201 T4: 800×312 wm-size pane (split-phone-v1, density 160, status/nav 24 dp).
+     * Device dump: title-bar clickable 73×45 while the content node stayed 48 — first-row
+     * tiles with pitchH ~39 had their min-touch a11y bounds climb to y=69 and clip the
+     * clickable. Reproduce with top inset + a real PageGrid, then assert the *clickable*
+     * semantics node's bounds (not the content desc) stay ≥ 48 and tiles do not encroach.
      */
     @Test @Config(qualifiers = "w800dp-h312dp-mdpi")
     fun splitPhoneTitleBarTouchAtLeast48() {
-        assertEquals(0, HomeGeometry.titleBarPaddingV(6, 312f))
-        val pages = listOf(pageWithApps(1), ResolvedPage("p1", "Second", emptyList()))
+        // Page column after insets is 264 dp — same absorb as a bare 312 column.
+        assertEquals(0, HomeGeometry.titleBarPaddingV(6, 264f))
+        assertEquals(1f, rule.density.density, 0.01f)
+        val apps = InstalledApps(ctx)
+        val drag = DragController({ error("unused") }) {}
+        // Several first-row apps so a short pitchH would expand tile touch into the bar.
+        val pages = listOf(pageWithApps(4), ResolvedPage("p1", "Second", emptyList()))
         rule.setContent {
             MaterialTheme {
                 CompositionLocalProvider(LocalTitleBarNow provides ZonedDateTime.parse("2026-05-11T12:00:00Z")) {
-                    // Full short pane: page column fills the 800×312 window (rail omitted — bar still
-                    // must meet the touch floor on its own measured height).
-                    Column(Modifier.size(800.dp, 312.dp).testTag("pageCol")) {
+                    // 800×312 window with status/nav 24 dp — matches split-phone-v1 insets.
+                    Column(
+                        Modifier
+                            .size(800.dp, 312.dp)
+                            .windowInsetsPadding(WindowInsets(0.dp, 24.dp, 0.dp, 24.dp))
+                            .testTag("pageCol"),
+                    ) {
                         TitleBarRow(
                             fixtureBar, pages, 0, enabled = true, labelBackdrop = false,
-                            pageColumnHeightDp = 312f,
+                            pageColumnHeightDp = 264f,
                         ) {}
-                        Box(Modifier.weight(1f).fillMaxWidth().testTag("gridSlot")) {}
+                        Box(Modifier.weight(1f).fillMaxWidth().testTag("gridSlot")) {
+                            PageGrid(pages[0], grid, apps, drag, false, {}, {}, { _, _ -> emptyList() }, {})
+                        }
+                        PageDots(pages.size, 0)
                     }
                 }
             }
@@ -343,27 +359,46 @@ class PhoneLandLayoutTest {
         val shown = rule.onAllNodes(isRoot().not()).fetchSemanticsNodes()
             .filter { it.layoutInfo.isPlaced && it.boundsInRoot.width > 0 }
         fun said(n: androidx.compose.ui.semantics.SemanticsNode) =
-            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription) { null }
+            n.config.getOrElseNullable(SemanticsProperties.ContentDescription) { null }
                 .orEmpty().joinToString()
-        val pageTap = shown.filter { SemanticsActions.OnClick in it.config && "Pages" in said(it) }
-            .ifEmpty {
-                // Clickable merge may leave desc on a sibling; fall back to any OnClick whose
-                // touch bounds cover the spoken "Home, Pages" node.
-                val spoken = shown.firstOrNull { said(it) == "Home, Pages" }
-                if (spoken == null) emptyList()
-                else shown.filter {
-                    SemanticsActions.OnClick in it.config &&
-                        it.touchBoundsInRoot.overlaps(spoken.boundsInRoot)
-                }
-            }
-        assertTrue("expected a tappable {page} control, got descs=${shown.map(::said).filter { it.isNotEmpty() }.take(8)}", pageTap.isNotEmpty())
-        val touch = pageTap.minBy { it.touchBoundsInRoot.height }
-        val touchH = touch.touchBoundsInRoot.height / density
-        val boxH = touch.boundsInRoot.height / density
+        val spoken = shown.firstOrNull { said(it) == "Home, Pages" }
+        assertTrue("expected spoken Home, Pages node", spoken != null)
+        // Clickable wrapper = OnClick node covering the slot centre (T4 harness rule).
+        val pageTap = shown.filter {
+            SemanticsActions.OnClick in it.config &&
+                it.boundsInRoot.overlaps(spoken!!.boundsInRoot)
+        }
+        assertTrue("expected a tappable {page} clickable, descs=${shown.map(::said).filter { it.isNotEmpty() }.take(8)}", pageTap.isNotEmpty())
+        val clickable = pageTap.minBy { it.boundsInRoot.width * it.boundsInRoot.height }
+        val boxH = clickable.boundsInRoot.height / density
+        val touchH = clickable.touchBoundsInRoot.height / density
         assertTrue(
-            "title bar {page} touch height $touchH dp (bounds $boxH) must be ≥ 48 at 800×312",
+            "title bar {page} clickable bounds height $boxH dp (touch $touchH) must be ≥ 48 at 800×312",
+            boxH >= HomeGeometry.MIN_TOUCH_DP - 0.5f,
+        )
+        assertTrue(
+            "title bar {page} clickable touch height $touchH dp must be ≥ 48",
             touchH >= HomeGeometry.MIN_TOUCH_DP - 0.5f,
         )
+        // Tiles must not claim a11y space inside the title bar's clickable band (device clip root cause).
+        val barBottom = clickable.boundsInRoot.bottom
+        val gridRoot = rule.onNodeWithTag("gridSlot").fetchSemanticsNode()
+        fun walk(n: androidx.compose.ui.semantics.SemanticsNode) {
+            if (SemanticsActions.OnClick in n.config) {
+                val t = n.touchBoundsInRoot
+                val w = t.width / density
+                val h = t.height / density
+                if (w in 40f..160f && h in 40f..160f && t.top + 0.5f < barBottom && t.bottom > barBottom) {
+                    assertTrue(
+                        "tile touch $t encroaches into title bar clickable (barBottom=$barBottom); " +
+                            "device a11y would clip the {page} clickable under 48 dp",
+                        false,
+                    )
+                }
+            }
+            n.children.forEach(::walk)
+        }
+        walk(gridRoot)
     }
 
 }
