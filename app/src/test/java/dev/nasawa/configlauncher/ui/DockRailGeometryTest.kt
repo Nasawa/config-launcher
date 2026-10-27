@@ -80,9 +80,9 @@ class DockRailGeometryTest {
     @Test fun t7LandRowPitchReachesAbout85WithRail() {
         // Archimedes' estimate with the rail: ≈ 106 × 85. Chrome above/below the grid
         // (notice/title + dots, no top row, no bottom dock) ≈ 175 dp leaves ~425 for 5 rows.
-        val pitchH = HomeGeometry.t7LandPitchH(175f)
+        val pitchH = HomeGeometry.t7LandPitchH()
         assertTrue("expected ~85 dp, got $pitchH", pitchH in 84f..90f)
-        val p = HomeGeometry.pitch(960f - 80f, 600f - 175f, 4, 5, HomeGeometry.WidthClass.Expanded)
+        val p = HomeGeometry.pitch(960f - 80f, 600f - HomeGeometry.T7_LAND_CHROME_ESTIMATE_DP, 4, 5, HomeGeometry.WidthClass.Expanded)
         assertTrue(p.pitchH in 84f..90f)
         assertTrue(p.pitchW / p.pitchH <= 1.25f + 0.01f)
     }
@@ -144,5 +144,46 @@ class DockRailGeometryTest {
         assertEquals(1, index)
         val bottomIndex = ((499f - drag.dockRect.top) / drag.dockRect.height * slots).toInt().coerceIn(0, drag.dockCount)
         assertEquals(4, bottomIndex)
+    }
+
+    @Test fun railWidthGrowsFromMeasuredLabel() {
+        // Short English at font 1.0 stays at the 80 dp floor.
+        assertEquals(80f, HomeGeometry.railWidthDp(0f), 0.01f)
+        assertEquals(80f, HomeGeometry.railWidthDp(40f), 0.01f) // 40 + 24 = 64 < 80
+        assertEquals(80f, HomeGeometry.railWidthDp(56f), 0.01f) // 56 + 24 = 80
+        // Past the floor: measured + pad (the old 72 estimate forced 96 even when 80 fit).
+        assertEquals(96f, HomeGeometry.railWidthDp(72f), 0.01f)
+        // Font 2.0 / long locale ("Anwendungen" ~2× Apps): rail grows, never clips.
+        assertEquals(80f + 48f, HomeGeometry.railWidthDp(104f), 0.01f) // 104 + 24 = 128
+        assertEquals(HomeGeometry.RAIL_HEAD_PAD_DP, 24f, 0.01f)
+    }
+
+    @Test fun contentWidthUsesPageColumnNotWindow() {
+        // t7-land beside an 80 dp rail: page column 880, block 576 → content 576 (not centred on 960).
+        assertEquals(576f, HomeGeometry.contentWidthDp(960f - 80f, 576f, HomeGeometry.WidthClass.Expanded), 0.01f)
+        // Wider measured rail (96): page column 864 still yields 576.
+        assertEquals(576f, HomeGeometry.contentWidthDp(960f - 96f, 576f, HomeGeometry.WidthClass.Expanded), 0.01f)
+        // Block origin is measured inside the page column, not the raw window.
+        val pageW = 960f - 80f
+        val p = HomeGeometry.pitch(pageW, 425f, 4, 5, HomeGeometry.WidthClass.Expanded)
+        val (ox, _) = HomeGeometry.blockOrigin(pageW, 425f, p)
+        assertEquals((pageW - p.blockW) / 2f, ox, 0.01f)
+        // Margins equal inside the page column (LTR/RTL share the same geometry; Row mirrors the rail).
+        val (l, r) = HomeGeometry.sideMarginsPx(pageW.toInt(), p.blockW.toInt().coerceAtMost(pageW.toInt()))
+        assertTrue(kotlin.math.abs(l - r) <= 1)
+    }
+
+    @Test fun t7LandChromeEstimateNeverWritesTitleBarFit() {
+        // Advisory only: calling the estimate must not produce a fit-warning string. Warnings come
+        // only from TitleBarLayout.fitWarning after a real measured ladder step ≥ 2 (Q-A12).
+        assertEquals(175f, HomeGeometry.T7_LAND_CHROME_ESTIMATE_DP, 0.01f)
+        val pitch = HomeGeometry.t7LandPitchH(HomeGeometry.T7_LAND_CHROME_ESTIMATE_DP)
+        assertTrue(pitch in 84f..90f)
+        assertNull(TitleBarLayout.fitWarning("elements[0]", 320, step = 0, size = null))
+        assertNull(TitleBarLayout.fitWarning("elements[0]", 320, step = 1, size = null))
+        // Step ≥ 2 is the only path that writes warn_titlebar_fit — and it needs a real bar width,
+        // never the 175 dp chrome estimate.
+        val warn = TitleBarLayout.fitWarning("elements[0]", 320, step = 2, size = null)
+        assertTrue(warn != null && "320" in warn && "175" !in warn)
     }
 }

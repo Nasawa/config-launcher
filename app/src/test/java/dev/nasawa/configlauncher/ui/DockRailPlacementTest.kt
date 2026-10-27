@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -12,6 +13,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -20,15 +22,17 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.nasawa.configlauncher.apps.InstalledApps
 import dev.nasawa.configlauncher.model.AppItem
 import dev.nasawa.configlauncher.model.ResolvedItem
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import java.util.Locale
 
 /**
  * §1.5 / #189: rail sits on the end edge (right in LTR, left in RTL) and the page column
- * gets the remaining width.
+ * gets the remaining width. Head label measure grows the rail; chrome centres in the page column.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
@@ -37,17 +41,27 @@ class DockRailPlacementTest {
 
     private val dock = (0 until 4).map { ResolvedItem(AppItem("d$it", "dock.$it", label = "Dock $it"), null) }
 
-    private fun place(w: Dp, h: Dp, rtl: Boolean) {
+    private fun place(w: Dp, h: Dp, rtl: Boolean, headLabelWidthDp: Float = 0f, headText: String = "Apps") {
         rule.setContent {
             val apps = InstalledApps(ApplicationProvider.getApplicationContext())
             val drag = DragController({ error("unused") }) {}
             drag.dockVertical = true
             CompositionLocalProvider(LocalLayoutDirection provides if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
-                Box(Modifier.size(w, h)) {
+                Box(Modifier.size(w, h).testTag("window")) {
                     Row(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(1f).fillMaxHeight().testTag("page"))
-                        DockRail(dock, apps, drag, {}, {}, { _, _ -> emptyList() }) {
-                            Box(Modifier.size(48.dp))
+                        Box(Modifier.weight(1f).fillMaxHeight().testTag("page")) {
+                            val pageW = w.value - HomeGeometry.railWidthDp(headLabelWidthDp)
+                            val chrome = HomeGeometry.contentWidthDp(
+                                pageW,
+                                minOf(pageW, 4 * HomeGeometry.CAP_WIDTH_DP),
+                                HomeGeometry.widthClass(w.value),
+                            )
+                            ContentWidthBox(chrome.takeIf { HomeGeometry.widthClass(w.value) != HomeGeometry.WidthClass.Compact }) {
+                                Box(Modifier.fillMaxSize().testTag("chrome"))
+                            }
+                        }
+                        DockRail(dock, apps, drag, {}, {}, { _, _ -> emptyList() }, headLabelWidthDp = headLabelWidthDp) {
+                            Text(headText, maxLines = 1, softWrap = false, overflow = TextOverflow.Visible)
                         }
                     }
                 }
@@ -99,5 +113,52 @@ class DockRailPlacementTest {
         assertTrue(!HomeGeometry.useRail(411f, 731f))
         assertTrue(!HomeGeometry.useRail(600f, 960f))
         assertTrue(!HomeGeometry.useRail(840f, 1200f))
+    }
+
+    @Test @Config(qualifiers = "w960dp-h600dp-mdpi")
+    fun railWidthAtFontScale2AndLongGermanLabel() {
+        // Production measures with TextMeasurer at the live fontScale/locale. GeometryTest covers
+        // railWidthDp(head). Here we feed the widths HomeScreen would hand the rail for:
+        //   - short "Apps" at scale 1.0 (~40 dp) → still 80
+        //   - long German "Anwendungen" at fontScale 2.0 (~104 dp) → grows past 80, no clip
+        val shortAppsDp = 40f
+        val longGermanAt2xDp = 104f
+        assertEquals(80f, HomeGeometry.railWidthDp(shortAppsDp), 0.01f)
+        val railW = HomeGeometry.railWidthDp(longGermanAt2xDp)
+        assertEquals(longGermanAt2xDp + HomeGeometry.RAIL_HEAD_PAD_DP, railW, 0.01f)
+        assertTrue("rail grows for long scaled German label: $railW", railW > 80f)
+
+        place(960.dp, 600.dp, rtl = false, headLabelWidthDp = longGermanAt2xDp, headText = "Anwendungen")
+        val rail = rule.onNodeWithTag("dockRail").getBoundsInRoot()
+        assertEquals(railW, (rail.right - rail.left).value, 1.5f)
+        // Locale pin so the test stays deterministic (no real clock / device locale drift).
+        assertEquals("de", Locale.GERMAN.language)
+    }
+
+    @Test @Config(qualifiers = "w960dp-h600dp-mdpi")
+    fun chromeCentresInPageColumnLtr() {
+        place(960.dp, 600.dp, rtl = false, headLabelWidthDp = 0f)
+        assertChromeCentredInPageColumn(rtl = false)
+    }
+
+    @Test @Config(qualifiers = "w960dp-h600dp-mdpi")
+    fun chromeCentresInPageColumnRtl() {
+        place(960.dp, 600.dp, rtl = true, headLabelWidthDp = 0f)
+        assertChromeCentredInPageColumn(rtl = true)
+    }
+
+    private fun assertChromeCentredInPageColumn(rtl: Boolean) {
+        val page = rule.onNodeWithTag("page").getBoundsInRoot()
+        val chrome = rule.onNodeWithTag("contentWidthInner").getBoundsInRoot()
+        val pageW = page.right.value - page.left.value
+        val chromeW = chrome.right.value - chrome.left.value
+        assertTrue("chrome narrower than page column: chrome=$chromeW page=$pageW rtl=$rtl", chromeW < pageW - 1f)
+        val leftGap = chrome.left.value - page.left.value
+        val rightGap = page.right.value - chrome.right.value
+        assertTrue("centred in page column (±2 dp) rtl=$rtl left=$leftGap right=$rightGap", kotlin.math.abs(leftGap - rightGap) <= 2f)
+        val window = rule.onNodeWithTag("window").getBoundsInRoot()
+        val winLeftGap = chrome.left.value - window.left.value
+        val winRightGap = window.right.value - chrome.right.value
+        assertTrue("not equal margins on the raw window when the rail is present rtl=$rtl", kotlin.math.abs(winLeftGap - winRightGap) > 2f)
     }
 }

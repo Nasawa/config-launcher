@@ -256,12 +256,33 @@ fun HomeScreen(vm: HomeViewModel) {
     val useRail = HomeGeometry.useRail(winW, winH)
     val widthClass = HomeGeometry.widthClass(winW)
     drag.dockVertical = useRail
-    // Medium/Expanded chrome width (§1.5): wider of a 4×144 block and 576, capped to the window.
-    val chromeWidth = HomeGeometry.contentWidthDp(winW, minOf(winW, 4 * HomeGeometry.CAP_WIDTH_DP), widthClass)
 
     HomeThemed(themeDark) {
         // Transparent over the system wallpaper (theme windowShowWallpaper, #58).
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
+            // §1.5: measure Apps/Done at the current font scale and locale; grow the rail past 80 dp when needed.
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val headMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
+            val headStyle = MaterialTheme.typography.labelLarge
+            val appsLabel = stringResource(R.string.apps)
+            val doneLabel = stringResource(R.string.done)
+            val headLabelWidthDp = run {
+                val appsW = headMeasurer.measure(appsLabel, headStyle, maxLines = 1, softWrap = false).size.width
+                val doneW = headMeasurer.measure(doneLabel, headStyle, maxLines = 1, softWrap = false).size.width
+                val textDp = with(density) { maxOf(appsW, doneW).toDp().value }
+                // Label backdrop adds 6 dp a side around the text inside the button.
+                textDp + if (backdrop) 12f else 0f
+            }
+            val railWidthDp = if (useRail) HomeGeometry.railWidthDp(headLabelWidthDp) else 0f
+            // Page column = window minus the rail inside safeDrawing; chrome centres inside this, not the window.
+            val pageAreaW = (winW - railWidthDp).coerceAtLeast(0f)
+            val chromeWidth = HomeGeometry.contentWidthDp(
+                pageAreaW,
+                minOf(pageAreaW, 4 * HomeGeometry.CAP_WIDTH_DP),
+                widthClass,
+            )
+            val chromeContent = chromeWidth.takeIf { widthClass != HomeGeometry.WidthClass.Compact }
+
             val rootMod = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).swipeUpToOpen(
                 // §1.4: off in edit mode and while dragging; the bottom system-gesture strip belongs to the system.
                 // Insets are safeDrawing (§1.5); the gesture strip is still nav-bar-relative.
@@ -335,12 +356,15 @@ fun HomeScreen(vm: HomeViewModel) {
                 }
                 // The banner slot. The collapsed count chip isn't here: it goes in the §6.1 notice row with the page label
                 // (#173 L1, #175), so the banners keep the full width and the chip costs no grid height.
+                // §1.5: banner / notice / title are content-width centred in the page column (window − rail).
                 val b9 = ConsentUi.B9.visible(reviewCount, b9DismissedAt, otherBanner = ui.load.conflict || ui.load.issue != null)
                 val countChip = !b9 && reviewCount > 0
-                if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
-                // B9 is the lowest-priority notice: only when no other banner is up. `×` collapses it to the chip.
-                if (b9) B9Banner(reviewCount, onReview = { b9DismissedAt = reviewCount; reviewOpen = true }, onDismiss = { b9DismissedAt = reviewCount })
-                ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
+                ContentWidthBox(chromeContent) {
+                    if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
+                    // B9 is the lowest-priority notice: only when no other banner is up. `×` collapses it to the chip.
+                    if (b9) B9Banner(reviewCount, onReview = { b9DismissedAt = reviewCount; reviewOpen = true }, onDismiss = { b9DismissedAt = reviewCount })
+                    ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
+                }
                 val pages = ui.layout.pages
                 val pager = rememberPagerState { pages.size }
                 // ux.md §1 / §14 R4: Home on home leaves edit mode (saving first), closes drawer and folder, goes to page 1.
@@ -362,13 +386,15 @@ fun HomeScreen(vm: HomeViewModel) {
                 // §6.1 notice row (#173 L1): the collapsed chips (the §17.4 count chip; the B-banner ▲ chip once built) at the
                 // end, the page label centred in the same row. A title bar keeps its own row, so the chips get one above it.
                 val chips: @Composable RowScope.() -> Unit = { ReviewCountChip(reviewCount, { reviewOpen = true }) }
-                if (titleBar != null) {
-                    if (countChip) NoticeRow(null, chips = chips)
-                    TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop, onFit = { titleFit = it }) { pageList = true }
-                } else {
-                    LaunchedEffect(Unit) { titleFit = null }
-                    if (countChip) NoticeRow(if (PageList.showLabel(pages)) { { PageLabelButton(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true } } } else null, chips = chips)
-                    else PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true }
+                ContentWidthBox(chromeContent) {
+                    if (titleBar != null) {
+                        if (countChip) NoticeRow(null, chips = chips)
+                        TitleBarRow(titleBar, pages, pager.settledPage, enabled = drag.dragged == null, labelBackdrop = backdrop, onFit = { titleFit = it }) { pageList = true }
+                    } else {
+                        LaunchedEffect(Unit) { titleFit = null }
+                        if (countChip) NoticeRow(if (PageList.showLabel(pages)) { { PageLabelButton(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true } } } else null, chips = chips)
+                        else PageLabel(pages, pager.settledPage, enabled = drag.dragged == null, backdrop = backdrop) { pageList = true }
+                    }
                 }
                 val listPages = stringResource(R.string.pages_action)
                 val openAppList = stringResource(R.string.a11y_open_drawer)
@@ -388,7 +414,7 @@ fun HomeScreen(vm: HomeViewModel) {
                         live = ConsentUi.live(ui.load.config, consentReport, it.id),
                         onWidgetLong = { s -> widgetSheet = s }, onPermissions = { id -> detailFor = id }) }
                 }
-                if (pages.size > 1) PageDots(pages.size, pager.settledPage)
+                if (pages.size > 1) ContentWidthBox(chromeContent) { PageDots(pages.size, pager.settledPage) }
                 // ux.md §1.3: page label → page list → jump. Nothing is written.
                 if (pageList) PageListSheet(PageList.rows(pages, pager.settledPage), onPick = { i ->
                     pageList = false
@@ -397,31 +423,34 @@ fun HomeScreen(vm: HomeViewModel) {
                 }
                 if (!railHead) BottomDock(
                     ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y,
-                    contentWidthDp = chromeWidth.takeIf { widthClass != HomeGeometry.WidthClass.Compact },
+                    contentWidthDp = chromeContent,
                 )
-                ui.load.merge?.let { m ->
-                    MergeSnackbar(m, onUndo = { vm.store.undoMerge() }.takeIf { m.undo && ui.load.mergeUndo },
-                        onDismiss = { vm.store.engine.dismissMergeUndo() })
-                }
-                if (agentSnack) AgentDocsSnackbar { agentSnack = false }
-                changedSnack?.let { t ->
-                    // #142: Allow was refused because the card changed while the sheet was open. Polite live region (TalkBack).
-                    LaunchedEffect(t) { kotlinx.coroutines.delay(SHORT_SNACK_MS); if (changedSnack == t) changedSnack = null }
-                    // Over the review list or detail page when one is open (they're full-screen dialogs), else here.
-                    if (!reviewOpen && detailFor == null) Snackbar(Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite }) { Text(t) }
-                }
-                consentSnacks.forHome(detailFor, reviewOpen)?.let { ConsentSnackbar(it, consentSnacks::undo, Modifier.padding(8.dp)) }
-                undoSnack?.let { u ->
-                    UndoSnackbar(u, onUndo = {
-                        undoSnack = null
-                        // Restore only fails when home has no room left; say so instead of doing nothing (Grace, #70).
-                        val cfg = vm.store.engine.state.value.config
-                        val undo = u.undo
-                        when {
-                            undo !is Edit.Restore || Edits.apply(cfg, undo).applied -> vm.store.edit(undo)
-                            cfg.allItems().none { it.id == undo.item.id } -> toast(res.getString(R.string.undo_no_room, u.label))
-                        }
-                    }, onDismiss = { if (undoSnack == u) undoSnack = null })
+                // §1.5: snackbars sit at the bottom of the page column (content-width on Medium/Expanded).
+                ContentWidthBox(chromeContent) {
+                    ui.load.merge?.let { m ->
+                        MergeSnackbar(m, onUndo = { vm.store.undoMerge() }.takeIf { m.undo && ui.load.mergeUndo },
+                            onDismiss = { vm.store.engine.dismissMergeUndo() })
+                    }
+                    if (agentSnack) AgentDocsSnackbar { agentSnack = false }
+                    changedSnack?.let { t ->
+                        // #142: Allow was refused because the card changed while the sheet was open. Polite live region (TalkBack).
+                        LaunchedEffect(t) { kotlinx.coroutines.delay(SHORT_SNACK_MS); if (changedSnack == t) changedSnack = null }
+                        // Over the review list or detail page when one is open (they're full-screen dialogs), else here.
+                        if (!reviewOpen && detailFor == null) Snackbar(Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite }) { Text(t) }
+                    }
+                    consentSnacks.forHome(detailFor, reviewOpen)?.let { ConsentSnackbar(it, consentSnacks::undo, Modifier.padding(8.dp)) }
+                    undoSnack?.let { u ->
+                        UndoSnackbar(u, onUndo = {
+                            undoSnack = null
+                            // Restore only fails when home has no room left; say so instead of doing nothing (Grace, #70).
+                            val cfg = vm.store.engine.state.value.config
+                            val undo = u.undo
+                            when {
+                                undo !is Edit.Restore || Edits.apply(cfg, undo).applied -> vm.store.edit(undo)
+                                cfg.allItems().none { it.id == undo.item.id } -> toast(res.getString(R.string.undo_no_room, u.label))
+                            }
+                        }, onDismiss = { if (undoSnack == u) undoSnack = null })
+                    }
                 }
             }
             } // HomeBody
@@ -436,14 +465,17 @@ fun HomeScreen(vm: HomeViewModel) {
                     val dotSaid = stringResource(R.string.menu_dot_a11y)
                     DockRail(
                         ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y,
-                        headLabelWidthDp = 72f,
+                        headLabelWidthDp = headLabelWidthDp,
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             if (editing) {
-                                WallpaperTextButton(leaveEdit, backdrop) { Text(stringResource(R.string.done)) }
+                                // Never clip/ellipsize/hide Apps/Done — the rail grows to fit (§1.5).
+                                WallpaperTextButton(leaveEdit, backdrop) {
+                                    Text(stringResource(R.string.done), maxLines = 1, softWrap = false, overflow = TextOverflow.Visible)
+                                }
                             } else {
                                 WallpaperTextButton({ drawerOpen = true }, backdrop, Modifier.semantics { onClick(label = hint) { drawerOpen = true; true } }) {
-                                    Text(stringResource(R.string.apps))
+                                    Text(stringResource(R.string.apps), maxLines = 1, softWrap = false, overflow = TextOverflow.Visible)
                                 }
                             }
                             Box {

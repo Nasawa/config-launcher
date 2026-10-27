@@ -41,6 +41,17 @@ object HomeGeometry {
     const val RAIL_ASPECT = 1.4f
     const val HEIGHT_COMPACT_DP = 480f
     const val RAIL_WIDTH_DP = 80f
+    /**
+     * Horizontal pad around a measured Apps/Done label when sizing the rail (§1.5): TextButton
+     * content padding (12 dp × 2). The rail Column's own 4 dp inset is inside this width.
+     */
+    const val RAIL_HEAD_PAD_DP = 24f
+    /**
+     * Advisory chrome above/below the grid on t7-land for L4 pitch math only (title + dots, no
+     * banner / top row / bottom dock). Runtime measures real height; this must never feed
+     * [TitleBarLayout.fitWarning] / `warn_titlebar_fit` (Q-A12).
+     */
+    const val T7_LAND_CHROME_ESTIMATE_DP = 175f
     const val RAIL_SLOT_DP = 64f
     const val RAIL_SLOT_MIN_DP = 48f
     /** Icon inside a shrunk 48 dp rail slot (§12 touch-target floor). */
@@ -67,6 +78,14 @@ object HomeGeometry {
         if (widthDp <= 0f || heightDp <= 0f) return false
         return heightDp < HEIGHT_COMPACT_DP || widthDp / heightDp >= RAIL_ASPECT
     }
+
+    /**
+     * Rail width from a measured Apps/Done label (§1.5): `max(80, measured + horizontal pad)`.
+     * Never clip, ellipsize or hide the label — grow the rail instead. Pass the wider of Apps and
+     * Done (and backdrop pad when the scrim is on) at the current font scale and locale.
+     */
+    fun railWidthDp(headLabelWidthDp: Float): Float =
+        maxOf(RAIL_WIDTH_DP, headLabelWidthDp + RAIL_HEAD_PAD_DP)
 
     /**
      * Chrome content width on Medium/Expanded (§1.5): wider of [blockW] and 576 dp, capped to [pageAreaW].
@@ -155,9 +174,10 @@ object HomeGeometry {
 
     /**
      * Expected t7-land (960 × 600) row pitch once the rail and the top-row reclaim land (§1.5 / L4).
-     * [chromeAboveBelowDp] is banner + notice/title + page-dots height in the page column (no top row, no bottom dock).
+     * [chromeAboveBelowDp] defaults to [T7_LAND_CHROME_ESTIMATE_DP] — harness / advisory only.
+     * Does not write `warn_titlebar_fit`; runtime layout measures the real page-column height.
      */
-    fun t7LandPitchH(chromeAboveBelowDp: Float = 175f): Float {
+    fun t7LandPitchH(chromeAboveBelowDp: Float = T7_LAND_CHROME_ESTIMATE_DP): Float {
         // 960 × 600, rail 80 → page column 880 wide; height 600 − chrome for the grid.
         val availW = 960f - RAIL_WIDTH_DP
         val availH = (600f - chromeAboveBelowDp).coerceAtLeast(0f)

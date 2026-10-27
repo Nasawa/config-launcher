@@ -48,7 +48,7 @@ internal fun DockRail(
     head: @Composable () -> Unit,
 ) {
     val res = androidx.compose.ui.platform.LocalResources.current
-    val widthDp = maxOf(HomeGeometry.RAIL_WIDTH_DP, headLabelWidthDp + 24f)
+    val widthDp = HomeGeometry.railWidthDp(headLabelWidthDp)
     val scroll = rememberScrollState()
     Column(
         Modifier
@@ -136,6 +136,26 @@ private fun BoxWithRailSlots(
 }
 
 /**
+ * Centres [content] at [contentWidthDp] inside the parent on Medium/Expanded (§1.5).
+ * Pass the page-column width into [HomeGeometry.contentWidthDp] (window minus the rail), not the
+ * raw window width. Compact callers pass null and get a full-width child.
+ */
+@Composable
+internal fun ContentWidthBox(
+    contentWidthDp: Float?,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    if (contentWidthDp != null && contentWidthDp > 0f) {
+        Box(modifier.fillMaxWidth().testTag("contentWidth"), contentAlignment = Alignment.Center) {
+            Box(Modifier.width(contentWidthDp.dp).testTag("contentWidthInner")) { content() }
+        }
+    } else {
+        Box(modifier.fillMaxWidth()) { content() }
+    }
+}
+
+/**
  * Bottom dock at the content width on Medium/Expanded (§1.5); full width on Compact.
  * Keeps the existing [Dock] look; centres when [contentWidthDp] is below the parent width.
  */
@@ -149,13 +169,7 @@ internal fun BottomDock(
     a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>,
     contentWidthDp: Float? = null,
 ) {
-    if (contentWidthDp != null && contentWidthDp > 0f) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Box(Modifier.width(contentWidthDp.dp)) {
-                Dock(items, apps, drag, onOpen, onLong, a11y)
-            }
-        }
-    } else {
+    ContentWidthBox(contentWidthDp) {
         Dock(items, apps, drag, onOpen, onLong, a11y)
     }
 }
