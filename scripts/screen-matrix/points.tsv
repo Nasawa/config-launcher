@@ -35,12 +35,14 @@ bound-600-v1	tablets	600x800	160	0	1.0	no	launcher.json	large	L12 Medium boundar
 bound-839-v1	tablets	839x600	160	0	1.0	no	launcher.json	large	L12 Medium/Expanded boundary 839 dp width
 bound-840-v1	tablets	840x600	160	0	1.0	no	launcher.json	large	L12 Expanded boundary 840 dp width
 phone-land-v1	phones	800x360	160	0	1.0	no	launcher.json	phone	L12 phone landscape 800×360 dp (rail, labels whole/hidden)
-rtl-t7-land-v1	tablets	1200x1920	320	1	1.0	no	launcher.json	large	L12 RTL simulated 7-inch tablet landscape (rtl; rail on start once L5 lands)
+rtl-t7-land-v1	tablets	1200x1920	320	1	1.0	no	launcher.json	large	L12 RTL simulated 7-inch tablet landscape (rtl; rail on the end edge = left in RTL, #187)
 dock7-t7-land-v1	tablets	1200x1920	320	1	1.0	no	dock7.json	large	L6 dock7 on t7-land
 dock7-t7-port-v1	tablets	1200x1920	320	0	1.0	no	dock7.json	large	L6 dock7 on t7-port
 dock7-phone-land-v1	phones	800x360	160	0	1.0	no	dock7.json	phone	L6 dock7 on phone landscape
 cards-t10-land-v1	tablets	1600x2560	320	1	1.0	no	cards-large.json	large	L13 cards-large on t10-land
-rtl-phone-land-v1	phones	800x360	160	0	1.0	no	launcher.json	phone	L12 RTL phone landscape (rtl; rail on start/left once L5 lands)
+rtl-phone-land-v1	phones	800x360	160	0	1.0	no	launcher.json	phone	L12 RTL phone landscape (rtl; rail on the end edge = left in RTL, #187)
+rtl-phone-port-v1	phones	1080x2400	420	0	1.0	no	launcher.json	phone	L12 RTL A51 portrait (rtl; bottom dock, dock[0] at the right, #187 / PR #210)
+rtl-t7-port-v1	tablets	1200x1920	320	0	1.0	no	launcher.json	large	L12 RTL simulated 7-inch tablet portrait (rtl; bottom dock, dock[0] at the right, #187 / PR #210)
 t7-land-v3	tablets	1200x1920	320	1	2.0	no	launcher.json	large	#201 font 2.0 on t7-land (rail width / labels)
 phone-land-v3	phones	800x360	160	0	2.0	no	launcher.json	phone	#201 font 2.0 on phone-land
 t7-land-longlabel-v1	tablets	1200x1920	320	1	1.0	no	launcher.json	large	#201 long-label locale (longlabel/de) on t7-land

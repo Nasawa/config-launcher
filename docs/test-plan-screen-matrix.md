@@ -156,6 +156,9 @@ lands. Under `dev8` they block. F1 (crashes/ANRs) always blocks.
 **Blocks dev8 only** (advisory under dev7):
 - L1–L5 and L7 on large-tier points (tablets, fold; see §4.1). L6/L8/L10/L12/L13 automated per #197; L9 needs Sprite (WindowInfoTracker); L11 deferred to dev9.
 - G1–G3 on tablets, landscape and the fold (Q2 resolved by #185 / ux.md §1.5).
+- **R1** (grid column order follows the layout direction: RTL mirrors, LTR doesn't; #187 / #210) at every point
+  that seeds `launcher.json`, phones included. It's gated exactly like L*: advisory under dev7, blocking under
+  dev8, and advisory at font 2.0. See §4.2.
 - **Manual edge drag-and-drop** (stable host only — hardware-accelerated emulator or a real device; software rendering hits SystemUI ANRs that limited the #194 review). Short checklist, not a matrix shard:
 
   | Size | Orientations |
@@ -184,6 +187,14 @@ so dev7 can't be tagged with the ladder broken.
 Source of truth is **#197** (`docs/l-check-rulings`) updating docs/test-plan.md §20 and docs/ux.md §1.5. Severity
 follows the dev7/dev8 switch above. L14/L15 stay out of this pass (L15 ≈ G1 on `s360-mdpi-v2` after 56 dp icons).
 L5 is **advisory until the end-edge rail PR** lands (#197).
+
+### 4.2 R1: RTL grid order (#187 / #210 / #211)
+
+| ID | Spec | Probe | Pass | Severity | Points | Status |
+|---|---|---|---|---|---|---|
+| R1 | ux.md §1.5 RTL; #187 | `home1.xml` row-0 fixture tiles (`launcher.json`: QA Settings x=0 … Wide WWWW x=3), sorted by physical x | LTR: x=0 leftmost; RTL (`ar-*` locale or `rtl` shape, X4 confirms it applied): x=0 **rightmost**. Needs ≥ 2 row-0 tiles found, else SKIP | advisory→block at dev8 (same as L*; advisory at font 2.0) | every `launcher.json` point; `rtl-*` points are the real test | **auto** |
+
+L2/L3 map physical columns to logical ones under RTL, so a correctly mirrored grid passes them (#211).
 
 | ID | Source | Measured | Threshold / pass | Severity | Points | Auto? |
 |---|---|---|---|---|---|---|

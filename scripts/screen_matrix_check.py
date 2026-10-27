@@ -495,7 +495,7 @@ def pitch_of(tile_nodes, s):
     return pitchW, pitchH, block_left, block_top
 
 
-def pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture_name):
+def pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture_name, rtl=False):
     """pitch_of, refined with fixture (col,row) anchors so a single occupied icon row
     at y=4 does not collapse to row 0, and L3 can span fixture grid.columns (#205).
 
@@ -530,7 +530,9 @@ def pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture_name):
         key = (lab.text if lab else '') or (n.desc or '').split(',')[0]
         exp = next((it for it in items if it[0] and key.startswith(it[0][:12])), None)
         if exp is not None and exp[3] == 1:
-            col_anchors.append((float(n.cx), exp[1]))
+            # RTL (#187 / PR #210): fixture column x sits at physical column cols-1-x.
+            pc = (cols_fx - 1 - exp[1]) if (rtl and cols_fx) else exp[1]
+            col_anchors.append((float(n.cx), pc))
 
     # pitchH / block_top from distinct fixture rows (#205: icons alone at y=4).
     if len({r for _, r in row_anchors}) >= 2:
@@ -689,9 +691,9 @@ def severity(cid, m):
         return 'advisory'
     if fs >= 1.95:
         return 'advisory'
-    # L1–L13 (test-plan §20) and large-screen G1–G3: advisory through dev7, blocking from dev8
-    # (ux.md §1.5; #185). Crashes/ANRs stay blocking via F1 above.
-    if cid.startswith('L') or (tier != 'phone' and cid.startswith('G')):
+    # L1–L13 (test-plan §20), R1 (RTL grid order, #187 / #211) and large-screen G1–G3: advisory
+    # through dev7, blocking from dev8 (ux.md §1.5; #185). Crashes/ANRs stay blocking via F1 above.
+    if cid.startswith('L') or cid == 'R1' or (tier != 'phone' and cid.startswith('G')):
         return 'block' if gate_of(m) == 'dev8' else 'advisory'
     return 'block'
 
@@ -965,9 +967,9 @@ def run_checks(d):
 
     # F6 Pages switch
     pg = load(os.path.join(d, 'pages.xml')); h2 = home['home2']
-    ok6 = None if (pg is None or h2 is None) else pg is not None and find(pg, 'desc', r'page 2 of 2') is not None and h2 is not None and find(h2, 'desc', r'^Second, Pages$') is not None
+    ok6 = None if (pg is None or h2 is None) else pg is not None and find(pg, 'desc', r'page [2٢] of [2٢]') is not None and h2 is not None and find(h2, 'desc', r'^Second, Pages$') is not None
     add('F6', 'Pages list opens from the {page} slot and switches to page 2', ok6,
-        f"pages list {'ok' if pg is not None and find(pg, 'desc', 'page 2 of 2') else 'missing'}, page 2 {'ok' if h2 is not None and find(h2, 'desc', '^Second, Pages$') else 'missing'}",
+        f"pages list {'ok' if pg is not None and find(pg, 'desc', r'page [2٢] of [2٢]') else 'missing'}, page 2 {'ok' if h2 is not None and find(h2, 'desc', '^Second, Pages$') else 'missing'}",
         'ux.md §1.3; §15 #78 tap target')
 
     # F7 warnings list; T3 exactly once
@@ -1239,6 +1241,35 @@ def run_checks(d):
                 add('G5b', 'Collapsed chip in the notice row (no overlay on the grid)', ok5, f'{det}; over grid {over[:3]}',
                     'ux.md §6.1 Notice row (#173 L1; title bar: #183), §17.4 Count chip')
 
+    # R1 (#187 / PR #210): grid columns mirror in RTL. Fixture launcher.json row 0 is QA Settings (x=0) …
+    # Wide WWWW (x=3); RTL wants x=0 physically rightmost, LTR leftmost. Gated like L*: advisory at dev7,
+    # blocking at dev8 (severity()).
+    if (m.get('fixture') or '') == 'launcher.json' and home.get('home1'):
+        _row0 = ['QA Settings', 'A very long label that must ellipsize', 'Missing', 'Wide WWWW']
+        _n1 = home['home1']
+        _cx = {}
+        for _lab in _row0:
+            _hit = next((n for n in _n1 if (n.text or n.desc) == _lab and n.w > 0), None)
+            if _hit is not None:
+                _cx[_lab] = _hit.cx
+        _loc = (m.get('locale') or '').lower()
+        _rtl = 'rtl' in (m.get('shape') or '').lower() or _loc.startswith('ar')
+        if len(_cx) >= 2:
+            _phys = [k for k, _ in sorted(_cx.items(), key=lambda t: t[1])]
+            _want = [k for k in _row0 if k in _cx]
+            if _rtl:
+                _want = list(reversed(_want))
+            if x4_rtl_failed:
+                add('R1', 'Grid column order follows layout direction (RTL mirrors)', None,
+                    'skipped: harness X4 RTL not applied', 'ux.md §1.5 RTL; #187')
+            else:
+                add('R1', 'Grid column order follows layout direction (RTL mirrors)', _phys == _want,
+                    f'rtl={_rtl}; row 0 left→right {[_k[:12] for _k in _phys]}; want {[_k[:12] for _k in _want]}',
+                    'ux.md §1.5 RTL; #187 / PR #210')
+        else:
+            add('R1', 'Grid column order follows layout direction (RTL mirrors)', None,
+                f'row-0 fixture tiles not found ({len(_cx)})', 'ux.md §1.5 RTL; #187')
+
     # ---------------------------------------------------------------- L1–L13 (ux.md §1.5 / test-plan §20 / #197)
     # L1–L5/L7 on large-tier (and phone-landscape for L5/L12). L6/L13 when their fixtures are seeded.
     # L8/L9/L10/L11 live in androidTest / JVM unit tests. Severity flips with gate=dev8 (see severity()).
@@ -1251,7 +1282,10 @@ def run_checks(d):
         pairs, labels_l, dock = grid_tiles(nodes, tb, (W or 1, H or 1), s)
         tile_nodes = [n for n, _ in pairs]
         _labels_g, _tiles_g, _dock_g, card_nodes, _region = grid_parts(nodes, tb, (W or 1, H or 1))
-        pitch5 = pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture) if (tile_nodes or card_nodes) else None
+        # Layout direction for the L checks: mirrored only when RTL was requested and X4 saw it applied.
+        rtl_lay = bool(need_rtl) and not x4_rtl_failed
+        pitch5 = (pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture, rtl=rtl_lay)
+                  if (tile_nodes or card_nodes) else None)
         pitch = pitch5[:4] if pitch5 else None
         grid_columns = pitch5[4] if pitch5 else None
         width_dp = (W / s) if W and s else 0
@@ -1291,11 +1325,13 @@ def run_checks(d):
                 if exp is None:
                     continue
                 col = int((n.cx - block_left) // max(pitchW * s, 1))
+                if rtl_lay and grid_columns:
+                    col = grid_columns - 1 - col      # physical → logical column in RTL
                 row = int((n.cy - block_top) // max(pitchH * s, 1))
                 if col != exp[1] or row != exp[2]:
                     bad.append(f'{exp[0][:20]} got ({col},{row}) want ({exp[1]},{exp[2]})')
             add('L2', 'Positions are exact (column x, row y)', not bad,
-                f'pitch {pitchW:.0f}×{pitchH:.0f} dp; mismatches {bad[:4] or "none"}',
+                f'pitch {pitchW:.0f}×{pitchH:.0f} dp; rtl={rtl_lay}; mismatches {bad[:4] or "none"}',
                 'ux.md §1.5; test-plan §20 L2')
 
         # L3: cap and centring on Medium/Expanded (width ≥ 600 dp) — #197 / test-plan §20 L3
@@ -1549,7 +1585,7 @@ def run_checks(d):
                     'not captured (needs home2 then a reverse-rotate dump)',
                     'ux.md §1.5 "same page stays shown, by page id"; test-plan §20 L7')
         else:
-            still = any(re.search(r'^Second,|, page 2 of 2', n.desc) or n.text == 'Second'
+            still = any(re.search(r'^Second,|, page [2٢] of [2٢]', n.desc) or n.text == 'Second'
                         for n in h2r)
             add('L7', 'Page continuity after rotate (still page 2)', still,
                 f'Second/page 2 visible after rotate: {still}',
@@ -1663,6 +1699,10 @@ def verdict_of(m, res):
     if any(r['status'] == 'FAIL' and r['severity'] == 'block' for r in res):
         return 'FAIL'
     if m.get('partial') != 'yes' and any(r['status'] == 'SKIP' and r['severity'] == 'block' for r in res):
+        return 'INCOMPLETE'
+    # Seed never showed (X3): the driver marks partial=yes and skips F3–F7/G/L, so a PASS would only mean
+    # "nothing ran". Report it as INCOMPLETE so a shard can't go green on an untested point.
+    if m.get('seed_ok') == '0':
         return 'INCOMPLETE'
     return 'PASS'
 
