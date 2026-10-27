@@ -16,6 +16,7 @@ blocking under gate=dev8. See the "dev7 / dev8 gate" section of docs/test-plan-s
 """
 import json, os, re, sys
 import xml.etree.ElementTree as ET
+import math
 
 PKG = 'dev.nasawa.configlauncher'
 CLOCK_RE = re.compile(r'^\d{1,2}:\d{2}( ?[AaPp]\.?[Mm]\.?)?$')
@@ -1420,14 +1421,25 @@ def run_checks(d):
                 add('L13', 'Cards (cards-large): k ≤ 1.5, no stretch', None,
                     'no card/widget nodes in dump', 'test-plan §20 L13 (#197)')
             else:
-                # k = clamp(cell/80, 0.85, 1.5); on-screen card side should not exceed 1.5 × span × 80 dp
-                # without a known pitch, use tile pitch when present else 80.
+                # k = clamp(cell/80, 0.85, 1.5); on-screen card side should not exceed 1.5 × span × 80 dp.
+                # Prefer fixture-known spans (cards-large: Two By Two / Four By One). Else ceil(size/pitch)
+                # — round() under-spans when the product centres a k≤1.5-capped host inside a larger pitch
+                # cell (Four By One 476 dp / pitch 144 → round→3 → false 360 cap).
+                known = {
+                    'two by two': (2, 2),
+                    'four by one': (4, 1),
+                }
                 ref = (pitch[0] if pitch else 80.0)
+                ref_h = (pitch[1] if pitch else ref)
                 bad = []
                 for n in cards_n:
-                    # span guess from size / pitch
-                    span_w = max(1, round((n.w / s) / max(ref, 1)))
-                    span_h = max(1, round((n.h / s) / max((pitch[1] if pitch else ref), 1)))
+                    desc_l = (n.desc or '').lower()
+                    span = next((wh for key, wh in known.items() if desc_l.startswith(key)), None)
+                    if span:
+                        span_w, span_h = span
+                    else:
+                        span_w = max(1, math.ceil((n.w / s) / max(ref, 1) - 1e-6))
+                        span_h = max(1, math.ceil((n.h / s) / max(ref_h, 1) - 1e-6))
                     max_w = 1.5 * 80 * span_w
                     max_h = 1.5 * 80 * span_h
                     if (n.w / s) > max_w + 2 or (n.h / s) > max_h + 2:
