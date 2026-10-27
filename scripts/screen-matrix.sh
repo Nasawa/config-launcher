@@ -277,6 +277,13 @@ run_point() {
       break
     fi
     echo "seed: home not ready on attempt $seed_attempt" >> "$d/run.txt"
+    # System dialog over home (seen on CI after RTL points: "System UI keeps stopping"). Not the launcher
+    # process; keep the crash buffer as evidence, close the dialog and reseed.
+    if grep -qE 'keeps stopping|isn.t responding' "$d/home1.xml" 2>/dev/null; then
+      echo "seed: system dialog over home on attempt $seed_attempt" >> "$d/run.txt"
+      sh_ logcat -b crash -d > "$d/sys-crash-$seed_attempt.txt" 2>&1 || true
+      tap "$d/home1.xml" text '^(Close app|Close|OK|Wait)$' && pause 3
+    fi
     # First-run recovery: dismiss via Skip (confirm sheet) so next clear+reseed is clean; do not treat as product.
     if grep -q 'Choose your config folder' "$d/home1.xml" 2>/dev/null; then
       echo "seed: first-run screen on attempt $seed_attempt" >> "$d/run.txt"

@@ -1692,6 +1692,10 @@ def verdict_of(m, res):
         return 'FAIL'
     if m.get('partial') != 'yes' and any(r['status'] == 'SKIP' and r['severity'] == 'block' for r in res):
         return 'INCOMPLETE'
+    # Seed never showed (X3): the driver marks partial=yes and skips F3–F7/G/L, so a PASS would only mean
+    # "nothing ran". Report it as INCOMPLETE so a shard can't go green on an untested point.
+    if m.get('seed_ok') == '0':
+        return 'INCOMPLETE'
     return 'PASS'
 
 
