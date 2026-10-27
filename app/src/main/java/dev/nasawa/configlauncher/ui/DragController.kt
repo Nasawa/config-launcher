@@ -41,6 +41,8 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
     var gridRect = Rect.Zero
     var dockRect = Rect.Zero
     var dockCount = 0
+    /** True when the dock is the §1.5 end-edge rail (drop index follows Y). */
+    var dockVertical = false
     var grid = Grid()
     var currentPageId: String? = null
 
@@ -63,7 +65,13 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
         val e: Edit? = when {
             dockRect.contains(c) -> {
                 val slots = dockCount + 1
-                val index = ((c.x - dockRect.left) / dockRect.width * slots).toInt().coerceIn(0, dockCount)
+                val index = if (dockVertical) {
+                    if (dockRect.height <= 0f) 0
+                    else ((c.y - dockRect.top) / dockRect.height * slots).toInt().coerceIn(0, dockCount)
+                } else {
+                    if (dockRect.width <= 0f) 0
+                    else ((c.x - dockRect.left) / dockRect.width * slots).toInt().coerceIn(0, dockCount)
+                }
                 Edit.MoveToDock(item.item.id, index)
             }
             gridRect.contains(c) && currentPageId != null -> {

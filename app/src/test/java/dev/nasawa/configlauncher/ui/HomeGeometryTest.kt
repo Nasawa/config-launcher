@@ -90,4 +90,14 @@ class HomeGeometryTest {
         assertEquals(56, TileLabel.ICON_DP)
         assertEquals(48, HomeGeometry.ICON_FALLBACK_DP)
     }
+
+    @Test fun aspectFloorAtNonIntegerDensity() {
+        // #197 L3: W derived from H in px with floor; +1 px slack allowed on the check.
+        val d = 3.5f
+        val p = HomeGeometry.pitch(880f, 400f, 4, 5, HomeGeometry.WidthClass.Expanded, d)
+        val wPx = p.pitchW * d
+        val hPx = p.pitchH * d
+        assertTrue(wPx <= 1.25f * hPx + 1f)
+        assertTrue(hPx <= 1.5f * wPx + 1f)
+    }
 }

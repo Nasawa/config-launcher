@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.semantics.Role
 import android.widget.Toast
@@ -185,7 +186,7 @@ fun HomeScreen(vm: HomeViewModel) {
     }
     // Merge results use the in-app snackbar (ux.md §9.1); other one-shot notices are toasts.
     val res = androidx.compose.ui.platform.LocalResources.current
-    // §1.4: the part of the system-gesture inset not already covered by systemBarsPadding.
+    // §1.4: the part of the system-gesture inset not already covered by safeDrawing padding.
     val density = androidx.compose.ui.platform.LocalDensity.current
     val gestureBottomPx = (WindowInsets.systemGestures.getBottom(density) - WindowInsets.navigationBars.getBottom(density)).coerceAtLeast(0).toFloat()
     LaunchedEffect(ui.load.notice) { ui.load.notice?.let { Toast.makeText(ctx, it.resolve(res), Toast.LENGTH_LONG).show(); vm.store.engine.consumeNotice() } }
@@ -249,14 +250,29 @@ fun HomeScreen(vm: HomeViewModel) {
     LaunchedEffect(editing, ui.load.config) { if (editing) { kotlinx.coroutines.delay(30_000); if (drag.dragged == null) editing = false } }
     androidx.activity.compose.BackHandler(editing) { editing = false }
 
+    val winConfig = androidx.compose.ui.platform.LocalConfiguration.current
+    val winW = winConfig.screenWidthDp.toFloat()
+    val winH = winConfig.screenHeightDp.toFloat()
+    val useRail = HomeGeometry.useRail(winW, winH)
+    val widthClass = HomeGeometry.widthClass(winW)
+    drag.dockVertical = useRail
+    // Medium/Expanded chrome width (§1.5): wider of a 4×144 block and 576, capped to the window.
+    val chromeWidth = HomeGeometry.contentWidthDp(winW, minOf(winW, 4 * HomeGeometry.CAP_WIDTH_DP), widthClass)
+
     HomeThemed(themeDark) {
         // Transparent over the system wallpaper (theme windowShowWallpaper, #58).
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
-            Column(Modifier.fillMaxSize().systemBarsPadding().swipeUpToOpen(
+            val rootMod = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).swipeUpToOpen(
                 // §1.4: off in edit mode and while dragging; the bottom system-gesture strip belongs to the system.
-                { !editing && drag.dragged == null && !drawerOpen }, { gestureBottomPx }) { drawerOpen = true }) {
+                // Insets are safeDrawing (§1.5); the gesture strip is still nav-bar-relative.
+                { !editing && drag.dragged == null && !drawerOpen }, { gestureBottomPx }) { drawerOpen = true }
+            // Local body so the rail Row and the bottom-dock Column share the same chrome.
+            @Composable
+            fun HomeBody(mod: Modifier, railHead: Boolean) {
+            Column(mod) {
                 // #75: the edit bar takes the top row's place at the same height, so the grid doesn't jump under the finger.
-                Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
+                // §1.5 rail: Apps/Done and ⋮ move onto the rail head; the source note and "Editing layout" are omitted.
+                if (!railHead) Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
                 if (editing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     // #182: on the wallpaper like Done, so white with the label shadow (and the scrim with Label backdrop on).
                     Box(Modifier.weight(1f)) { WallpaperText(stringResource(R.string.editing_layout), backdrop) }
@@ -379,7 +395,10 @@ fun HomeScreen(vm: HomeViewModel) {
                     if (i != pager.settledPage) scope.launch { if (ReducedMotion.on(ctx)) pager.scrollToPage(i) else pager.animateScrollToPage(i) }
                 }, onDismiss = { pageList = false })
                 }
-                Dock(ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y)
+                if (!railHead) BottomDock(
+                    ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y,
+                    contentWidthDp = chromeWidth.takeIf { widthClass != HomeGeometry.WidthClass.Compact },
+                )
                 ui.load.merge?.let { m ->
                     MergeSnackbar(m, onUndo = { vm.store.undoMerge() }.takeIf { m.undo && ui.load.mergeUndo },
                         onDismiss = { vm.store.engine.dismissMergeUndo() })
@@ -404,6 +423,78 @@ fun HomeScreen(vm: HomeViewModel) {
                         }
                     }, onDismiss = { if (undoSnack == u) undoSnack = null })
                 }
+            }
+            } // HomeBody
+
+            if (useRail) {
+                Row(rootMod) {
+                    HomeBody(
+                        Modifier.weight(1f).fillMaxHeight().semantics { traversalIndex = 1f },
+                        railHead = true,
+                    )
+                    val hint = stringResource(R.string.a11y_open_drawer_hint)
+                    val dotSaid = stringResource(R.string.menu_dot_a11y)
+                    DockRail(
+                        ui.layout.dock, vm.apps, drag, onOpen, onLong, a11y,
+                        headLabelWidthDp = 72f,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            if (editing) {
+                                WallpaperTextButton(leaveEdit, backdrop) { Text(stringResource(R.string.done)) }
+                            } else {
+                                WallpaperTextButton({ drawerOpen = true }, backdrop, Modifier.semantics { onClick(label = hint) { drawerOpen = true; true } }) {
+                                    Text(stringResource(R.string.apps))
+                                }
+                            }
+                            Box {
+                                WallpaperTextButton({ menuOpen = true }, backdrop) {
+                                    BadgedBox(badge = { if (reviewCount > 0) Badge(Modifier.semantics { contentDescription = dotSaid }) }) { Text("⋮") }
+                                }
+                                // Menu items live on the top-row DropdownMenu when !useRail; with a rail the same
+                                // menuOpen state is driven from here, so mirror the items.
+                                DropdownMenu(menuOpen, { menuOpen = false }) {
+                                    if (TitleBarEdits.state(ui.load.config) != TitleBarEdits.State.Unavailable)
+                                        DropdownMenuItem({ Text(stringResource(R.string.titlebar_title)) }, { menuOpen = false; titleBarSheet = true })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_config_folder)) }, { menuOpen = false; folderInfo = vm.store.engine.source.location ?: "" })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_pick_folder)) }, { menuOpen = false; moving = true; pickFolder.launch(null) })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_use_phone_storage)) }, { menuOpen = false; vm.store.useAppStorage() })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_label_backdrop)) }, {
+                                        backdrop = !backdrop; vm.store.prefs.labelBackdrop = backdrop
+                                    }, trailingIcon = { Checkbox(backdrop, null) })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_ask_before_merging)) }, {
+                                        askMerge = !askMerge; vm.store.setAskBeforeMerging(askMerge)
+                                    }, trailingIcon = { Checkbox(askMerge, null) })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_open_keyboard)) }, {
+                                        keyboardOnOpen = !keyboardOnOpen; vm.store.prefs.drawerKeyboard = keyboardOnOpen
+                                    }, trailingIcon = { Checkbox(keyboardOnOpen, null) })
+                                    if (ui.load.reconnectable) {
+                                        val label = stringResource(R.string.menu_include_hidden_apps)
+                                        val spoken = label + ". " + stringResource(R.string.menu_include_hidden_apps_desc)
+                                        DropdownMenuItem({ Text(label) }, {
+                                            includeHidden = !includeHidden; vm.store.setIncludeHiddenApps(includeHidden)
+                                        }, Modifier.semantics {
+                                            contentDescription = spoken
+                                            toggleableState = androidx.compose.ui.state.ToggleableState(includeHidden)
+                                        }, trailingIcon = { Checkbox(includeHidden, null) })
+                                    }
+                                    if (agentAction != null) {
+                                        DropdownMenuItem({ Text(stringResource(R.string.menu_agent_docs)) }, {
+                                            agentDocs = !agentDocs; vm.store.prefs.agentDocs = agentDocs
+                                        }, trailingIcon = { Checkbox(agentDocs, null) })
+                                        DropdownMenuItem({ Text(stringResource(if (agentAction == AgentDocs.MenuAction.ADD) R.string.agent_docs_add else R.string.agent_docs_update)) },
+                                            { menuOpen = false; runAgentUpdate(false) })
+                                    }
+                                    if (consent != null) DropdownMenuItem({ Text(if (reviewCount > 0) pluralStringResource(R.plurals.menu_widgets_review, reviewCount, reviewCount) else stringResource(R.string.review_title)) },
+                                        { menuOpen = false; reviewOpen = true })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_reload)) }, { menuOpen = false; vm.store.pollNow() })
+                                    if (!isHome) DropdownMenuItem({ Text(stringResource(R.string.home_role_button)) }, { menuOpen = false; becomeHome() })
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                HomeBody(rootMod, railHead = false)
             }
         }
 
@@ -729,7 +820,8 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val availW = maxWidth.value
         val availH = maxHeight.value
-        val pitch = HomeGeometry.pitch(availW, availH, grid.columns, rows, widthClass)
+        val densityScale = androidx.compose.ui.platform.LocalDensity.current.density
+        val pitch = HomeGeometry.pitch(availW, availH, grid.columns, rows, widthClass, densityScale)
         val (originX, originY) = HomeGeometry.blockOrigin(availW, availH, pitch)
         // Compact still has the 8.dp grid pad inside the block; ladder uses the cell the tile actually gets.
         val pad = if (pitch.capped) 0f else 16f
