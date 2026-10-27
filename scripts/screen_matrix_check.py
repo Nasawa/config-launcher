@@ -10,8 +10,9 @@ matrix point and decides each check. No adb here, so it can be dry-run against o
   screen_matrix_check.py check <run-dir>                     write result.json + result.md for one point
   screen_matrix_check.py summarize <out-dir>                 merge every */result.json; exit 1 on a blocking FAIL
 
-Severity per check: block (fails the dev7 gate), advisory (reported only) or pending (spec merged in
-#175, advisory until its implementation lands; never blocks). See the "dev7 gate" section of the test plan.
+Severity per check: block (fails the gate), advisory (reported only) or pending (never blocks).
+L1–L13 (ux.md §1.5 / test-plan §20) and G1–G3 on tablet/landscape/fold are advisory under gate=dev7 and
+blocking under gate=dev8. See the "dev7 / dev8 gate" section of docs/test-plan-screen-matrix.md.
 """
 import json, os, re, sys
 import xml.etree.ElementTree as ET
@@ -239,13 +240,94 @@ def meta_of(d):
     return m
 
 
+
+# ---------------------------------------------------------------- §1.5 / test-plan §20 layout helpers
+FIXDIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'screen-matrix')
+
+
+def fixture_items(name):
+    """[(label_or_None, x, y, w, h), ...] for page 0 of a matrix fixture. Empty when the file is missing."""
+    path = os.path.join(FIXDIR, name or 'launcher.json')
+    try:
+        data = json.load(open(path, encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return []
+    out = []
+    for it in (data.get('pages') or [{}])[0].get('items') or []:
+        out.append((it.get('label') or it.get('package') or '',
+                    int(it.get('x', 0)), int(it.get('y', 0)),
+                    int(it.get('w', 1) or 1), int(it.get('h', 1) or 1)))
+    return out
+
+
+def grid_tiles(nodes, tb, screen, s):
+    """Clickable home-grid tiles with an optional nearby label (for L2). Excludes the dock and header."""
+    labels, tiles, dock, cards, (top, bottom) = grid_parts(nodes, tb, screen)
+    dock_set = set(id(n) for n in dock)
+    out = []
+    for n in tiles:
+        if id(n) in dock_set:
+            continue
+        if n.text in HEADER_TEXTS or (n.desc or '').endswith(', dock'):
+            continue
+        near = next((lab for lab in labels
+                     if abs(lab.cx - n.cx) <= max(n.w, 1) and lab.b[1] >= n.b[1] - 4 and lab.b[1] <= n.b[3] + int(48 * s)),
+                    None)
+        out.append((n, near))
+    return out, labels, dock
+
+
+def pitch_of(tile_nodes, s):
+    """(pitchW_dp, pitchH_dp, block_left_px, block_top_px) from tile centres, or None."""
+    if len(tile_nodes) < 1:
+        return None
+    xs = sorted({n.cx for n in tile_nodes})
+    ys = sorted({n.cy for n in tile_nodes})
+    if len(xs) >= 2:
+        gaps = [xs[i + 1] - xs[i] for i in range(len(xs) - 1)]
+        pitchW = sorted(gaps)[len(gaps) // 2] / s
+    else:
+        pitchW = tile_nodes[0].w / s
+    if len(ys) >= 2:
+        gaps = [ys[i + 1] - ys[i] for i in range(len(ys) - 1)]
+        pitchH = sorted(gaps)[len(gaps) // 2] / s
+    else:
+        pitchH = tile_nodes[0].h / s
+    # block left/top = leftmost/topmost tile centre minus half a pitch
+    block_left = min(xs) - pitchW * s / 2
+    block_top = min(ys) - pitchH * s / 2
+    return pitchW, pitchH, block_left, block_top
+
+
+def dock_is_rail(dock, W, H):
+    """True when the dock sits on an end edge (rail), False when it's a bottom bar, None if no dock."""
+    if not dock:
+        return None
+    # One or more slots: rail if the cluster's centre is on the end 25% and not in the bottom 30%.
+    cx = sum(n.cx for n in dock) / len(dock)
+    cy = sum(n.cy for n in dock) / len(dock)
+    on_end = cx >= W * 0.75 or cx <= W * 0.25
+    on_bottom = cy >= H * 0.70
+    if len(dock) >= 2:
+        xs = [n.cx for n in dock]; ys = [n.cy for n in dock]
+        # stacked vertically → rail; in a row → bottom bar
+        return (max(ys) - min(ys)) > (max(xs) - min(xs))
+    return on_end and not on_bottom
+
+
+def gate_of(m):
+    """dev7 (default) or dev8. Written by the driver from MATRIX_GATE / the workflow `gate` input."""
+    g = (m.get('gate') or 'dev7').strip().lower()
+    return 'dev8' if g == 'dev8' else 'dev7'
+
+
 def severity(cid, m):
-    """Gate policy (test plan, 'dev7 gate'). Page-2 variants (suffix p2) share their check's severity."""
+    """Gate policy (test plan, 'dev7 / dev8 gate'). Page-2 variants (suffix p2) share their check's severity."""
     if cid.endswith('p2'):
         cid = cid[:-2]
     fs = float(m.get('font_scale', '1.0'))
     tier = m.get('tier', 'phone')
-    pending = set()     # G5b/G5c blocked from #178 (the #175 implementation) on; add an id here for a merged spec not built yet
+    pending = set()     # add an id here for a merged spec not built yet
     advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'X1', 'X2'}
     if cid in pending:
         return 'pending'
@@ -255,8 +337,10 @@ def severity(cid, m):
         return 'advisory'
     if fs >= 1.95:
         return 'advisory'
-    if tier != 'phone' and cid.startswith('G'):
-        return 'advisory'       # Q-S2: tablet/landscape layout not specified yet (ux.md §1.1)
+    # L1–L13 (test-plan §20) and large-screen G1–G3: advisory through dev7, blocking from dev8
+    # (ux.md §1.5; #185). Crashes/ANRs stay blocking via F1 above.
+    if cid.startswith('L') or (tier != 'phone' and cid.startswith('G')):
+        return 'block' if gate_of(m) == 'dev8' else 'advisory'
     return 'block'
 
 
@@ -533,6 +617,141 @@ def run_checks(d):
                         det = f'no title bar: chip y {chip.b[1]}-{chip.b[3]}, page label y {pl.b[1]}-{pl.b[3]}, same row {same}'
                 add('G5b', 'Collapsed chip in the notice row (no overlay on the grid)', ok5, f'{det}; over grid {over[:3]}',
                     'ux.md §6.1 Notice row (#173 L1; title bar: #183), §17.4 Count chip')
+
+    # ---------------------------------------------------------------- L1–L5 (ux.md §1.5 / test-plan §20)
+    # Measurable from the existing dumps. L6 and L8–L13 need new fixtures, new points or instrumented tests
+    # (listed as manual in the test plan). Severity flips with gate=dev8 (see severity()).
+    # Only on large-tier points (tablets / fold): phone Compact is covered by G*, and L1/L7 need the
+    # reverse-rotate the driver only runs for tier=large.
+    nodes = home.get('home1')
+    if nodes and m.get('tier') == 'large':
+        tb = title_bar(nodes, s)
+        pairs, labels_l, dock = grid_tiles(nodes, tb, (W or 1, H or 1), s)
+        tile_nodes = [n for n, _ in pairs]
+        pitch = pitch_of(tile_nodes, s) if tile_nodes else None
+        width_dp = (W / s) if W and s else 0
+        height_dp = (H / s) if H and s else 0
+        pid = m.get('id', '')
+        rot = m.get('rotation', '0')
+
+        # L1: no write on a window change (driver hashes launcher.json around a one-shot reverse-rotate)
+        hb = read(os.path.join(d, 'hash-before.txt')).strip()
+        ha = read(os.path.join(d, 'hash-after-rot.txt')).strip()
+        if not hb and not ha:
+            add('L1', 'No write on a window change (hash after reverse-rotate)', None,
+                'not captured (driver only records this on large-tier points)',
+                'ux.md §1.5 "never writes"; test-plan §20 L1')
+        else:
+            add('L1', 'No write on a window change (hash after reverse-rotate)',
+                bool(hb) and hb == ha,
+                f'before {hb[:12] or "?"}… after {ha[:12] or "?"}… match {bool(hb) and hb == ha}',
+                'ux.md §1.5 "never writes"; test-plan §20 L1 (matrix: one reverse-rotate; full ×4/fold is manual)')
+
+        # L2: positions are exact — floor((centre − blockLeft) / pitchW) matches the fixture
+        items = fixture_items(m.get('fixture'))
+        if not pitch or not items or not pairs:
+            add('L2', 'Positions are exact (column x, row y)', None,
+                'no tiles, pitch or fixture items', 'ux.md §1.5; test-plan §20 L2')
+        else:
+            pitchW, pitchH, block_left, block_top = pitch
+            bad = []
+            for n, lab in pairs:
+                key = (lab.text if lab else '') or n.desc.split(',')[0]
+                exp = next((it for it in items if it[0] and key.startswith(it[0][:12])), None)
+                if exp is None and lab is None:
+                    continue
+                if exp is None:
+                    continue
+                col = int((n.cx - block_left) // max(pitchW * s, 1))
+                row = int((n.cy - block_top) // max(pitchH * s, 1))
+                if col != exp[1] or row != exp[2]:
+                    bad.append(f'{exp[0][:20]} got ({col},{row}) want ({exp[1]},{exp[2]})')
+            add('L2', 'Positions are exact (column x, row y)', not bad,
+                f'pitch {pitchW:.0f}×{pitchH:.0f} dp; mismatches {bad[:4] or "none"}',
+                'ux.md §1.5; test-plan §20 L2')
+
+        # L3: cap and centring on Medium/Expanded (width ≥ 600 dp)
+        if width_dp < 600:
+            add('L3', 'Cell cap and centring (Medium/Expanded)', None,
+                f'Compact width {width_dp:.0f} dp (cap is a no-op; phone goldens cover Compact)',
+                'ux.md §1.5 Q-L2; test-plan §20 L3')
+        elif not pitch:
+            add('L3', 'Cell cap and centring (Medium/Expanded)', None, 'no pitch', 'ux.md §1.5 Q-L2; test-plan §20 L3')
+        else:
+            pitchW, pitchH, block_left, block_top = pitch
+            left_m = block_left / s
+            right_m = (W - (block_left + 4 * pitchW * s)) / s   # 4 columns in the matrix fixture
+            # Prefer measuring from tile extents when we have a full row
+            if tile_nodes:
+                left_m = min(n.b[0] for n in tile_nodes) / s
+                right_m = (W - max(n.b[2] for n in tile_nodes)) / s
+            ratio_wh = pitchW / pitchH if pitchH else 99
+            ratio_hw = pitchH / pitchW if pitchW else 99
+            ok = (pitchW <= 144.5 and ratio_wh <= 1.26 and ratio_hw <= 1.51
+                  and abs(left_m - right_m) <= 2.0)
+            add('L3', 'Cell cap and centring (Medium/Expanded)', ok,
+                f'pitchW {pitchW:.1f} (≤144), W/H {ratio_wh:.2f} (≤1.25), H/W {ratio_hw:.2f} (≤1.5), '
+                f'margins L/R {left_m:.1f}/{right_m:.1f} dp',
+                'ux.md §1.5 Q-L2; test-plan §20 L3')
+
+        # L4: pitchH ≥ 80 dp at font 1.0 on t7-land and t10-land; labels whole or absent on every point
+        min_h = 12 * fs * 0.85
+        clipped = [(lab.text, round(lab.h / s, 1)) for lab in labels_l if lab.h / s < min_h]
+        land_short = pid.startswith(('t7-land', 't10-land')) and fs <= 1.05
+        if land_short:
+            ok_h = pitch is not None and pitch[1] >= 79.5
+            detail_h = f'pitchH {pitch[1]:.1f} dp (need ≥ 80)' if pitch else 'no pitch'
+        else:
+            ok_h = True
+            detail_h = f'pitchH {pitch[1]:.1f} dp (min applies to t7/t10-land @ font 1.0)' if pitch else 'n/a'
+        ok_lab = not clipped
+        add('L4', 'Row pitch ≥ 80 dp (land @ 1.0) and labels whole or absent',
+            ok_h and ok_lab if (pitch or labels_l is not None) else None,
+            f'{detail_h}; labels {len(labels_l)}, clipped {clipped[:4] or "none"}',
+            'ux.md §1.5 cell minimum / icon ladder; test-plan §20 L4')
+
+        # L5: dock placement — rail on t7-land/t10-land (and phone landscape when we have one); bottom otherwise
+        want_rail = bool(re.search(r'(^t7-land|^t10-land)', pid) or
+                         (m.get('tier') == 'phone' and rot == '1'))
+        # fold-open and *-port expect a bottom dock
+        want_bottom = bool(re.search(r'(^t7-port|^t10-port|^fold-open)', pid) or
+                           (m.get('tier') == 'phone' and rot != '1'))
+        rail = dock_is_rail(dock, W or 1, H or 1)
+        apps = find(nodes, 'text', r'^Apps$')
+        if rail is None:
+            add('L5', 'Dock placement (rail vs bottom)', None, 'no dock slots',
+                'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
+        elif want_rail:
+            # Apps should sit with the rail (near the end edge), not across the top of the page area alone
+            apps_on_rail = False
+            if apps and dock:
+                apps_on_rail = abs(apps.cx - dock[0].cx) < max(W * 0.15, 1)
+            add('L5', 'Dock placement (rail vs bottom)', rail,
+                f'want rail; is_rail {rail}; Apps near dock {apps_on_rail}; '
+                f'dock {[n.b for n in dock[:3]]}; window {width_dp:.0f}×{height_dp:.0f} dp',
+                'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
+        elif want_bottom:
+            add('L5', 'Dock placement (rail vs bottom)', rail is False,
+                f'want bottom; is_rail {rail}; dock {[n.b for n in dock[:3]]}; '
+                f'window {width_dp:.0f}×{height_dp:.0f} dp (fold-open 1.2:1 stays bottom)',
+                'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
+        else:
+            add('L5', 'Dock placement (rail vs bottom)', None,
+                f'no expected placement for {pid}; is_rail {rail}',
+                'ux.md §1.5 Q-L3/Q-L4; test-plan §20 L5')
+
+        # L7: page continuity after a reverse-rotate while on page 2
+        h2r = load(os.path.join(d, 'home2-rot.xml'))
+        if h2r is None:
+            add('L7', 'Page continuity after rotate (still page 2)', None,
+                'not captured (needs home2 then a reverse-rotate dump)',
+                'ux.md §1.5 "same page stays shown, by page id"; test-plan §20 L7')
+        else:
+            still = any(re.search(r'^Second,|, page 2 of 2', n.desc) or n.text == 'Second'
+                        for n in h2r)
+            add('L7', 'Page continuity after rotate (still page 2)', still,
+                f'Second/page 2 visible after rotate: {still}',
+                'ux.md §1.5 "same page stays shown, by page id"; test-plan §20 L7')
 
     # TH1 theme: drawer surface colour
     th = None; detail = 'no drawer.png or Pillow'
