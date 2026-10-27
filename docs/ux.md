@@ -477,7 +477,7 @@ size, with no special case. Font 2.0 on the open fold ellipsizes labels to about
   opens it straight to full height. There is **no half-height (partially expanded) stop**: a half sheet adds a second
   drag and hides rows. If it stays a Material `ModalBottomSheet`, it uses `skipPartiallyExpanded = true` so the
   partial state doesn't exist. A plain full-screen overlay with its own drag-to-dismiss is equally fine. Either way,
-  the interactive follow-the-finger open from §1.4 settles at full height or springs back, never in between.
+  the interactive follow-the-finger open from §1.4 settles at full height or springs back, never in between. Check D1: the `Search apps` field's top is ≤ **max(25 % of window height, 96 dp from the window top)** — the 96 dp floor covers status inset + sheet drag-handle chrome on short panes (phone-land / Compact-height rail) so a full-height drawer isn't failed for percentage alone.
 - **Edge-to-edge.** The app runs edge-to-edge (`enableEdgeToEdge`). The drawer's background and scrim draw **under**
   the status bar and the nav bar. System bar insets go into the **grid's `contentPadding`** (`WindowInsets.safeDrawing`,
   or `statusBars` + `navigationBars`), not outer padding, so rows scroll under the bars while the **last row and the

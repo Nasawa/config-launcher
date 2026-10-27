@@ -362,9 +362,13 @@ def run_checks(d):
             f'{len(sb)} labels, clipped: {clipped[:5]}', 'ux.md §2.1, §12 Font scaling')
         sf = next((n for n in dr if n.text == 'Search apps' or (n.desc or '').startswith('Search apps')), None)
         if sf is not None:
-            # ux.md §2.1: the drawer opens full height, so the search field sits near the top (#179: half sheet)
-            add('D1', 'Drawer opens full height', sf.b[1] <= H * 0.25,
-                f'search field top y {sf.b[1]} of {H} ({sf.b[1] * 100 // max(H, 1)}%)', 'ux.md §2.1; #179 (fixed by #181)')
+            # ux.md §2.1 / D1: full-height drawer — search at top, not a half sheet. Short panes (e.g. 800×312)
+            # keep the same absolute chrome (~88 dp) that passes at 24 % on 800×360; allow max(25 % H, 96 dp).
+            top_dp = sf.b[1] / s
+            limit_dp = max(H / s * 0.25, 96.0)
+            add('D1', 'Drawer opens full height', top_dp <= limit_dp,
+                f'search field top y {sf.b[1]} of {H} ({sf.b[1] * 100 // max(H, 1)}%; {top_dp:.0f} dp ≤ max(25%, 96)={limit_dp:.0f} dp)',
+                'ux.md §2.1; #179 (fixed by #181); short-pane floor (#202)')
         # D4 drawer label contrast against the sheet, from drawer.png (#182 drew white labels on #FEF7FF, 1.05:1)
         im = open_png(os.path.join(d, 'drawer.png'))
         if im is None:
