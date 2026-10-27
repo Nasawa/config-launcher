@@ -877,11 +877,12 @@ def run_checks(d):
                 'ux.md §1.5 icon ladder; test-plan §20 L4 (#197)')
 
         # L5: dock placement — rail on t7-land/t10-land (and phone landscape when we have one); bottom otherwise
-        want_rail = bool(re.search(r'(^t7-land|^t10-land|^phone-land|^rtl-.*-land)', pid) or
-                         (m.get('tier') == 'phone' and (rot == '1' or 'land' in pid)))
+        # Any *-land* point (incl. dock7-t7-land, rtl-t7-land, cards-t10-land) expects a rail once #201 lands.
+        want_rail = bool(re.search(r'land', pid) or
+                         (m.get('tier') == 'phone' and rot == '1'))
         # fold-open and *-port expect a bottom dock
-        want_bottom = bool(re.search(r'(^t7-port|^t10-port|^fold-open)', pid) or
-                           (m.get('tier') == 'phone' and rot != '1'))
+        want_bottom = bool(re.search(r'(port|fold-open)', pid) or
+                           (m.get('tier') == 'phone' and rot != '1' and 'land' not in pid))
         rail = dock_is_rail(dock, W or 1, H or 1)
         apps = find(nodes, 'text', r'^Apps$')
         if rail is None:
