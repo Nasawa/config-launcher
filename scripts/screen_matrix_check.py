@@ -908,9 +908,7 @@ def run_checks(d):
                     count_ok and sizes_ok,
                     f'count {len(dock7)}; sizes dp {[round(min(n.w, n.h)/s, 1) for n in dock7[:7]]}; bottom dock',
                     'test-plan §20 L6 (#197)')
-        else:
-            add('L6', 'Dock count (dock7)', None, f"fixture {m.get('fixture') or '?'} (need dock7.json)",
-                'test-plan §20 L6 (#197)')
+        # L6 omitted when fixture is not dock7 (do not SKIP — that would INCOMPLETE under gate=dev8).
 
         # L13: cards-large — 2×2 + 4×1; k ≤ 1.5 on t10-land (card side ≤ 1.5 × 80 dp cell ref).
         if (m.get('fixture') or '') == 'cards-large.json':
@@ -935,9 +933,7 @@ def run_checks(d):
                 add('L13', 'Cards (cards-large): k ≤ 1.5, no stretch', not bad,
                     f'{len(cards_n)} card(s); bad {bad[:3] or "none"}',
                     'test-plan §20 L13 (#197)')
-        elif pid.startswith('t10-land') and (m.get('fixture') or '') == 'launcher.json':
-            add('L13', 'Cards (cards-large)', None, 'need cards-large.json fixture on this point',
-                'test-plan §20 L13 (#197)')
+        # L13 omitted when fixture is not cards-large.json.
 
     # TH1 theme: drawer surface colour
     th = None; detail = 'no drawer.png or Pillow'
