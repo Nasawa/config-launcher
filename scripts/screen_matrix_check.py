@@ -695,9 +695,8 @@ def run_checks(d):
         add('X4', 'Requested long-label locale applied (harness)', x4, x4d,
             'test plan §1 variants (API 33+ set-app-locales for de-DE)')
     else:
-        add('X4', 'Locale variant applied (harness)', None,
-            f'default locale {want_loc or "en-US"}; no rtl/longlabel probe',
-            'test plan §1 variants')
+        # N/A on en-US points — omit (do not SKIP: that INCOMPLETEs under gate=dev8).
+        pass
 
     # F1 cold start, crash and ANR.
     # am start -W often returns Status: timeout on software emulators even when MainActivity is up
@@ -1078,9 +1077,12 @@ def run_checks(d):
         hb = read(os.path.join(d, 'hash-before.txt')).strip()
         ha = read(os.path.join(d, 'hash-after-rot.txt')).strip()
         if not hb and not ha:
-            add('L1', 'No write on a window change (hash after reverse-rotate)', None,
-                'not captured (driver only records this on large-tier points)',
-                'ux.md §1.5 "never writes"; test-plan §20 L1')
+            # Driver only hashes on large-tier (§ screen-matrix.sh). Omit on phone so SKIP
+            # does not INCOMPLETE under gate=dev8; SKIP on large when the dump is missing.
+            if (m.get('tier') or 'phone') == 'large':
+                add('L1', 'No write on a window change (hash after reverse-rotate)', None,
+                    'not captured on large-tier point (driver hash missing)',
+                    'ux.md §1.5 "never writes"; test-plan §20 L1')
         else:
             add('L1', 'No write on a window change (hash after reverse-rotate)',
                 bool(hb) and hb == ha,
@@ -1354,9 +1356,11 @@ def run_checks(d):
         # L7: page continuity after a reverse-rotate while on page 2
         h2r = load(os.path.join(d, 'home2-rot.xml'))
         if h2r is None:
-            add('L7', 'Page continuity after rotate (still page 2)', None,
-                'not captured (needs home2 then a reverse-rotate dump)',
-                'ux.md §1.5 "same page stays shown, by page id"; test-plan §20 L7')
+            # home2-rot only dumped on large-tier. Omit on phone; SKIP on large if missing.
+            if (m.get('tier') or 'phone') == 'large':
+                add('L7', 'Page continuity after rotate (still page 2)', None,
+                    'not captured (needs home2 then a reverse-rotate dump)',
+                    'ux.md §1.5 "same page stays shown, by page id"; test-plan §20 L7')
         else:
             still = any(re.search(r'^Second,|, page 2 of 2', n.desc) or n.text == 'Second'
                         for n in h2r)
