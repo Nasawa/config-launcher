@@ -116,7 +116,9 @@ set_night() {
   if night_is "$1"; then NIGHT_VIA=settings-ui; fi
 }
 
-# ANR dialogs: record the title (launcher vs System UI), tap Wait. Software-only emulators show System UI ANRs.
+# ANR dialogs: record the title (launcher vs System UI). Prefer "Close app" for Pixel/Nexus
+# Launcher (Wait leaves it wedged on API 35 google_apis tablets — all-18 X3 on run 40545707363);
+# otherwise tap Wait. Software-only emulators also show System UI ANRs.
 anr() {
   local d=$1 _
   for _ in 1 2 3; do
@@ -124,10 +126,39 @@ anr() {
     sh_ cat /sdcard/anr.xml > "$d/.anr.xml" 2> /dev/null
     grep -q "isn't responding\|isn&apos;t responding" "$d/.anr.xml" || break
     grep -o 'text="[^"]*responding[^"]*"' "$d/.anr.xml" >> "$d/anr.txt"
-    tap "$d/.anr.xml" text '^Wait$' || break
+    if grep -qE 'Pixel Launcher|Nexus Launcher|nexuslauncher' "$d/.anr.xml"; then
+      tap "$d/.anr.xml" text '^Close app$' \
+        || tap "$d/.anr.xml" text '^Close App$' \
+        || tap "$d/.anr.xml" text '^Wait$' || break
+      # Stock launcher ANRing while a second HOME is installed — disable so it cannot reclaim focus.
+      disable_stock_launchers
+    else
+      tap "$d/.anr.xml" text '^Wait$' || break
+    fi
     pause 3
   done
   rm -f "$d/.anr.xml"
+}
+
+# After our app is HOME, disable Pixel/Nexus (and AOSP Launcher3) so they cannot ANR over dumps.
+# Idempotent; safe on images that lack those packages.
+disable_stock_launchers() {
+  local p
+  for p in com.google.android.apps.nexuslauncher com.android.launcher3; do
+    sh_ "pm disable-user --user 0 $p" >/dev/null 2>&1 || true
+    sh_ "am force-stop $p" >/dev/null 2>&1 || true
+  done
+}
+
+wait_boot_idle() {
+  local i b
+  for i in $(seq 1 90); do
+    b=$(sh_ getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+    [ "$b" = 1 ] && break
+    sleep 2
+  done
+  # Extra settle: tablet google_apis images still schedule Pixel Launcher work after boot_completed.
+  pause 8
 }
 
 home() { sh_ input keyevent HOME; pause 2; }
@@ -218,6 +249,7 @@ run_point() {
     # Prefs + launcher first, then set-home, then force-stop again (kills any race launch), then re-copy.
     sh_ "run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'"
     sh_ "cmd package set-home-activity $PKG/.MainActivity > /dev/null 2>&1"
+    disable_stock_launchers
     sh_ am force-stop "$PKG"
     sh_ "run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'"
     prefs_chk=$(sh_ "run-as $PKG sh -c 'grep -c appOnly shared_prefs/settings.xml; test -s files/config/source/launcher.json && echo LOK'" | tr -d '\r' | tr '\n' ' ')
@@ -405,13 +437,14 @@ run_point() {
   sh_ logcat -d -b main -b system | grep -E "ANR in $PKG|FATAL EXCEPTION" >> "$d/crash.txt"
   sh_ dumpsys window | grep -m1 mCurrentFocus > "$d/focus.txt"
 
-  $CHECK check "$d" > /dev/null || echo "checker error for $id" >&2
-  grep -m1 '^#' "$d/result.md" 2> /dev/null
-
-  # #201 / #197 short-pane tap-routing probe (split-phone* / wm-size short column).
+  # TR1 before the checker so G3 short-pane option B can read tap-routing.json
+  # (docs PR #209: pitchH≥32 + TR1 hit=visible; a11y overlap → #208).
   case $id in
     split-phone*|*-split-phone*) tap_routing_probe "$d" "$dens";;
   esac
+
+  $CHECK check "$d" > /dev/null || echo "checker error for $id" >&2
+  grep -m1 '^#' "$d/result.md" 2> /dev/null
 }
 
 # Live tap-routing probe: plan from home1.xml, long-press/tap each target, score.
@@ -455,8 +488,14 @@ tap_routing_probe() {
 }
 
 A wait-for-device < /dev/null
+wait_boot_idle
 A install -r -g "$APK" < /dev/null | tee "$OUT/install.txt"
 grep -q '^Success' "$OUT/install.txt" || { echo "install failed" >&2; exit 1; }
+# Claim HOME and disable stock Pixel/Nexus Launcher before any point (API 35 tablet ANR storm).
+sh_ "cmd package set-home-activity $PKG/.MainActivity > /dev/null 2>&1" || true
+disable_stock_launchers
+echo "stock_launcher_disabled=1" >> "$OUT/harness-setup.txt"
+sh_ "pm list packages -d" >> "$OUT/harness-setup.txt" 2>&1 || true
 
 dups=$(awk -F'\t' '!/^#/ && NF > 1 {print $1}' "$FIX/points.tsv" | sort | uniq -d)
 [ -z "$dups" ] || { echo "duplicate point ids in points.tsv: $dups" >&2; exit 2; }

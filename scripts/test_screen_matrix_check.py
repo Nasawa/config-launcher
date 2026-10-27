@@ -294,5 +294,125 @@ class D1ShortPaneFloor(unittest.TestCase):
 
 
 
+
+class G3ShortPaneOptionB(unittest.TestCase):
+    """docs PR #209 / Pragma (B): short-pane G3 gates on TR1 behaviour, not a11y bounds.
+
+    At 800×312 chrome is 116 dp → ~196 dp grid ≈ 39.2 dp/row. Overlapping a11y
+    hit-bounds are #208 (info), not a G3 fail. Sprite unchanged at 686e98d.
+    """
+
+    def _synth(self, pitch_h=39, tile_h=39, tr=None, pitch_fail=False):
+        """Two-row 5-col-ish short pane; one tile a11y-clipped to tile_h."""
+        dens = 160
+        W, H = 800, 312
+        # chrome: status 24 + title 48 + dots 20 + nav 24 = 116; grid top ≈ 72
+        grid_top = 72
+        # Minimal §15 title bar so title_bar() excludes chrome from tiles (clock + Pages).
+        title = (
+            f'  <node text="" content-desc="12:00" class="android.view.View" '
+            f'package="dev.nasawa.configlauncher" clickable="false" bounds="[400,34][480,62]" />\n'
+            f'  <node text="12:00" content-desc="" class="android.widget.TextView" '
+            f'package="dev.nasawa.configlauncher" clickable="false" bounds="[400,34][480,62]" />\n'
+            f'  <node text="" content-desc="Home, Pages" class="android.view.View" '
+            f'package="dev.nasawa.configlauncher" clickable="true" bounds="[320,24][396,72]" />\n'
+            f'  <node text="Home" content-desc="" class="android.widget.TextView" '
+            f'package="dev.nasawa.configlauncher" clickable="false" bounds="[323,34][388,62]" />\n'
+        )
+        tiles_xml = []
+        # Row 0 at y=grid_top, Row 1 at y=grid_top+pitch
+        for r in (0, 1):
+            y0 = grid_top + r * pitch_h
+            for col in range(2):
+                x0 = 40 + col * 80
+                h = tile_h if (r == 0 and col == 0) else 48
+                # clip row0 col0 height to simulate a11y under-48 (#208)
+                y1 = y0 + h
+                label = "QA Settings" if (r == 0 and col == 0) else f"App {r}-{col}"
+                tiles_xml.append(
+                    f'  <node text="" content-desc="{label}" class="android.view.View" '
+                    f'package="dev.nasawa.configlauncher" clickable="true" '
+                    f'bounds="[{x0},{y0}][{x0+49},{y1}]" />\n'
+                    f'  <node text="{label}" content-desc="" class="android.widget.TextView" '
+                    f'package="dev.nasawa.configlauncher" clickable="false" '
+                    f'bounds="[{x0},{y1-12}][{x0+49},{y1}]" />\n'
+                )
+        dock = (
+            f'  <node text="" content-desc="Phone, dock" class="android.view.View" '
+            f'package="dev.nasawa.configlauncher" clickable="true" '
+            f'bounds="[40,{H-48}][88,{H}]" />\n'
+        )
+        xml = (
+            "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>\n"
+            f'<hierarchy rotation="0">\n'
+            f' <node class="android.widget.FrameLayout" package="dev.nasawa.configlauncher" '
+            f'bounds="[0,0][{W},{H}]">\n'
+            + title + "".join(tiles_xml) + dock +
+            " </node>\n</hierarchy>\n"
+        )
+        td = tempfile.mkdtemp()
+        open(os.path.join(td, "home1.xml"), "w").write(xml)
+        open(os.path.join(td, "meta.txt"), "w").write(
+            f"id=split-phone-g3b\nshard=phones\nsize_px={W}x{H}\nscreen_px={W}x{H}\n"
+            f"density={dens}\nrotation=0\nfont_scale=1.0\nnight=no\nfixture=launcher.json\n"
+            f"tier=phone\napi=35\ngate=dev8\nlocale=en-US\n"
+            "multiwindow_sim=wm_size_short_pane\n"
+            "shape=#201 short multi-window pane via wm size\n"
+        )
+        open(os.path.join(td, "run.txt"), "w").write(
+            f"Override size: {W}x{H}\nOverride density: {dens}\n")
+        open(os.path.join(td, "retries.txt"), "w").write("")
+        open(os.path.join(td, "crash.txt"), "w").write("")
+        open(os.path.join(td, "focus.txt"), "w").write("mCurrentFocus=dev.nasawa")
+        if tr is not None:
+            open(os.path.join(td, "tap-routing.json"), "w").write(json.dumps(tr))
+        return td
+
+    def _check(self, td):
+        try:
+            import io
+            from contextlib import redirect_stdout
+            with redirect_stdout(io.StringIO()):
+                c.cmd_check(td)
+            res = json.load(open(os.path.join(td, "result.json")))
+            return {x["id"]: x for x in res["checks"]}
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+    def test_option_b_pass_with_tr1_visible_wins(self):
+        tr = {"summary": {"overlap_findings": [], "results": [
+            {"id": "overlap-r1", "kind": "overlap", "ok": True, "winner": "Row two"},
+            {"id": "centre-0", "kind": "centre", "ok": True},
+        ]}}
+        ch = self._check(self._synth(tr=tr))
+        self.assertEqual(ch["G3"]["status"], "PASS", ch["G3"].get("detail"))
+        self.assertIn("#209", ch["G3"]["spec"])
+        self.assertIn("hit=visible", ch["G3"]["detail"])
+        self.assertEqual(ch["G3a"]["status"], "FAIL")  # advisory info #208
+        self.assertEqual(ch["G3a"]["severity"], "advisory")
+        self.assertEqual(ch["L16"]["status"], "PASS", ch["L16"].get("detail"))
+
+    def test_option_b_fail_without_tr1(self):
+        ch = self._check(self._synth(tr=None))
+        self.assertEqual(ch["G3"]["status"], "FAIL", ch["G3"].get("detail"))
+        self.assertIn("no tap-routing.json", ch["G3"]["detail"])
+
+    def test_option_b_fail_upper_row_steals(self):
+        tr = {"summary": {"overlap_findings": ["upper won band"], "results": [
+            {"id": "overlap-r1", "kind": "overlap", "ok": False, "winner": "QA Settings"},
+        ]}}
+        ch = self._check(self._synth(tr=tr))
+        self.assertEqual(ch["G3"]["status"], "FAIL", ch["G3"].get("detail"))
+        self.assertIn("upper-row", ch["G3"]["detail"])
+
+    def test_option_b_l16_fail_below_32(self):
+        tr = {"summary": {"overlap_findings": [], "results": []}}
+        ch = self._check(self._synth(pitch_h=28, tile_h=28, tr=tr))
+        self.assertEqual(ch["G3"]["status"], "FAIL", ch["G3"].get("detail"))
+        self.assertEqual(ch["L16"]["status"], "FAIL", ch["L16"].get("detail"))
+        self.assertIn("< 32", ch["L16"]["detail"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
