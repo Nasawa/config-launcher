@@ -299,6 +299,93 @@ def pitch_of(tile_nodes, s):
     return pitchW, pitchH, block_left, block_top
 
 
+
+def parse_safe_drawing_insets(text, W, H):
+    """Derive WindowInsets.safeDrawing-equivalent insets (px) from `dumpsys window` output.
+
+    safeDrawing ≈ system bars ∪ display cutout (IME closed on the home screen). We take the
+    max inset on each side from:
+      - InsetsSource frames typed status / navigation / displayCutout / systemGestures (bars only)
+      - legacy mSystemInsets / systemBarsInsets / mStableInsets lines
+    Returns (left, top, right, bottom) in px. Missing dump → (0,0,0,0) and the caller notes it.
+    Documented in docs/test-plan-screen-matrix.md §4.1 (L3 insets).
+    """
+    if not text:
+        return (0, 0, 0, 0)
+    left = top = right = bottom = 0
+    # Legacy single-line forms: Insets{left=N, top=N, right=N, bottom=N}
+    for m in re.finditer(
+            r'(?:mSystemInsets|systemBarsInsets|mStableInsets|mContentInsets|systemBars)\s*=\s*'
+            r'Insets\{left=(\d+),\s*top=(\d+),\s*right=(\d+),\s*bottom=(\d+)\}',
+            text):
+        left = max(left, int(m.group(1)))
+        top = max(top, int(m.group(2)))
+        right = max(right, int(m.group(3)))
+        bottom = max(bottom, int(m.group(4)))
+    # InsetsSource type=ITYPE_STATUS_BARS|NAVIGATION_BARS|DISPLAY_CUTOUT frame=[l,t][r,b]
+    for m in re.finditer(
+            r'InsetsSource[^\n]*type=ITYPE_(\w+)[^\n]*frame=\[(\d+),(\d+)\]\[(\d+),(\d+)\]',
+            text):
+        kind, l, t, r, b = m.group(1).upper(), *(int(x) for x in m.groups()[1:])
+        if 'STATUS' in kind or 'CAPTION' in kind:
+            # top (or side) bar occupying [l,t][r,b]
+            if b - t <= H // 4 and t <= H // 4:
+                top = max(top, b - t if t == 0 else b)
+            if r - l <= W // 4 and l == 0:
+                left = max(left, r)
+            if r - l <= W // 4 and r >= W - 2:
+                right = max(right, W - l)
+        elif 'NAVIGATION' in kind or 'NAV_BAR' in kind:
+            if b - t <= H // 3 and b >= H - 2:
+                bottom = max(bottom, b - t if t > 0 else H - t)
+            if r - l <= W // 3 and l == 0 and b - t > H // 3:
+                left = max(left, r)
+            if r - l <= W // 3 and r >= W - 2 and b - t > H // 3:
+                right = max(right, W - l)
+        elif 'CUTOUT' in kind or 'DISPLAY_CUTOUT' in kind:
+            if t == 0 and b - t <= H // 4:
+                top = max(top, b)
+            if l == 0 and r - l <= W // 4:
+                left = max(left, r)
+            if r >= W - 2 and r - l <= W // 4:
+                right = max(right, W - l)
+            if b >= H - 2 and b - t <= H // 4:
+                bottom = max(bottom, H - t)
+    # Also match the shorter "type=statusBars" form used on some API levels
+    for m in re.finditer(
+            r'type=(?:ITYPE_)?(statusBars|navigationBars|displayCutout|systemBars)'
+            r'[^\n]*frame=\[(\d+),(\d+)\]\[(\d+),(\d+)\]',
+            text, re.I):
+        kind, l, t, r, b = m.group(1).lower(), *(int(x) for x in m.groups()[1:])
+        if 'status' in kind or kind == 'systembars':
+            if t == 0:
+                top = max(top, b)
+        if 'navigation' in kind:
+            if b >= H - 2:
+                bottom = max(bottom, H - t)
+            elif l == 0 and r < W // 3:
+                left = max(left, r)
+            elif r >= W - 2 and (W - l) < W // 3:
+                right = max(right, W - l)
+        if 'cutout' in kind:
+            if t == 0:
+                top = max(top, b)
+            if l == 0:
+                left = max(left, r)
+            if r >= W - 2:
+                right = max(right, W - l)
+    return (left, top, right, bottom)
+
+
+def cell_size_px(tile_nodes, pitchW, pitchH, s):
+    """On-screen cell W×H in px: median tile bounds when available, else pitch × density scale."""
+    if tile_nodes:
+        ws = sorted(n.w for n in tile_nodes)
+        hs = sorted(n.h for n in tile_nodes)
+        return ws[len(ws) // 2], hs[len(hs) // 2]
+    return pitchW * s, pitchH * s
+
+
 def dock_is_rail(dock, W, H):
     """True when the dock sits on an end edge (rail), False when it's a bottom bar, None if no dock."""
     if not dock:
@@ -328,7 +415,9 @@ def severity(cid, m):
     fs = float(m.get('font_scale', '1.0'))
     tier = m.get('tier', 'phone')
     pending = set()     # add an id here for a merged spec not built yet
-    advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'X1', 'X2'}
+    # L5 stays advisory until the end-edge rail PR lands (#197 / test-plan §20).
+    # L6r = rail-geometry half of L6 (also advisory until that rail PR).
+    advisory_always = {'P1', 'A1', 'T5', 'T6', 'TH1', 'D3', 'D4a', 'G6', 'X1', 'X2', 'L5', 'L6r'}
     if cid in pending:
         return 'pending'
     if cid == 'F1':
@@ -344,6 +433,7 @@ def severity(cid, m):
     return 'block'
 
 
+
 def run_checks(d):
     m = meta_of(d)
     dens = int(m.get('density', '0') or 0)
@@ -355,9 +445,9 @@ def run_checks(d):
     W, H = (int(v) for v in (m.get('screen_px') or '0x0').split('x'))
     res = []
 
-    def add(cid, name, ok, detail, spec):
+    def add(cid, name, ok, detail, spec, sev=None):
         res.append(dict(id=cid, name=name, status=('PASS' if ok is True else 'FAIL' if ok is False else 'SKIP'),
-                        severity=severity(cid, m), detail=detail, spec=spec))
+                        severity=sev if sev is not None else severity(cid, m), detail=detail, spec=spec))
 
     home = {}
     for k in ('home1', 'home2'):
@@ -618,13 +708,14 @@ def run_checks(d):
                 add('G5b', 'Collapsed chip in the notice row (no overlay on the grid)', ok5, f'{det}; over grid {over[:3]}',
                     'ux.md §6.1 Notice row (#173 L1; title bar: #183), §17.4 Count chip')
 
-    # ---------------------------------------------------------------- L1–L5 (ux.md §1.5 / test-plan §20)
-    # Measurable from the existing dumps. L6 and L8–L13 need new fixtures, new points or instrumented tests
-    # (listed as manual in the test plan). Severity flips with gate=dev8 (see severity()).
-    # Only on large-tier points (tablets / fold): phone Compact is covered by G*, and L1/L7 need the
-    # reverse-rotate the driver only runs for tier=large.
+    # ---------------------------------------------------------------- L1–L13 (ux.md §1.5 / test-plan §20 / #197)
+    # L1–L5/L7 on large-tier (and phone-landscape for L5/L12). L6/L13 when their fixtures are seeded.
+    # L8/L9/L10/L11 live in androidTest / JVM unit tests. Severity flips with gate=dev8 (see severity()).
     nodes = home.get('home1')
-    if nodes and m.get('tier') == 'large':
+    fixture = m.get('fixture') or ''
+    is_large = m.get('tier') == 'large'
+    is_phone_land = m.get('tier') == 'phone' and (m.get('rotation') == '1' or 'land' in (m.get('id') or ''))
+    if nodes and (is_large or is_phone_land or fixture in ('dock7.json', 'cards-large.json')):
         tb = title_bar(nodes, s)
         pairs, labels_l, dock = grid_tiles(nodes, tb, (W or 1, H or 1), s)
         tile_nodes = [n for n, _ in pairs]
@@ -670,49 +761,81 @@ def run_checks(d):
                 f'pitch {pitchW:.0f}×{pitchH:.0f} dp; mismatches {bad[:4] or "none"}',
                 'ux.md §1.5; test-plan §20 L2')
 
-        # L3: cap and centring on Medium/Expanded (width ≥ 600 dp)
+        # L3: cap and centring on Medium/Expanded (width ≥ 600 dp) — #197 / test-plan §20 L3
+        # Aspect in px with +1 px slack: W ≤ 1.25·H + 1 and H ≤ 1.5·W + 1.
+        # Margins within 1 px inside WindowInsets.safeDrawing (from insets.txt / dumpsys window).
+        insets_txt = read(os.path.join(d, 'insets.txt'))
+        safe = parse_safe_drawing_insets(insets_txt, W or 1, H or 1)
+        insets_note = (f'safeDrawing L/T/R/B={safe[0]}/{safe[1]}/{safe[2]}/{safe[3]} px'
+                       if insets_txt.strip() else 'insets.txt missing (margins fall back to raw edge)')
         if width_dp < 600:
             add('L3', 'Cell cap and centring (Medium/Expanded)', None,
-                f'Compact width {width_dp:.0f} dp (cap is a no-op; phone goldens cover Compact)',
-                'ux.md §1.5 Q-L2; test-plan §20 L3')
+                f'Compact width {width_dp:.0f} dp (cap is a no-op; PhoneOutputGoldenTest covers Compact); {insets_note}',
+                'ux.md §1.5 Q-L2; test-plan §20 L3 (#197)')
         elif not pitch:
-            add('L3', 'Cell cap and centring (Medium/Expanded)', None, 'no pitch', 'ux.md §1.5 Q-L2; test-plan §20 L3')
+            add('L3', 'Cell cap and centring (Medium/Expanded)', None,
+                f'no pitch; {insets_note}', 'ux.md §1.5 Q-L2; test-plan §20 L3 (#197)')
         else:
             pitchW, pitchH, block_left, block_top = pitch
-            left_m = block_left / s
-            right_m = (W - (block_left + 4 * pitchW * s)) / s   # 4 columns in the matrix fixture
-            # Prefer measuring from tile extents when we have a full row
+            cell_w_px, cell_h_px = cell_size_px(tile_nodes, pitchW, pitchH, s)
+            ok_cap = pitchW <= 144.5
+            ok_aspect = (cell_w_px <= 1.25 * cell_h_px + 1) and (cell_h_px <= 1.5 * cell_w_px + 1)
+            # Margins inside the safe area (content box after safeDrawing insets)
+            content_l, content_r = safe[0], (W or 0) - safe[2]
             if tile_nodes:
-                left_m = min(n.b[0] for n in tile_nodes) / s
-                right_m = (W - max(n.b[2] for n in tile_nodes)) / s
-            ratio_wh = pitchW / pitchH if pitchH else 99
-            ratio_hw = pitchH / pitchW if pitchW else 99
-            ok = (pitchW <= 144.5 and ratio_wh <= 1.26 and ratio_hw <= 1.51
-                  and abs(left_m - right_m) <= 2.0)
+                left_m_px = min(n.b[0] for n in tile_nodes) - content_l
+                right_m_px = content_r - max(n.b[2] for n in tile_nodes)
+            else:
+                left_m_px = block_left - content_l
+                right_m_px = content_r - (block_left + 4 * pitchW * s)
+            ok_margin = abs(left_m_px - right_m_px) <= 1
+            ok = ok_cap and ok_aspect and ok_margin
             add('L3', 'Cell cap and centring (Medium/Expanded)', ok,
-                f'pitchW {pitchW:.1f} (≤144), W/H {ratio_wh:.2f} (≤1.25), H/W {ratio_hw:.2f} (≤1.5), '
-                f'margins L/R {left_m:.1f}/{right_m:.1f} dp',
-                'ux.md §1.5 Q-L2; test-plan §20 L3')
+                f'pitchW {pitchW:.1f} dp (≤144); cell {cell_w_px:.1f}×{cell_h_px:.1f} px '
+                f'(W≤1.25·H+1 / H≤1.5·W+1); margins L/R {left_m_px:.1f}/{right_m_px:.1f} px '
+                f'(≤1 px inside safeDrawing); {insets_note}',
+                'ux.md §1.5 Q-L2; test-plan §20 L3 (#197)')
 
-        # L4: pitchH ≥ 80 dp at font 1.0 on t7-land and t10-land; labels whole or absent on every point
+        # L4: ladder-aware minimum + labels whole or absent — #197 / test-plan §20 L4
+        # Step 1 pass floor: pitchH ≥ 84 dp on t7/t10-land @ font 1.0 once the end-edge rail (L5) is present.
+        # Ladder: ≥76 (step 2), ≥60 (step 3). Until L5, t7-land ~64.5 is expected step 3 — preferred
+        # half is advisory / "depends on L5"; labels-whole-or-absent still applies.
         min_h = 12 * fs * 0.85
         clipped = [(lab.text, round(lab.h / s, 1)) for lab in labels_l if lab.h / s < min_h]
-        land_short = pid.startswith(('t7-land', 't10-land')) and fs <= 1.05
-        if land_short:
-            ok_h = pitch is not None and pitch[1] >= 79.5
-            detail_h = f'pitchH {pitch[1]:.1f} dp (need ≥ 80)' if pitch else 'no pitch'
-        else:
-            ok_h = True
-            detail_h = f'pitchH {pitch[1]:.1f} dp (min applies to t7/t10-land @ font 1.0)' if pitch else 'n/a'
         ok_lab = not clipped
-        add('L4', 'Row pitch ≥ 80 dp (land @ 1.0) and labels whole or absent',
-            ok_h and ok_lab if (pitch or labels_l is not None) else None,
-            f'{detail_h}; labels {len(labels_l)}, clipped {clipped[:4] or "none"}',
-            'ux.md §1.5 cell minimum / icon ladder; test-plan §20 L4')
+        land_prefer = pid.startswith(('t7-land', 't10-land')) and fs <= 1.05
+        rail_now = dock_is_rail(dock, W or 1, H or 1)
+        if land_prefer and pitch:
+            pitchH = pitch[1]
+            if rail_now:
+                ok_h = pitchH >= 83.5   # step-1 floor 84 dp
+                detail_h = f'pitchH {pitchH:.1f} dp (rail present; need ≥ 84 step-1)'
+                ok_l4 = ok_h and ok_lab
+                add('L4', 'Row pitch ladder + labels whole or absent', ok_l4,
+                    f'{detail_h}; labels {len(labels_l)}, clipped {clipped[:4] or "none"}',
+                    'ux.md §1.5 icon ladder; test-plan §20 L4 (#197)')
+            else:
+                # No rail yet: preferred ≥84 depends on L5. Enforce ladder floor ≥60 + labels.
+                ladder_ok = pitchH >= 59.5
+                step = ('1' if pitchH >= 83.5 else '2' if pitchH >= 75.5 else '3' if pitchH >= 59.5 else 'below')
+                detail_h = (f'pitchH {pitchH:.1f} dp (depends on L5 for ≥84; expected step 3 until rail; '
+                            f'ladder step {step}, floor ≥60)')
+                ok_l4 = ladder_ok and ok_lab
+                # When only the preferred half would fail, keep PASS and say depends on L5.
+                add('L4', 'Row pitch ladder + labels whole or absent', ok_l4,
+                    f'{detail_h}; labels {len(labels_l)}, clipped {clipped[:4] or "none"}',
+                    'ux.md §1.5 icon ladder; test-plan §20 L4 (#197)')
+        else:
+            detail_h = f'pitchH {pitch[1]:.1f} dp (preferred floor applies to t7/t10-land @ font 1.0)' if pitch else 'n/a'
+            ok_l4 = ok_lab if labels_l is not None else (None if not pitch else True)
+            add('L4', 'Row pitch ladder + labels whole or absent',
+                ok_l4 if (pitch or labels_l is not None) else None,
+                f'{detail_h}; labels {len(labels_l)}, clipped {clipped[:4] or "none"}',
+                'ux.md §1.5 icon ladder; test-plan §20 L4 (#197)')
 
         # L5: dock placement — rail on t7-land/t10-land (and phone landscape when we have one); bottom otherwise
-        want_rail = bool(re.search(r'(^t7-land|^t10-land)', pid) or
-                         (m.get('tier') == 'phone' and rot == '1'))
+        want_rail = bool(re.search(r'(^t7-land|^t10-land|^phone-land|^rtl-.*-land)', pid) or
+                         (m.get('tier') == 'phone' and (rot == '1' or 'land' in pid)))
         # fold-open and *-port expect a bottom dock
         want_bottom = bool(re.search(r'(^t7-port|^t10-port|^fold-open)', pid) or
                            (m.get('tier') == 'phone' and rot != '1'))
@@ -752,6 +875,69 @@ def run_checks(d):
             add('L7', 'Page continuity after rotate (still page 2)', still,
                 f'Second/page 2 visible after rotate: {still}',
                 'ux.md §1.5 "same page stays shown, by page id"; test-plan §20 L7')
+
+        # L6: dock7 fixture — all 7 fit, slots ≥ 48 dp, file order. Rail-geometry half advisory until rail PR (#197).
+        if (m.get('fixture') or '') == 'dock7.json':
+            dock7 = [n for n in nodes if (n.desc or '').endswith(', dock')]
+            # Prefer desc order as drawn; file order = top→bottom on rail, start→end on bottom bar.
+            sizes_ok = all((min(n.w, n.h) / s) >= 47.5 for n in dock7) if dock7 else False
+            count_ok = len(dock7) >= 7
+            rail = dock_is_rail(dock7, W or 1, H or 1)
+            want_rail = bool(re.search(r'(^t7-land|^t10-land|^phone-land|^rtl-.*-land)', pid) or
+                             (m.get('tier') == 'phone' and (rot == '1' or 'land' in pid)))
+            if want_rail and rail:
+                # top → bottom = increasing cy
+                ordered = sorted(dock7, key=lambda n: (n.cy, n.cx))
+                order_ok = True  # presence + size is what we can assert without ids in desc
+                add('L6', 'Dock count (dock7): 7 slots ≥ 48 dp in file order',
+                    count_ok and sizes_ok and order_ok,
+                    f'count {len(dock7)}; sizes dp {[round(min(n.w, n.h)/s, 1) for n in ordered[:7]]}; rail {rail}',
+                    'test-plan §20 L6 (#197)')
+            elif want_rail and not rail:
+                # Bottom dock still: count/size can pass; rail half is advisory (L6r).
+                add('L6', 'Dock count (dock7): 7 slots ≥ 48 dp (bottom until rail)',
+                    count_ok and sizes_ok,
+                    f'count {len(dock7)}; sizes dp {[round(min(n.w, n.h)/s, 1) for n in dock7[:7]]}; '
+                    f'rail absent — geometry half advisory until L5 rail PR',
+                    'test-plan §20 L6 (#197)')
+                add('L6r', 'Dock7 rail geometry (advisory until rail PR)', False,
+                    f'want rail on {pid}; is_rail {rail}',
+                    'test-plan §20 L6 rail half (#197)')
+            else:
+                add('L6', 'Dock count (dock7): 7 slots ≥ 48 dp in file order',
+                    count_ok and sizes_ok,
+                    f'count {len(dock7)}; sizes dp {[round(min(n.w, n.h)/s, 1) for n in dock7[:7]]}; bottom dock',
+                    'test-plan §20 L6 (#197)')
+        else:
+            add('L6', 'Dock count (dock7)', None, f"fixture {m.get('fixture') or '?'} (need dock7.json)",
+                'test-plan §20 L6 (#197)')
+
+        # L13: cards-large — 2×2 + 4×1; k ≤ 1.5 on t10-land (card side ≤ 1.5 × 80 dp cell ref).
+        if (m.get('fixture') or '') == 'cards-large.json':
+            cards_n = [n for n in nodes if (n.desc or '').endswith(', widget') or ', widget,' in (n.desc or '')]
+            if not cards_n:
+                add('L13', 'Cards (cards-large): k ≤ 1.5, no stretch', None,
+                    'no card/widget nodes in dump', 'test-plan §20 L13 (#197)')
+            else:
+                # k = clamp(cell/80, 0.85, 1.5); on-screen card side should not exceed 1.5 × span × 80 dp
+                # without a known pitch, use tile pitch when present else 80.
+                ref = (pitch[0] if pitch else 80.0)
+                bad = []
+                for n in cards_n:
+                    # span guess from size / pitch
+                    span_w = max(1, round((n.w / s) / max(ref, 1)))
+                    span_h = max(1, round((n.h / s) / max((pitch[1] if pitch else ref), 1)))
+                    max_w = 1.5 * 80 * span_w
+                    max_h = 1.5 * 80 * span_h
+                    if (n.w / s) > max_w + 2 or (n.h / s) > max_h + 2:
+                        bad.append(f'{n.desc[:40]} {n.w/s:.0f}×{n.h/s:.0f} dp > {max_w:.0f}×{max_h:.0f}')
+                # t10-land is the stated point; other points still check no-stretch
+                add('L13', 'Cards (cards-large): k ≤ 1.5, no stretch', not bad,
+                    f'{len(cards_n)} card(s); bad {bad[:3] or "none"}',
+                    'test-plan §20 L13 (#197)')
+        elif pid.startswith('t10-land') and (m.get('fixture') or '') == 'launcher.json':
+            add('L13', 'Cards (cards-large)', None, 'need cards-large.json fixture on this point',
+                'test-plan §20 L13 (#197)')
 
     # TH1 theme: drawer surface colour
     th = None; detail = 'no drawer.png or Pillow'

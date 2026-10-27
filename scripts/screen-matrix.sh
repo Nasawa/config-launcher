@@ -148,6 +148,14 @@ run_point() {
   echo "== $id ($shape)"
 
   # Display + system settings for this point
+  # L12 RTL: shape containing "rtl" → Arabic locale (rail on start/left once L5 lands).
+  if echo "$shape" | grep -qi rtl; then
+    sh_ "settings put system system_locales ar-EG"
+    echo "locale=ar-EG" >> "$d/meta.txt"
+  else
+    sh_ "settings put system system_locales en-US" >/dev/null 2>&1 || true
+    echo "locale=en-US" >> "$d/meta.txt"
+  fi
   sh_ "wm size $size; wm density $dens; settings put system font_scale $fs; cmd uimode night $night"
   sh_ "settings put system accelerometer_rotation 0; settings put system user_rotation $rot"
   pause 3
@@ -176,6 +184,8 @@ run_point() {
   sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" >> "$d/run.txt" 2>&1
   pause; anr "$d"
   dump "$d" home1
+  # L3/L5 safeDrawing: system bars + cutout from dumpsys window (checker parses → insets).
+  sh_ dumpsys window > "$d/insets.txt" 2>&1 || true
   # Warm-up: the first touch after a cold start is often dropped on the emulator (pr181: the first swipe never
   # reached the launcher; main does the same), so spend it on a tap on empty grid space, which does nothing.
   if p=$($CHECK find-empty "$d/home1.xml" "$dens"); then read -r x y <<< "$p"; sh_ input tap "$x" "$y"; pause 2; fi
@@ -295,7 +305,7 @@ while IFS=$'\t' read -r id shard size dens rot fs night fixture tier shape <&3; 
 done 3< "$FIX/points.tsv"
 
 # Restore the emulator
-sh_ "wm size reset; wm density reset; settings put system font_scale 1.0; cmd uimode night no; settings put system user_rotation 0"
+sh_ "wm size reset; wm density reset; settings put system font_scale 1.0; cmd uimode night no; settings put system user_rotation 0; settings put system system_locales en-US"
 
 [ "$n" -gt 0 ] || { echo "no points matched (shard='$SHARD' points='$POINTS')" >&2; exit 2; }
 $CHECK summarize "$OUT"
