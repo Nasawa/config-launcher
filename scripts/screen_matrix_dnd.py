@@ -220,9 +220,15 @@ def score(d):
             r['ui_at'] = [ui.cx, ui.cy] if ui else None
             if 'cell' in e:
                 ok = loc is not None and loc[0] == 'page' and loc[1] == 'home' and [loc[2], loc[3]] == e['cell']
-                ui_ok = ui is not None and abs(ui.cx - k['x2']) <= p['pitch_px'][0] / 2 + 2
+                # UI cross-check: the holder sits in the expected cell's *physical* column (RTL mirrored).
+                # Compare with that column's centre, not the finger x: an edge drop in the compact 8 dp
+                # inner padding still lands in the edge column, whose centre is > pitch/2 from the finger.
+                pc = (3 - e['cell'][0]) if rtl else e['cell'][0]
+                col_cx = p['block_px'][0] + (pc + 0.5) * p['pitch_px'][0]
+                ui_ok = ui is not None and abs(ui.cx - col_cx) <= p['pitch_px'][0] / 2
                 r['ui_ok'] = ui_ok
-                det = f"saved {loc}; want cell {e['cell']}; UI Row two at {r['ui_at']} (drop x {k['x2']}) ui_ok={ui_ok}"
+                det = (f"saved {loc}; want cell {e['cell']}; UI Row two at {r['ui_at']} (drop x {k['x2']}; "
+                       f"physical col {pc} cx≈{col_cx:.0f}) ui_ok={ui_ok}")
                 ok = ok and ui_ok
             elif 'cancel' in e:
                 ok = loc == seed_loc

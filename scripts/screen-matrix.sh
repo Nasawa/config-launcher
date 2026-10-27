@@ -387,7 +387,7 @@ run_point() {
   if ! grep -q 'Search apps' "$d/drawer.xml"; then
     home; tap "$hd" text '^Apps$' && { pause; dump "$d" drawer; echo button > "$d/drawer-via.txt"; }
   fi
-  if longpress "$d/drawer.xml" text '^(Calendar|Camera|Clock|Contacts|Settings|التقويم|الكاميرا|الساعة|جهات الاتصال|الإعدادات)$'; then
+  if longpress "$d/drawer.xml" text '^(Calendar|Camera|Clock|Contacts|Settings|Chrome|Drive|Files|Gmail|Maps|التقويم|الكاميرا|الساعة|جهات الاتصال|الإعدادات)$'; then
     pause 2; dump "$d" drawer-lp
     if ! grep -q 'App info' "$d/drawer-lp.xml"; then
       retried "$d" F5b; sh_ input keyevent BACK; pause 1
@@ -396,7 +396,7 @@ run_point() {
         home; sh_ input swipe "$cx" $((sh * 70 / 100)) "$cx" $((sh * 25 / 100)) 300; pause
       fi
       rm -f "$d"/.dr.*
-      longpress "$d/drawer.xml" text '^(Calendar|Camera|Clock|Contacts|Settings|التقويم|الكاميرا|الساعة|جهات الاتصال|الإعدادات)$'; pause 2; dump "$d" drawer-lp
+      longpress "$d/drawer.xml" text '^(Calendar|Camera|Clock|Contacts|Settings|Chrome|Drive|Files|Gmail|Maps|التقويم|الكاميرا|الساعة|جهات الاتصال|الإعدادات)$'; pause 2; dump "$d" drawer-lp
     fi
   fi
   sh_ input keyevent BACK; pause 1; home
