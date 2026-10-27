@@ -81,7 +81,7 @@ Shape notes (ARCHITECTURE §3, §16):
 | Element | Spec |
 |---|---|
 | Grid | `grid.columns` × `grid.rows`, default **4 × 5**. The file allows **2–12 × 2–12** (validation rule). The Settings picker offers a narrower 3–6 × 4–7 (UX choice only); a file outside the picker range still renders, and the picker then shows the file's value. Cells fill the space between the banner slot and the page indicator evenly. The same columns × rows on every device and window: on Medium/Expanded-width windows (tablets, the open fold) cells are capped at **144 dp wide** and **1.25 : 1**, and the grid is centred (§1.5) |
-| Cell | Icon **56 dp** centred, label below. **Minimum cell 64 × 80 dp**. When a cell is too short for the icon plus one whole label line, the **icon ladder** (§1.5) steps down for the whole grid: 56 dp icon + label → 48 dp icon + label → 48 dp icon, label hidden. Never clipped. 56 dp is the size on every device; 48 dp is only this fallback |
+| Cell | Icon **56 dp** centred, label below. **Preferred minimum cell 64 × 80 dp** (§1.1 touch/design floor). Showing **56 dp + a whole label** needs row pitch ≥ **84 dp** (56 + 16 + 12 at font 1.0); when the cell is shorter, the **icon ladder** (§1.5) steps down for the whole grid: 56 dp icon + label → 48 dp icon + label → 48 dp icon, label hidden. Never clipped. 56 dp is the size on every device; 48 dp is only this fallback |
 | Label | 12 sp, 1 line, ellipsized at the end, centred, white with a soft shadow for wallpaper contrast (§12) |
 | Label backdrop (v1 setting, default off, Q-C4, §18.1) | When on: a rounded **60 % black** scrim behind each home-grid label (a background on the label, 6 dp side and 2 dp top/bottom padding, hugging the text width up to the cell width). The text shadow stays on. Applies to page items and folder tiles on home, not the dock (no labels) or inside the folder card. Stored in app settings (DataStore), not in `launcher.json` |
 | Pages | Horizontal pager. One page minimum. The page indicator shows only with ≥ 2 pages. Dots are 8 dp, current = filled |
@@ -268,8 +268,32 @@ with 0.6 dp spare, so it's **step 2: 48 dp icons, labels shown**. (At font 1.0 t
 56 dp needs a row pitch of about 84 dp at font 1.0.) A notice-row chip there (its own 48 dp row above the title bar,
 §6.1) takes about 10 dp per row and drops it to step 3.
 
-**Phone goldens move once.** Drawing 56 dp changes `PhoneOutputGoldenTest` on any phone whose cells reach step 1. They
-are re-baselined once, in the same PR as the icon change; after that, Compact stays unchanged.
+**Row-pitch floors for the ladder (font 1.0).** Content box = row pitch − 12 dp (4 dp cell pad + 8 dp tile pad). Label
+line ≈ 16 dp at font 1.0 (≈ 17 dp at 1.3). The first step that fits wins; **no step may show a clipped label**:
+1. **56 dp + label:** runs only when pitchH ≥ **84 dp** (56 + 16 + 12). That is the step-1 / L4 pass threshold. §1.1's
+   **80 dp** is the preferred cell floor (touch/design intent), not a pass number — between 80 and 84 the ladder is
+   already on step 2, so labels stay whole. With the end-edge rail reclaiming the dock on t7-land / t10-land, expected
+   pitch is about 85 dp and clears 84.
+2. **48 dp + label:** pitchH ≥ **76 dp** (48 + 16 + 12). Labels stay whole.
+3. **48 dp, label hidden:** pitchH ≥ **60 dp** (48 + 12). Labels are cleanly absent (still spoken by TalkBack), never
+   clipped.
+
+A short window that still has a bottom dock (e.g. t7-land before the rail lands, measured ~64.5 dp on #194) lands on
+step 3. The runtime ladder is what handles short windows; the §15 load-time fit check stays on a portrait bar at
+`smallestScreenWidthDp` and is not wired to window metrics (Q-A12). No extra title-bar step for landscape.
+
+**Centring is measured inside the safe area.** On Medium/Expanded the block is centred in the page area after
+`WindowInsets.safeDrawing` (system bars and cutouts). Left and right margins match within 1 px of that area; measuring
+from the raw screen edge can show a few dp of asymmetry from a side nav bar or cutout and is not a layout bias.
+
+**Aspect caps are applied in px with floor.** `pitchW` is derived so the on-screen cell never rounds *up* past 1.25 ×
+height (and height never past 1.5 × width). A check may allow +1 px of measurement slack; the user-visible intent stays
+a hard ≤ 1.25 : 1 / ≤ 1.5 : 1 cap.
+
+**Phone output stays identical.** There are no screenshot goldens in the repo. `PhoneOutputGoldenTest` pins
+only each fixture's config JSON errors or canonical SHA-256 (and load warnings) in `test-fixtures/phone-output.json`,
+shared with `scripts/validate.py`. Drawing 56 dp icons does not change that file; Compact layout stays the fill-width
+behaviour it always was, and the golden stays green without a re-baseline.
 
 **Content width for the rows above and below the grid.** On Medium and Expanded, the §6.1 banner, the notice row, the
 §1.3 page label, the §15 title bar and a bottom dock are centred on the grid block and use the **content width**: the
