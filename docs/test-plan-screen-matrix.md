@@ -71,7 +71,7 @@ Fixtures live outside `test-fixtures/` on purpose, because CI diffs that tree ag
 ## 2. Flows per point
 
 `scripts/screen-matrix.sh` runs these on every point. Before the flows, it runs `pm clear`, sets the launcher as home,
-and seeds the fixture with `run-as` (debug APK).
+and seeds the fixture with `run-as` (debug APK). Prefs and `launcher.json` are copied **before** `set-home-activity`, then the driver force-stops again and re-copies (avoids a race where set-home auto-launches into empty prefs → FirstRun). Home is verified before F/G; failures are X3 (harness), not product.
 
 | ID | Flow | Pass | Spec |
 |---|---|---|---|
@@ -97,6 +97,7 @@ is `SKIP`. On a real run, a SKIP of a blocking check makes the point `INCOMPLETE
 | X0 | Requested display size applied | The `wm size` override in `run.txt` equals the point's `size_px`. Android clamps an override to a multiple of the AVD panel, so CI sets a panel per shard (§5). A FAIL means the point ran at another size, so its other results describe that size, not the point |
 | X1 | Requested night mode applied | advisory. `cmd uimode night` reads back the variant's theme, and `meta.txt` records `night_via`. The API 29 image locks night mode (`mNightModeLocked=true`, pr182), so `cmd uimode night yes` and `settings put secure ui_night_mode` are both ignored there (runs 1–3, as in #150). The driver tries, in order: `cmd`, the secure setting, `cmd` after `adb root` (a locked mode still accepts a caller with `MODIFY_DAY_NIGHT_MODE`), then the Settings › Display › Dark theme switch (what pr182 did by hand). `via none` means nothing stuck; TH1 is judged against the theme that really applied, and dark is still covered by the eight API 35/36 v2 points. Stays advisory: it describes the harness, not the app |
 | X2 | Gestures registered first time | advisory. Lists the flows the driver had to repeat (`retries.txt`, §5): F3/F4 when the menu didn't open, F5 when the swipe didn't open the drawer, F5b when the app menu didn't open. A retried flow is still judged on its second dump, so a flake shows here instead of failing the point; a flow that fails twice fails its own check |
+| X3 | Seeded home showing before F/G checks | advisory (harness). After each seed the driver verifies `Home, Pages` + a dock slot on `home1`, and retries clear+reseed (prefs copied *before* `set-home-activity`) up to 3 times. A first-run "Choose your config folder" screen means the seed did not stick — recorded as X3 FAIL, not as product F2/F4/F5/G*. `seed-failed.txt` + `partial=yes` skip F3–F7 so those checks stay SKIP advisory |
 
 **Title bar** (both pages; ux.md §15 "Overflow ladder (narrow phones, #149)"):
 
@@ -159,7 +160,7 @@ lands. Under `dev8` they block. F1 (crashes/ANRs) always blocks.
 **Advisory everywhere:**
 - Everything at font 2.0 except F1 (crashes always block). ux.md §12 allows hidden labels at ≥ 150 % and Q-S5
   (fitting cells at 200 %) is open.
-- T5, T6, A1, D3, D4a, G6, TH1, X1, X2 and P1.
+- T5, T6, A1, D3, D4a, G6, TH1, X1, X2, X3 and P1.
 
 **Minimum on-box gate** (when CI isn't available, see §5): `--gate` runs `s320-a51-v1`, `s320-a51-v2`, `s320-mdpi-v1`,
 `p411-a51-v1`, `p411-a51-v2` and `t7-land-v1`.
@@ -263,6 +264,7 @@ python3 scripts/screen_matrix_check.py check screen-matrix-out/p411-a51-v1   # r
   on the software-only emulator (pr178); 1.6 s held 3/3.
 - The first touch after a cold start is often dropped (pr181: the first swipe never reached the launcher; main does
   the same). After F2 the driver spends it on a tap on empty grid space, which does nothing.
+- F1 treats `am start -W` `Status: timeout` as started when MainActivity is ours and there is no crash/ANR (software emulators often time out the idle wait).
 - F3, F4, F5 and F5b retry once when the expected menu or drawer isn't in the dump, and log it for X2 (§3).
 - On API 29, night mode may need `adb root` or the Settings UI (X1, §3). `adb root` stays on for the rest of the run.
 - A system ANR dialog (the image's own launcher, System UI) that appears between the ANR check and a dump replaces the
