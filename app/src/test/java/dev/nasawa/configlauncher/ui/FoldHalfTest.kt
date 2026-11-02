@@ -38,6 +38,7 @@ import java.io.File
  * window-testing's WindowLayoutInfoPublisherRule (#197). Window 840 x 700 dp at xhdpi = 1680 x 1400 px.
  *  - book (vertical hinge, half-open): every node in the start half (left LTR, right RTL); the end half is empty;
  *  - tabletop (horizontal hinge): nothing straddles the hinge; title bar and grid above, dots and dock below;
+ *    the §1.5 title-bar pad fallback and the L16 grid pitch measure the top half, not the window;
  *  - flat hinge and no feature: the same layout as today;
  *  - the page is kept by id across posture changes, nothing is written;
  *  - a posture change mid-drag cancels it with nothing written.
@@ -151,6 +152,40 @@ class FoldHalfTest {
 
     @Test @Config(qualifiers = "ar-rEG-ldrtl-w840dp-h700dp-land-xhdpi")
     fun tabletopSplitsAtTheHingeRtl() = tabletop()
+
+    // §1.5 / L16 on a tabletop: the title-bar pad fallback and the grid pitch both measure the top half (above the
+    // hinge), not the window. Flat, the 700 dp page column keeps the fixture's padding.vertical = 6; above a
+    // centred hinge it is ~330 dp (< 480), so the pad is absorbed, and the 5 rows still fit at ≥ 48 dp each.
+    private fun tabletopMeasuresTopHalf() {
+        val density = compose.activity.resources.displayMetrics.density
+        // Title-bar pad above the {page} target: its top minus the 48 dp top row (no safeDrawing top inset here).
+        fun barPadTop() = boundsOf("Home, Pages").top / density - 48f
+        fun pitchH() = (boundsOf("Row two").top - boundsOf("QA Settings").top) / density
+        val flatPad = barPadTop(); val flatPitch = pitchH()
+        assertEquals("flat: the 700 dp page column keeps padding.vertical", 6f, flatPad, 0.5f)
+        val h = publish(FoldingFeature.State.HALF_OPENED, FoldingFeature.Orientation.HORIZONTAL)!!
+        val topHalfDp = h.top / density
+        assertTrue("the top half is short ($topHalfDp dp)", topHalfDp < 480f)
+        // §1.5 ladder: TitleBarRow gets the top half's height as pageColumnHeightDp, so the pad is absorbed.
+        assertEquals(0, HomeGeometry.titleBarPaddingV(6, topHalfDp))
+        assertEquals("tabletop: the title-bar pad is absorbed (top half < 480 dp)", 0f, barPadTop(), 0.5f)
+        // L16: the grid pitch comes from the slot above the hinge: 5 rows fit there, each still ≥ 48 dp.
+        val pitch = pitchH()
+        assertTrue("tabletop pitch $pitch < flat $flatPitch: measured from the top half", pitch < flatPitch)
+        assertTrue("tabletop pitchH $pitch ≥ 48 (rows × 48 fits the top half)", pitch >= HomeGeometry.MIN_TOUCH_DP - 0.5f)
+        val gridBottomDp = boundsOf("QA Settings").top / density + 5 * pitch
+        assertTrue("5 rows end above the hinge: $gridBottomDp ≤ $topHalfDp", gridBottomDp <= topHalfDp + 0.5f)
+        listOf("QA Settings", "Row two").forEach {
+            val hit = boundsOf(it).height / density
+            assertTrue("$it hit height $hit ≥ 48", hit >= HomeGeometry.MIN_TOUCH_DP - 0.5f)
+        }
+    }
+
+    @Test @Config(qualifiers = "w840dp-h700dp-land-xhdpi")
+    fun tabletopMeasuresTopHalfLtr() = tabletopMeasuresTopHalf()
+
+    @Test @Config(qualifiers = "ar-rEG-ldrtl-w840dp-h700dp-land-xhdpi")
+    fun tabletopMeasuresTopHalfRtl() = tabletopMeasuresTopHalf()
 
     // Flat (isSeparating false) and no feature: today's layout, unchanged; back from a half-open fold too.
     private fun flatUnchanged() {
