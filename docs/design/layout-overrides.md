@@ -134,7 +134,7 @@ and never any override's output.
 |---|---|---|
 | `widthClass` | `compact` \| `medium` \| `expanded` | Window width: < 600, 600–839, ≥ 840 dp |
 | `orientation` | `portrait` \| `landscape` | `landscape` when the window's width > height, otherwise `portrait` (a square counts as portrait). It's the window's shape, so split screen follows the window |
-| `posture` | `book` \| `tabletop` | A half-open `FoldingFeature` on this window, with a vertical (`book`) or horizontal (`tabletop`) hinge (§9). Any other window matches neither |
+| `posture` | `book` \| `tabletop` | A `FoldingFeature` on this window with `isSeparating == true` (half-open, or a flat dual-screen hinge), vertical (`book`) or horizontal (`tabletop`) (§9). It's the same test the home split uses. Any other window matches neither |
 
 **Nothing else.** An unknown `when` key or value is an error (strict keys).
 
@@ -362,9 +362,11 @@ sensors → Posture* and the hinge angle slider. They aren't tested with `wm siz
 question goes to Christopher.
 
 - **`posture`** needs `androidx.window:window` (`WindowInfoTracker.windowLayoutInfo`), collected in the Activity and
-  passed into the pure geometry as data. `book` is `HALF_OPENED` with a vertical hinge, and `tabletop` is with a
-  horizontal one. A `FoldingFeature` is only reported when the window overlaps the hinge.
-- **Unfolded flat:** the hinge is ignored (ux.md §1.5). The inner screen is a medium or expanded window, so
+  passed into the pure geometry as data. It's the only fold source, so `androidx.window:window-testing` can inject one
+  (L9). `book` is a separating `FoldingFeature` (`isSeparating == true`) with a vertical hinge, and `tabletop` is one
+  with a horizontal hinge. That covers `HALF_OPENED` folds and flat dual-screen hinges, which have a real gap, and
+  matches the home split (#219). A `FoldingFeature` is only reported when the window overlaps the hinge.
+- **Unfolded flat:** a non-separating hinge (`isSeparating == false`) is ignored (ux.md §1.5). The inner screen is a medium or expanded window, so
   `widthClass` matches it.
 - **Cover screen:** a compact window, matched by `widthClass: "compact"`. It needs no detection.
 - **`fold.halfOpened`** applies only while `isSeparating` is true:
