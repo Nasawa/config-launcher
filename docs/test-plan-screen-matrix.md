@@ -225,7 +225,7 @@ L2/L3 map physical columns to logical ones under RTL, so a correctly mirrored gr
 | L6 | §20 L6 (#197) | fixture `dock7.json` | 7 slots ≥ 48 dp, file order; rail-geometry half **advisory** until rail (`L6r`) | advisory→block at dev8 (L6r always advisory) | dock7-t7-land/port, dock7-phone-land | **auto** |
 | L7 | §20 L7 | `home2-rot.xml` still page 2 | page id preserved | advisory→block at dev8 | large with home2 | **auto** |
 | L8 | §20 L8 (#197) | cancel mid-drag | cancelled, nothing written, old cell | unit + androidTest | JVM + instrumented | **auto** (unit in CI; rotate smoke in androidTest) |
-| L9 | §20 L9 (#197) | `WindowLayoutInfoPublisherRule` | no cell/card/dock ∩ hinge; book/tabletop/flat | — | androidTest | **deferred — needs Sprite** (`WindowInfoTracker` in production) |
+| L9 | §20 L9 (#197) | `WindowLayoutInfoPublisherRule` | no cell/card/dock ∩ hinge; book/tabletop/flat | unit (CI `testDebugUnitTest`) | JVM (Robolectric, `FoldHalfTest`) | **auto** (book/tabletop/flat/none, LTR+RTL; real fold posture stays manual) |
 | L10 | §20 L10 (#197) | `Edits.freeCell` / `AddToHome` / `MoveToCell` | same answers for the same file (grid only) | unit (CI `testDebugUnitTest`) | JVM | **auto** |
 | L11 | §20 L11 | margin long-press / swipe / drop / column taps | per §20 | — | — | **deferred to dev9** |
 | L12 | §20 L12 (#197) | new rows | 599/600, 839/840 dp; phone-land 800×360; RTL t7-land | via L3/L5 on those points | bound-*, phone-land-v1, rtl-t7-land-v1 | **auto** |
@@ -249,7 +249,6 @@ side nav/cutout is not a layout bias (#197).
 | ID | Status | Notes |
 |---|---|---|
 | L1 full | manual | rotate ×4 / fold↔unfold |
-| L9 | Sprite | production must consume `WindowInfoTracker` before hinge asserts |
 | L11 | dev9 | instrumented margins |
 | L8 full hash | matrix + androidTest | unit pins cancel contract; device rotate smoke is best-effort without seeded fixture |
 | Edge DnD | **manual, blocks dev8** | every grid edge/corner + side gutters; 411 / t7 / t10 port+land + fold open; stable host only (§4) |

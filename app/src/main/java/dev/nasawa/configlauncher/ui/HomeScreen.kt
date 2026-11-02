@@ -254,9 +254,15 @@ fun HomeScreen(vm: HomeViewModel) {
     androidx.activity.compose.BackHandler(editing) { editing = false }
 
     val winConfig = androidx.compose.ui.platform.LocalConfiguration.current
-    val winW = winConfig.screenWidthDp.toFloat()
+    // §1.5 Foldables: a separating hinge puts home in one half, laid out as if that half were the window.
+    val fold = rememberFoldSplit()
+    val foldDensity = androidx.compose.ui.platform.LocalDensity.current
+    val book = fold as? FoldSplit.Book
+    val tabletop = fold as? FoldSplit.Tabletop
+    val winW = book?.let { with(foldDensity) { it.startPx.toDp().value } } ?: winConfig.screenWidthDp.toFloat()
     val winH = winConfig.screenHeightDp.toFloat()
-    val useRail = HomeGeometry.useRail(winW, winH)
+    // Tabletop: the dock is a bottom bar in the bottom half, never a rail.
+    val useRail = tabletop == null && HomeGeometry.useRail(winW, winH)
     val widthClass = HomeGeometry.widthClass(winW)
     drag.dockVertical = useRail
     // §1.5 RTL (#187): drop math mirrors columns and the bottom dock; the rail itself is placed by the Row.
@@ -267,6 +273,8 @@ fun HomeScreen(vm: HomeViewModel) {
     // #214: remembered here, above the rail / bottom-dock branch. HomeBody has two call sites, and saved state is
     // keyed by composition position, so a pager remembered inside it lost its page whenever useRail flipped.
     val pager = rememberPagerById(pages.map { it.id })
+    // §1.5: a posture change cancels a drag with nothing written (the layout under the finger moved).
+    LaunchedEffect(fold) { if (drag.dragged != null) drag.cancel() }
     // ux.md §1 / §14 R4: Home on home leaves edit mode (saving first), closes drawer and folder, goes to page 1.
     LaunchedEffect(Unit) {
         vm.homePresses.collect {
@@ -302,7 +310,9 @@ fun HomeScreen(vm: HomeViewModel) {
             )
             val chromeContent = chromeWidth.takeIf { widthClass != HomeGeometry.WidthClass.Compact }
 
-            val rootMod = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).swipeUpToOpen(
+            // Book: the start half only; the window otherwise. Tabletop splits inside HomeBody.
+            val rootMod = (if (book != null) Modifier.fillMaxHeight().width(with(density) { book.startPx.toDp() }) else Modifier.fillMaxSize())
+                .windowInsetsPadding(WindowInsets.safeDrawing).swipeUpToOpen(
                 // §1.4: off in edit mode and while dragging; the bottom system-gesture strip belongs to the system.
                 // Insets are safeDrawing (§1.5); the gesture strip is still nav-bar-relative.
                 { !editing && drag.dragged == null && !drawerOpen }, { gestureBottomPx }) { drawerOpen = true }
@@ -313,8 +323,13 @@ fun HomeScreen(vm: HomeViewModel) {
             // keys off the laid-out height, not Configuration.screenHeightDp (Pragma #201).
             BoxWithConstraints(mod) {
             // Unbounded maxHeight is Dp.Infinity; treat as short so title-bar pad still absorbs.
-            val pageColH = maxHeight.value.let { if (it.isFinite()) it else 0f }
+            // Tabletop: everything down to the grid ends at the hinge (root sits below the safeDrawing top inset).
+            val topInsetPx = WindowInsets.safeDrawing.getTop(density)
+            val topHalf = tabletop?.let { with(density) { (it.hingeTopPx - topInsetPx).coerceAtLeast(0).toDp() } }
+            val pageColH = topHalf?.value ?: maxHeight.value.let { if (it.isFinite()) it else 0f }
             Column(Modifier.fillMaxSize()) {
+            // Same structure in every posture (only modifiers change), so saved state keeps its keys.
+            Column(if (topHalf != null) Modifier.fillMaxWidth().height(topHalf) else Modifier.fillMaxWidth().weight(1f)) {
                 // #75: the edit bar takes the top row's place at the same height, so the grid doesn't jump under the finger.
                 // §1.5 rail: Apps/Done and ⋮ move onto the rail head; the source note and "Editing layout" are omitted.
                 if (!railHead) Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
@@ -426,8 +441,13 @@ fun HomeScreen(vm: HomeViewModel) {
                     pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true },
                         tiles = consentTiles(it.id), onTile = { t -> if (t.reason == ConsentUi.Reason.Update) updateHint = true else openPrompt(t.id ?: "") },
                         live = ConsentUi.live(ui.load.config, consentReport, it.id),
-                        onWidgetLong = { s -> widgetSheet = s }, onPermissions = { id -> detailFor = id }) }
+                        onWidgetLong = { s -> widgetSheet = s }, onPermissions = { id -> detailFor = id }, windowWidthClass = widthClass) }
                 }
+                } // LocalLabelBackdrop
+            } // top part (the top half on a tabletop)
+                // Tabletop: skip the hinge; dots and dock sit at the bottom of the bottom half.
+                Spacer(if (topHalf != null) Modifier.weight(1f) else Modifier)
+                CompositionLocalProvider(LocalLabelBackdrop provides backdrop) {
                 if (pages.size > 1) ContentWidthBox(chromeContent) { PageDots(pages.size, pager.settledPage) }
                 // ux.md §1.3: page label → page list → jump. Nothing is written.
                 if (pageList) PageListSheet(PageList.rows(pages, pager.settledPage), onPick = { i ->
@@ -470,6 +490,7 @@ fun HomeScreen(vm: HomeViewModel) {
             } // BoxWithConstraints (page column measure)
             } // HomeBody
 
+            Box(Modifier.fillMaxSize()) {
             if (useRail) {
                 Row(rootMod) {
                     HomeBody(
@@ -542,6 +563,12 @@ fun HomeScreen(vm: HomeViewModel) {
                 }
             } else {
                 HomeBody(rootMod, railHead = false)
+            }
+            // Book: the end half is wallpaper, like a margin: swipe up opens the drawer, long-press the home menu.
+            // No semantics, so it takes no focus. Always present (zero wide otherwise) to keep the structure fixed.
+            Box(Modifier.align(Alignment.TopEnd).fillMaxHeight().width(with(density) { (book?.endPx ?: 0).toDp() })
+                .swipeUpToOpen({ !editing && drag.dragged == null && !drawerOpen }) { drawerOpen = true }
+                .pointerInput(Unit) { detectTapGestures(onLongPress = { if (!editing) homeMenu = true }) })
             }
         }
 
@@ -851,14 +878,16 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
 @Composable
 internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit,
                      tiles: List<ConsentUi.Tile> = emptyList(), onTile: (ConsentUi.Tile) -> Unit = {},
-                     live: List<ConsentUi.Live> = emptyList(), onWidgetLong: (WidgetSheetFor) -> Unit = {}, onPermissions: (String) -> Unit = {}) {
+                     live: List<ConsentUi.Live> = emptyList(), onWidgetLong: (WidgetSheetFor) -> Unit = {}, onPermissions: (String) -> Unit = {},
+                     windowWidthClass: HomeGeometry.WidthClass? = null) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = grid.rows
     val occupied by rememberUpdatedState(byCell.keys + tiles.flatMap { it.placement.cells() } + live.flatMap { it.placement.cells() })
     val onEmpty by rememberUpdatedState(onEmptyLong)
     // §1.5: width class from the window; pitch from the pager slot left for the grid.
+    // (§1.5 Foldables: the half's class when home is in one half.)
     val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.toFloat()
-    val widthClass = HomeGeometry.widthClass(screenW)
+    val widthClass = windowWidthClass ?: HomeGeometry.widthClass(screenW)
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
     val labelStyle = TileLabel.style(MaterialTheme.typography.labelSmall, onWallpaper = true)
     val backdrop = LocalLabelBackdrop.current

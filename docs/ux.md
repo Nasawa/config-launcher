@@ -387,8 +387,10 @@ half stands up, with the crease running side to side.
 - **Folded (cover screen):** a phone. Compact width; portrait uses the phone layout, landscape uses the rail.
 - **Unfolded, flat:** an ordinary window, usually Medium/Expanded width with a bottom dock (1.2 : 1). A flat hinge
   (`FoldingFeature.isSeparating == false`) is ignored.
-- **Half-folded or dual-screen** (`isSeparating == true`, e.g. `HALF_OPENED`): no cell, card or dock slot crosses the hinge
-  bounds. **All of home goes in one half**, laid out as if that half were the window (classes recomputed from it):
+- **Half-folded or dual-screen** (any `FoldingFeature` with `isSeparating == true`: half-open, or a flat dual-screen
+  hinge): no cell, card or dock slot crosses the hinge bounds. This covers home content only. The drawer, folders, sheets
+  and dialogs currently stay full-window; keeping their interactive content off a separating hinge is tracked in #226.
+  **All of home goes in one half**, laid out as if that half were the window (classes recomputed from it):
   - **Book** (vertical hinge): the start half (left in LTR, right in RTL).
   - **Tabletop** (horizontal hinge): the top row, notice row, page label or title bar and the grid in the top half; the
     page dots and the dock, as a bottom bar, in the bottom half.
@@ -980,7 +982,7 @@ this table.
 ## 13. Build checklist (Sprite)
 
 - [ ] Home: pager + grid (`grid.columns/rows`, default 4 × 5, file allows 2–12) + dock (0–7), sizes from §1.1, wallpaper through.
-- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels; step 4 touch-floor on Compact-height + rail); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded = one half, nothing across the hinge; page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L16 in test-plan.md §20 (L16 = phone-land touch floor). dev8 builds the defaults only and still rejects any override key (O0); the config overrides after dev8 follow [`docs/design/layout-overrides.md`](design/layout-overrides.md) (Q-A11, slices O1–O6 / checks O9–O13).
+- [ ] Large screens (§1.5): window size classes from the current window; the file's columns × rows on every window; 144 dp / 1.25 : 1 cell cap and a centred block on Medium/Expanded (Compact unchanged); 56 dp icons with the icon ladder (48 dp before hiding labels; step 4 touch-floor on Compact-height + rail); the title-bar fit check at load only, against a portrait bar at `smallestScreenWidthDp`, never wired to window metrics (§15, Q-A12); dock rail on the end edge at ≥ 1.4 : 1 or height < 480 dp, with `Apps`/`⋮` at its head; bottom dock on the open fold; half-folded or dual-screen (`isSeparating`) = home in one half, no home content across the hinge (overlays: #226); page restored by `id`; a drag cancelled on a window change; nothing written on rotate/fold/resize; placement scans use the file's grid; focus order and RTL as in §1.5. Checks L1–L16 in test-plan.md §20 (L16 = phone-land touch floor). dev8 builds the defaults only and still rejects any override key (O0); the config overrides after dev8 follow [`docs/design/layout-overrides.md`](design/layout-overrides.md) (Q-A11, slices O1–O6 / checks O9–O13).
 - [ ] Dimmed tiles and reconciliation (§1.2): not installed, unpublished shortcut, paused work apps, activity fallback, unplaced apps in the drawer only (`page` not offered in Settings), private space never placed. Never auto-delete.
 - [ ] Item sheet shows the real app name and package. Strip bidi and zero-width characters from labels at render.
 - [ ] Drawer: search (§2 match rules, focused with the keyboard up; TalkBack and hardware-keyboard rules, Back hides the keyboard first, `Open keyboard with drawer` setting), `drawer.sort` (label or installTime), `drawer.rules` groups, hidden apps section (package names), work tab.
