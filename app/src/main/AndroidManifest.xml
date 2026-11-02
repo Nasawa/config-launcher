@@ -16,6 +16,9 @@
         android:allowBackup="false"
         android:supportsRtl="true"
         android:dataExtractionRules="@xml/data_extraction_rules">
+        <!-- #188: no android:configChanges on purpose. A rotate, fold, resize or multi-window change recreates the
+             activity, which re-lays out from the new window and cancels a drag with no write (§1.5); the pager
+             keeps its page by id through saved state (ui/PageById.kt), the same path a config reload uses. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

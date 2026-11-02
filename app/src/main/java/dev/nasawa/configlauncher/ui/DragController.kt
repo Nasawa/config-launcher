@@ -176,16 +176,26 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
                         return@awaitEachGesture
                     }
                     val res = LongPress.track(down.position, 8.dp.toPx(), canDrag)
-                    while (true) {
-                        val ch = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
-                        if (ch == null) { if (res.dragging) cancel(); break }
-                        when (res.next(ch.position, ch.pressed)) {
-                            LongPress.Step.START_DRAG -> { start(item, rects[key] ?: Rect.Zero); move(ch.position - down.position); ch.consume() }
-                            LongPress.Step.DRAG -> { move(ch.positionChange()); ch.consume() }
-                            LongPress.Step.DROP -> { ch.consume(); drop(); break }
-                            LongPress.Step.MENU -> { ch.consume(); onLongClick(); break }
-                            LongPress.Step.WAIT -> ch.consume()
+                    var mine = false // this gesture started the drag and has not ended it yet
+                    try {
+                        while (true) {
+                            val ch = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                            if (ch == null) { if (mine) { mine = false; cancel() }; break }
+                            // #214 (5): an ACTION_CANCEL (rotate / window resize mid-drag) arrives as a lift that is already
+                            // consumed. It must cancel, never drop (Compose's own waitForUpOrCancellation reads it the same way).
+                            when (res.next(ch.position, ch.pressed, ch.isConsumed)) {
+                                LongPress.Step.START_DRAG -> { start(item, rects[key] ?: Rect.Zero); mine = true; move(ch.position - down.position); ch.consume() }
+                                LongPress.Step.DRAG -> { move(ch.positionChange()); ch.consume() }
+                                LongPress.Step.DROP -> { ch.consume(); mine = false; drop(); break }
+                                LongPress.Step.MENU -> { ch.consume(); onLongClick(); break }
+                                LongPress.Step.CANCEL -> { if (mine) { mine = false; cancel() }; break }
+                                LongPress.Step.WAIT -> ch.consume()
+                            }
                         }
+                    } finally {
+                        // The gesture coroutine was cancelled (tile left composition, Activity destroyed) mid-drag: no write,
+                        // and release the engine's dragging hold so a held incoming file isn't stuck.
+                        if (mine) cancel()
                     }
                 }
             }
@@ -195,10 +205,12 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
 
 /** Pure state machine for the part of a gesture after the long-press timeout (unit-tested). */
 class LongPress private constructor(private val origin: Offset, private val slop: Float, private val canDrag: Boolean) {
-    enum class Step { WAIT, START_DRAG, DRAG, DROP, MENU }
+    enum class Step { WAIT, START_DRAG, DRAG, DROP, MENU, CANCEL }
     var dragging = false; private set
 
-    fun next(pos: Offset, pressed: Boolean): Step = when {
+    /** [consumed]: a lift that someone already consumed is a pointer cancel, not a release (#214). */
+    fun next(pos: Offset, pressed: Boolean, consumed: Boolean = false): Step = when {
+        !pressed && consumed -> Step.CANCEL
         !pressed -> if (dragging) Step.DROP else Step.MENU
         dragging -> Step.DRAG
         canDrag && (pos - origin).getDistance() > slop -> { dragging = true; Step.START_DRAG }

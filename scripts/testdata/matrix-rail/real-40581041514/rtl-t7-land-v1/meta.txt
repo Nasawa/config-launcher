@@ -1,0 +1,23 @@
+id=rtl-t7-land-v1
+shard=tablets
+size_px=1200x1920
+screen_px=1920x1200
+density=320
+rotation=1
+font_scale=1.0
+night=no
+fixture=launcher.json
+tier=large
+shape=L12 RTL simulated 7-inch tablet landscape (rtl; rail on the end edge = left in RTL, #187)
+api=35
+gate=dev8
+locale=ar-EG
+applied_px=1200x1920
+night_applied=no
+night_via=cmd
+seed_ok=1
+seed_attempts=1
+app_locales=Locales for dev.nasawa.configlauncher for user 0 are [ar-EG]
+force_rtl=1
+layout_dir=
+nav_inset=[0,1136][1920,1200]
