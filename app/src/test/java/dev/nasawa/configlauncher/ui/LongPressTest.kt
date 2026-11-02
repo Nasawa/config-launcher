@@ -24,6 +24,17 @@ class LongPressTest {
         assertEquals(Step.DROP, lp.next(Offset(100f, 100f), pressed = false))
     }
 
+    @Test fun consumedLiftIsACancelNotADrop() {   // #214 (5): ACTION_CANCEL on a rotate mid-drag
+        val lp = LongPress.track(o, 8f, canDrag = true)
+        assertEquals(Step.START_DRAG, lp.next(Offset(120f, 100f), pressed = true))
+        assertEquals(Step.CANCEL, lp.next(Offset(160f, 140f), pressed = false, consumed = true))
+    }
+
+    @Test fun consumedLiftBeforeADragOpensNoMenu() {
+        val lp = LongPress.track(o, 8f, canDrag = true)
+        assertEquals(Step.CANCEL, lp.next(o, pressed = false, consumed = true))
+    }
+
     @Test fun noDragWhereDragIsOff() {   // folder children / drawer tiles
         val lp = LongPress.track(o, 8f, canDrag = false)
         assertEquals(Step.WAIT, lp.next(Offset(300f, 300f), pressed = true))
