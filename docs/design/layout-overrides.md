@@ -124,7 +124,7 @@ without much foreseeable value, cut that thread. Functional, not one-size-fits-a
 | `positions` | object, id → `{page?, x, y[, w, h]}`, at most 2000 keys | Only allowed in an entry that also sets `grid` (§6.1) |
 | `cellCap` | `{enabled?, maxWidthDp?, maxAspect?}` | `enabled` (bool, default true on Medium/Expanded and false on Compact, as in ux.md §1.5) turns both the cap and centring on or off. `maxWidthDp` is 64–480 (default 144). `maxAspect` is 1.0–3.0 (default 1.25) |
 | `dock` | `{edge}` | `auto` (the ux.md §1.5 rule) \| `bottom` \| `top` \| `start` \| `end` (§5.3) |
-| `fold` | `{halfOpened}` | `auto` \| `start` \| `end` \| `span` (§9) |
+| `fold` | `{halfOpened}` | `auto` \| `start` \| `end` \| `span` (§9). Applies whenever the hinge separates (`isSeparating`), so half-open folds and flat dual-screen hinges |
 
 ### 4.3 `when`: the matcher
 **Every key that's present must match.** Matching uses the current window (`currentWindowMetrics`, as in ux.md §1.5)
