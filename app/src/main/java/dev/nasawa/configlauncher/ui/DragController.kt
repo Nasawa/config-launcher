@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.zIndex
 import dev.nasawa.configlauncher.model.Edit
 import dev.nasawa.configlauncher.model.Edits
@@ -110,8 +111,26 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
         if (job.isCompleted) end() // a scope that is already cancelled
     }
 
-    /** §17 Q6: a cancelled drag has no pending op, so a held incoming file is applied right away. */
+    /**
+     * §17 Q6: a cancelled drag has no pending op, so a held incoming file is applied right away.
+     * A pointer cancel (#214 Step.CANCEL) springs back like a refused drop (#212).
+     */
     fun cancel() { if (returning) return; springBack() }
+
+    /**
+     * The gesture coroutine ended mid-drag (tile left composition, Activity destroyed / recreated):
+     * clear at once, no animation (the layout under the tile is gone), and never write.
+     */
+    fun cancelNow() {
+        if (returning) { end(); return }
+        if (dragged == null) return
+        engine().dragging = false
+        end()
+        onCancel()
+    }
+
+    /** The tile for [id]/[app] left composition (recreate, reload, page disposed): a drag on it ends at once. */
+    internal fun detached(id: String, app: Any?) { if (dragged?.item?.id == id && dragged?.app == app) cancelNow() }
 
     fun drop() {
         val item = dragged ?: return
@@ -157,6 +176,9 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
         val isMe = dragged?.item?.id == item.item.id && dragged?.app == item.app
         return this
             .onGloballyPositioned { rects[key] = it.boundsInRoot() }
+            // #212/#214: leaving composition sends a pointer cancel before the gesture coroutine ends; this
+            // makes that path instant (no spring-back toward a layout that is gone) whichever runs first.
+            .then(DetachElement(this@DragController, item.item.id, item.app))
             // One TalkBack node: the label merges into the node that owns tap, long-press (the item sheet)
             // and the ux.md §12 custom actions.
             .semantics(mergeDescendants = true) {
@@ -194,13 +216,23 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
                         }
                     } finally {
                         // The gesture coroutine was cancelled (tile left composition, Activity destroyed) mid-drag: no write,
-                        // and release the engine's dragging hold so a held incoming file isn't stuck.
-                        if (mine) cancel()
+                        // and release the engine's dragging hold so a held incoming file isn't stuck. Instant (#212): the
+                        // spring-back is only for a pointer cancel or a refused drop while the screen is still there.
+                        if (mine) cancelNow()
                     }
                 }
             }
             .then(if (isMe) Modifier.zIndex(10f).graphicsLayer { val o = visualOffset; val k = visualScale; translationX = o.x; translationY = o.y; scaleX = k; scaleY = k } else Modifier)
     }
+}
+
+private data class DetachElement(val drag: DragController, val id: String, val app: Any?) : ModifierNodeElement<DetachNode>() {
+    override fun create() = DetachNode(drag, id, app)
+    override fun update(node: DetachNode) { node.drag = drag; node.id = id; node.app = app }
+}
+
+private class DetachNode(var drag: DragController, var id: String, var app: Any?) : Modifier.Node() {
+    override fun onDetach() { drag.detached(id, app) }
 }
 
 /** Pure state machine for the part of a gesture after the long-press timeout (unit-tested). */
