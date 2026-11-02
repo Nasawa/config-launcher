@@ -30,6 +30,10 @@ DND_POINTS=${DND_POINTS:-'^(rtl-.*|t7-land-v1|t7-port-v1|phone-land-v1|p411-a51-
 # pager-only skips F3-F7, L1/L7 and the checker on every point (probe runs only, no matrix verdict).
 PAGER="python3 $HERE/screen_matrix_pager.py"
 PAGER_POINTS=${PAGER_POINTS:-'^(p411-a51-v1|p411-a51-v1-a36|rtl-phone-port-v1|t7-port-v1|rtl-t7-land-v1|fold-open-v1|split-phone-v1)$'}
+# dev8 edge drag-and-drop pass (test-plan-screen-matrix §4): MATRIX_PROBES=edge-only runs only edge_probe on these
+# points, in the point's rotation and (EDGE_FLIP_RE) the flipped one. No checker, no matrix verdict.
+EDGE_POINTS=${EDGE_POINTS:-'^(p411-a51-v1|t7-port-v1|t10-port-v1|fold-open-v1|rtl-phone-port-v1)$'}
+EDGE_FLIP_RE=${EDGE_FLIP_RE:-'^(p411-a51-v1|t7-port-v1|t10-port-v1)$'}
 GATE_RE='^(s320-a51-v1|s320-a51-v2|s320-mdpi-v1|p411-a51-v1|p411-a51-v2|t7-land-v1)$'
 
 SHARD=''; POINTS='.'; OUT=screen-matrix-out; SETTLE=4; APK=''
@@ -344,6 +348,11 @@ run_point() {
 
   # Warm-up + F3–F7 only when seed produced home (else product checks would score FirstRun as app bugs).
   hd="$d/home1.xml"
+  if [[ ",$MATRIX_PROBES," == *,edge-only,* ]]; then
+    if [[ $id =~ $EDGE_POINTS ]] && [ "$seed_ok" -eq 1 ]; then edge_probe "$d" "$dens" "$size" "$rot" "$shape"; fi
+    sh_ "settings put system user_rotation $rot"
+    return
+  fi
   if [[ ",$MATRIX_PROBES," == *,drop-only,* ]]; then
     if [[ $id =~ $PAGER_POINTS ]] && [ "$seed_ok" -eq 1 ]; then drop_probe "$d" "$dens" "$size" "$rot" "$shape"; fi
     sh_ "settings put system user_rotation $rot"
@@ -851,6 +860,55 @@ drop_probe() {
   W=${size%x*}; H=${size#*x}
   read -r W H <<< "$($CHECK screen "$d/pg-geo-base-0-edit.xml" 2>/dev/null || echo "$W $H")"
   pg_dragrot; pg_plaindrop
+  sh_ "settings put global animator_duration_scale 0; settings put system show_touches 0"
+  sh_ "wm size $size; wm density $dens; settings put system user_rotation $rot"
+  dnd_reset "$d"; home
+}
+
+# --- dev8 edge drag-and-drop pass (test-plan-screen-matrix §4 "Manual edge drag-and-drop"; scored off-CI).
+# Fixture edge.json: page 1 "Drag" (id home) holds Edge C (1,1) and Edge D (2,3), so every edge/corner cell of the
+# 4x5 grid is empty. Per orientation: one geo cold start -> scripts/screen_matrix_drop.py edge -> sb-edge-<o>.txt, then
+# per case a cold start, Edit layout, one `input motionevent` drag of Edge C, UP, after-dump, config before/after,
+# crash/ANR (pg-<case>-crash.txt; anr.txt holds every ANR dialog title, System UI vs ours). Gutter and outer cases
+# are screenrecorded (sb-<case>.mp4) so the return is visible. Animations on (scale 1), as a user has them.
+edge_probe() {
+  local d=$1 dens=$2 size=$3 rot=$4 shape=$5 flip rtl=0 o r cs fx fy kind col row
+  flip=$((1 - rot)); { [[ $id == rtl-* ]] || echo "$shape" | grep -qi rtl; } && rtl=1
+  echo "== edge probe ($id) rtl=$rtl" >> "$d/run.txt"
+  : > "$d/pager-cases.txt"; : > "$d/pager-hashes.txt"; : > "$d/edge-cases.txt"
+  sh_ "settings put system user_rotation $rot; settings put global animator_duration_scale 1; settings put system show_touches 1"
+  for o in base flip; do
+    if [ "$o" = flip ]; then
+      [[ $id =~ $EDGE_FLIP_RE ]] || continue
+      r=$flip
+    else
+      r=$rot
+    fi
+    sh_ "settings put system user_rotation $r"; pause; anr "$d"
+    pg_case_start "$d" "egeo-$o"; pg_seed "$d" edge.json
+    dump "$d" .sbchk
+    grep -q 'content-desc="Drag, Pages"' "$d/.sbchk.xml" || { echo "edge geo-$o: not on Drag, goto" >> "$d/run.txt"; pg_goto "$d" Drag; }
+    rm -f "$d"/.sbchk.*
+    dnd_edit "$d" "$dens" || echo "edge geo-$o: no edit mode" >> "$d/run.txt"
+    pg_snap "$d" "egeo-$o" 0-edit; pg_case_end "$d" "egeo-$o"
+    $DROPH edge "$d/pg-egeo-$o-0-edit.xml" "$d/pg-egeo-$o-0-edit.png" "$rtl" "$dens" > "$d/sb-edge-$o.txt" 2>> "$d/run.txt" || true
+    CX=$(sed -n 's/^CX=//p' "$d/sb-edge-$o.txt"); CY=$(sed -n 's/^CY=//p' "$d/sb-edge-$o.txt")
+    W=$(sed -n 's/^W=//p' "$d/sb-edge-$o.txt"); H=$(sed -n 's/^H=//p' "$d/sb-edge-$o.txt")
+    if [ -z "$CX" ] || [ -z "$CY" ]; then echo "edge geo-$o: targets failed" >> "$d/run.txt"; continue; fi
+    RECSZ="$(( ${W:-1080} / 2 / 2 * 2 ))x$(( ${H:-1920} / 2 / 2 * 2 ))"
+    while read -r _ cs fx fy kind col row; do
+      cs="$o-$cs"
+      echo "$cs $kind $col $row $fx $fy rot=$r" >> "$d/edge-cases.txt"
+      sb_setup "$cs" edge.json
+      if [ "$kind" = cell ]; then
+        echo "drag $CX $CY -> $fx $fy" > "$d/sb-$cs-times.txt"
+        sh_ "$(sb_drag_cmd "$CX" "$CY" "$fx" "$fy")" >> "$d/sb-$cs-times.txt" 2>&1
+      else
+        sb_run "$cs" "$CX" "$CY" "$fx" "$fy" 7
+      fi
+      sb_end "$cs"
+    done < <(grep '^CASE ' "$d/sb-edge-$o.txt")
+  done
   sh_ "settings put global animator_duration_scale 0; settings put system show_touches 0"
   sh_ "wm size $size; wm density $dens; settings put system user_rotation $rot"
   dnd_reset "$d"; home
