@@ -38,7 +38,17 @@ EXPECT = {
     'rmlast': {'0-before': T3, '1-reloaded': ('Second', 2, 2)},
     'rmmid': {'0-before': S2, '1-reloaded': ('Third', 2, 2)},
     'dragrot': {'0-edit': S2, '2-rotated': S2, '3-back': S2},
+    'drop': {'0-edit': S2, '1-dropped': S2},
+    'rcycle': {'0-before': S2, **{f'{i}-{s}': S2 for i in (1, 2, 3) for s in ('a-half', 'b-full', 'c-density', 'd-back')}},
 }
+
+
+def tile_pos(cfg, label='Second tile'):
+    for pg in cfg.get('pages', []):
+        for it in pg.get('items', []):
+            if it.get('label') == label:
+                return [it.get('x'), it.get('y')]
+    return None
 FREEFORM_STEPS = {'1-freeform', '2-resize-a', '3-resize-b', '4-left'}
 
 
@@ -170,6 +180,16 @@ def score(d):
                 rows.append({'step': 'no-write', 'ok': True, 'scored': True, 'detail': extra[-1]})
             e0 = read_dump(os.path.join(d, 'pg-dragrot-0-edit.xml'))
             extra.append(f"edit mode before drag {e0.get('edit')}; dragging dump readable {dr.get('ok_dump')}")
+        if case == 'drop':
+            try:
+                b = json.load(open(os.path.join(d, 'pg-drop-config-before.json')))
+                a = json.load(open(os.path.join(d, 'pg-drop-config-after.json')))
+                pb, pa = tile_pos(b), tile_pos(a)
+                det = f"Second tile {pb} -> {pa}; revision {b.get('revision')} -> {a.get('revision')}"
+                rows.append({'step': 'committed', 'ok': pa is not None and pa != pb, 'scored': True,
+                             'detail': det + ('' if rtl else ' (LTR gate)')})
+            except Exception as ex:
+                rows.append({'step': 'committed', 'ok': None, 'scored': True, 'detail': f'config unavailable ({ex.__class__.__name__})'})
         if crash:
             rows.append({'step': 'crash', 'ok': False, 'scored': True, 'detail': crash[:400]})
         sc = [r for r in rows if r.get('scored', True)]
