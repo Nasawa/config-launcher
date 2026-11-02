@@ -682,7 +682,7 @@ pager_probe() {
 # computes the targets). CI boots with animations disabled, so this probe sets animator_duration_scale 1 (0 for the
 # reduced-motion case) and restores 0 at the end. Every case: cold start on drop.json (page 1 "Drag": Drag A at
 # (0,0), Drag B at (3,4); its id is "home" so a cold start opens it), Edit layout, screenrecord while one `input motionevent` chain drags and releases, then
-# dumps. Files: sb-<case>.mp4, sb-<case>-times.txt (device /proc/uptime around UP), pg-<case>-<step>.xml/.png,
+# dumps. Files: sb-<case>.mp4, sb-<case>-times.txt (device /proc/uptime around UP), sb-<case>-gfx.txt (framestats), pg-<case>-<step>.xml/.png,
 # pg-<case>-config-{before,after}.json, sb-targets-<orient>.txt.
 DROPH="python3 $HERE/screen_matrix_drop.py"
 sb_moves() {  # sb_moves x0 y0 x1 y1 -> "input motionevent MOVE ..." x8
@@ -707,12 +707,14 @@ sb_run() {
   cmd="echo T_DOWN \$(cat /proc/uptime); input motionevent DOWN $2 $3; sleep 1.6; $(sb_moves "$2" "$3" "$4" "$5"); sleep 0.5; echo T_UP0 \$(cat /proc/uptime); input motionevent UP $4 $5; echo T_UP1 \$(cat /proc/uptime)"
   [ -n "${7:-}" ] && cmd="$cmd; $7; echo T_AFTER \$(cat /proc/uptime)"
   echo "drag $2 $3 -> $4 $5 after=[${7:-}]" > "$d/sb-$cs-times.txt"
-  sh_ "rm -f /sdcard/sb.mp4"
+  sh_ "rm -f /sdcard/sb.mp4; dumpsys gfxinfo $PKG reset" > /dev/null 2>&1
   sh_ "screenrecord --time-limit $6 --bit-rate 6000000 --size $RECSZ /sdcard/sb.mp4" > "$d/sb-$cs-rec.txt" 2>&1 &
   rp=$!; sleep 1.5
   echo "T_REC_GO $(sh_ cat /proc/uptime | tr -d '\r')" >> "$d/sb-$cs-times.txt"
   sh_ "$cmd" 2>&1 | tr -d '\r' >> "$d/sb-$cs-times.txt"
   wait "$rp" || true
+  # per-frame IntendedVsync (CLOCK_MONOTONIC ns; /proc/uptime is BOOTTIME, equal while the emulator never suspends): the return's real frame times
+  sh_ "dumpsys gfxinfo $PKG framestats" 2>&1 | tr -d '\r' > "$d/sb-$cs-gfx.txt"
   A pull /sdcard/sb.mp4 "$d/sb-$cs.mp4" > /dev/null 2>&1 < /dev/null || echo "drop $cs: no video" >> "$d/run.txt"
 }
 sb_end() {  # sb_end <case> [later]: after snapshot (+ one ~5 s later), config after, crash/ANR
