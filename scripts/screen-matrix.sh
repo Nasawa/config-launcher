@@ -356,6 +356,7 @@ run_point() {
   hd="$d/home1.xml"
   if [[ ",$MATRIX_PROBES," == *,drop-only,* ]]; then
     if [[ $id =~ $PAGER_POINTS ]] && [ "$seed_ok" -eq 1 ]; then drop_probe "$d" "$dens" "$size" "$rot" "$shape"; fi
+    if [[ ",$MATRIX_PROBES," == *,pd,* ]] && [[ $id =~ $PAGER_POINTS ]] && [ "$seed_ok" -eq 1 ]; then pd_probe "$d" "$rot"; fi
     sh_ "settings put system user_rotation $rot"
     return
   fi
@@ -760,6 +761,45 @@ sb_refused() {  # sb_refused <case> <fx> <fy> [from=A|dock]: one refused drop, r
   if [ -z "$2" ]; then echo "$cs n/a" >> "$d/drop-na.txt"; return; fi
   sb_setup "$cs"; sb_run "$cs" "$x0" "$y0" "$2" "$3" 7; sb_end "$cs"
 }
+# --- Smoke + process-death probe (PR #230 QA, MATRIX_PROBES=pd with drop-only). Files: pd-<step>.xml/.png,
+# pd-pids.txt, pd-hashes.txt, pd-crash.txt. Scored offline. Steps: cold start on pager.json -> page Second ->
+# drawer open/close -> rotate + back -> background (Settings) -> am kill -> HOME (restore) -> drawer again.
+pd_pid() { sh_ "pidof $PKG" 2>/dev/null | tr -d '\r'; }
+pd_probe() {
+  local d=$1 rot=$2 flip w h cx
+  flip=$((1 - rot))
+  echo "== pd probe ($id)" >> "$d/run.txt"; : > "$d/pd-pids.txt"; : > "$d/pd-hashes.txt"
+  sh_ "settings put global animator_duration_scale 1; settings put system user_rotation $rot"
+  sh_ logcat -b all -c > /dev/null 2>&1
+  pg_seed "$d" pager.json
+  pd_step() { dump "$d" "pd-$1"; echo "$1 pid=$(pd_pid)" >> "$d/pd-pids.txt"; echo "$1 hash=$(pg_hash)" >> "$d/pd-hashes.txt"
+    sh_ dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -m1 -E 'topResumedActivity|mResumedActivity' > "$d/pd-$1-top.txt" || true; }
+  pd_step 0-cold
+  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pd-config-before.json" 2>/dev/null || true
+  pg_goto "$d" Second || echo "pd: goto failed" >> "$d/run.txt"
+  pd_step 1-second
+  read -r w h <<< "$($CHECK screen "$d/pd-1-second.xml" 2>/dev/null || echo "1080 2400")"; cx=$((w / 2))
+  sh_ input swipe "$cx" $((h * 70 / 100)) "$cx" $((h * 25 / 100)) 300; pause; anr "$d"
+  pd_step 2-drawer
+  sh_ input keyevent BACK; pause 2
+  sh_ "settings put system user_rotation $flip"; pause; anr "$d"; pd_step 3-rotated
+  sh_ "settings put system user_rotation $rot"; pause; anr "$d"; pd_step 4-rotback
+  sh_ am start -W -a android.settings.SETTINGS > /dev/null 2>&1; pause 3
+  pd_step 5-background
+  sh_ am kill "$PKG"; sleep 2
+  echo "after-kill pid=$(pd_pid)" >> "$d/pd-pids.txt"
+  sh_ input keyevent HOME; pause 4; anr "$d"
+  [ -n "$(pd_pid)" ] || { echo "pd: HOME did not restart; am start" >> "$d/run.txt"; sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1; pause 3; }
+  pd_step 6-restored
+  read -r w h <<< "$($CHECK screen "$d/pd-6-restored.xml" 2>/dev/null || echo "$w $h")"; cx=$((w / 2))
+  sh_ input swipe "$cx" $((h * 70 / 100)) "$cx" $((h * 25 / 100)) 300; pause; anr "$d"
+  pd_step 7-drawer-after
+  sh_ input keyevent BACK; pause 2
+  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pd-config-after.json" 2>/dev/null || true
+  { sh_ logcat -d -b crash; sh_ logcat -d -b main -b system | grep -E "ANR in $PKG|FATAL EXCEPTION|AndroidRuntime.*$PKG|Process $PKG.*(died|has died|Killing)|am_kill|am_proc_died"; } > "$d/pd-crash.txt" 2>&1
+  sh_ logcat -d -b events | grep -E "am_kill|am_proc_died|am_proc_start" | grep "$PKG" > "$d/pd-events.txt" 2>&1 || true
+}
+
 drop_probe() {
   local d=$1 dens=$2 size=$3 rot=$4 shape=$5 flip rtl=0 o
   flip=$((1 - rot)); { [[ $id == rtl-* ]] || echo "$shape" | grep -qi rtl; } && rtl=1
