@@ -387,8 +387,10 @@ half stands up, with the crease running side to side.
 - **Folded (cover screen):** a phone. Compact width; portrait uses the phone layout, landscape uses the rail.
 - **Unfolded, flat:** an ordinary window, usually Medium/Expanded width with a bottom dock (1.2 : 1). A flat hinge
   (`FoldingFeature.isSeparating == false`) is ignored.
-- **Half-folded or dual-screen** (`isSeparating == true`, e.g. `HALF_OPENED`): no cell, card or dock slot crosses the hinge
-  bounds. **All of home goes in one half**, laid out as if that half were the window (classes recomputed from it):
+- **Half-folded or dual-screen** (any `FoldingFeature` with `isSeparating == true`: half-open, or a flat dual-screen
+  hinge): no cell, card or dock slot crosses the hinge bounds. This covers home content only. The drawer, folders, sheets
+  and dialogs currently stay full-window; keeping their interactive content off a separating hinge is tracked in #226.
+  **All of home goes in one half**, laid out as if that half were the window (classes recomputed from it):
   - **Book** (vertical hinge): the start half (left in LTR, right in RTL).
   - **Tabletop** (horizontal hinge): the top row, notice row, page label or title bar and the grid in the top half; the
     page dots and the dock, as a bottom bar, in the bottom half.
