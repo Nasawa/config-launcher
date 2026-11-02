@@ -38,7 +38,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -569,6 +568,9 @@ fun HomeScreen(vm: HomeViewModel) {
             Box(Modifier.align(Alignment.TopEnd).fillMaxHeight().width(with(density) { (book?.endPx ?: 0).toDp() })
                 .swipeUpToOpen({ !editing && drag.dragged == null && !drawerOpen }) { drawerOpen = true }
                 .pointerInput(Unit) { detectTapGestures(onLongPress = { if (!editing) homeMenu = true }) })
+            // #228: the lifted tile is drawn here, above the pager, the dock or rail and both fold halves, so no
+            // page, cell or region clips it. Last child = drawn last. No input, no semantics.
+            DragOverlay(drag)
             }
         }
 
@@ -927,12 +929,9 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                 .height(pitch.blockH.dp)
                 .align(Alignment.Center)
                 .onGloballyPositioned { drag.gridRect = it.boundsInRoot() }
-            // #221: zIndex only orders siblings, so the lifted tile's row and cell (and the block over the
-            // widget hosts drawn after it) are raised too; otherwise later cells paint over it.
-            val liftedAt = byCell.entries.firstOrNull { drag.isLifted(it.value) }?.key
-            Column(blockMod.then(if (liftedAt != null) Modifier.zIndex(1f) else Modifier).padding(if (pitch.capped) 0.dp else 8.dp)) {
+            Column(blockMod.padding(if (pitch.capped) 0.dp else 8.dp)) {
                 for (y in 0 until rows) {
-                    Row(Modifier.fillMaxWidth().weight(1f).then(if (liftedAt?.second == y) Modifier.zIndex(1f) else Modifier)) {
+                    Row(Modifier.fillMaxWidth().weight(1f)) {
                         for (x in 0 until grid.columns) {
                             // When pitchH < 48, a centred min-touch expansion climbs into the title bar
                             // and Android a11y clips the {page} clickable to ~45 dp (split-phone-v1
@@ -946,13 +945,10 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                             val shortOverflow = if (shortCell) {
                                 ((HomeGeometry.MIN_TOUCH_DP - cellH) / 2f).coerceAtLeast(0f)
                             } else 0f
-                            // #221: the lifted tile's cell skips the clip (drag + spring-back) and sits above its row.
-                            val lifted = liftedAt == (x to y)
+                            // #228: the lifted tile is drawn by the root DragOverlay, so its cell clips like any other.
                             Box(
                                 Modifier.weight(1f).fillMaxHeight().then(
-                                    if (HomeGeometry.clipsCell(cellH, lifted)) Modifier.clipToBounds() else Modifier,
-                                ).then(
-                                    if (lifted) Modifier.zIndex(1f) else Modifier,
+                                    if (HomeGeometry.clipsCell(cellH)) Modifier.clipToBounds() else Modifier,
                                 ).then(
                                     if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier,
                                 ),
@@ -962,8 +958,15 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                                     val tight = !step.showLabel && cellH < HomeGeometry.ICON_FALLBACK_DP + HomeGeometry.CONTENT_PAD_DP
                                     val pad = if (tight) Modifier else Modifier.padding(2.dp)
                                     val actions = a11y(r, TilePlace.PAGE)
+                                    // #228: what the root DragOverlay draws while this tile is lifted (the same composables,
+                                    // no gesture or semantics); it fills the tile node's bounds, like the content below.
+                                    val visual: @Composable () -> Unit = if (shortCell) {
+                                        { Box(Modifier.fillMaxSize().then(pad)) { Tile(r, apps, Modifier.fillMaxSize(), showLabel = true, iconDp = step.iconDp, drawLabel = step.showLabel, tight = tight) } }
+                                    } else {
+                                        { Tile(r, apps, Modifier.fillMaxSize().then(pad), showLabel = true, iconDp = step.iconDp, drawLabel = step.showLabel, tight = tight) }
+                                    }
                                     val core = with(drag) {
-                                        Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = actions)
+                                        Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = actions, visual = visual)
                                     }
                                     if (shortCell) {
                                         Box(
@@ -1048,7 +1051,8 @@ internal fun Dock(items: List<ResolvedItem>, apps: InstalledApps, drag: DragCont
         Modifier.fillMaxWidth().padding(8.dp).heightIn(min = 64.dp).onGloballyPositioned { drag.dockRect = it.boundsInRoot() }.background(Color(0x22FFFFFF), RoundedCornerShape(20.dp)).padding(6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        items.forEach { r -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.DOCK))
+        items.forEach { r -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { with(drag) { Tile(r, apps, Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = a11y(r, TilePlace.DOCK),
+                    visual = { Tile(r, apps, Modifier.fillMaxSize(), showLabel = false, iconDp = HomeGeometry.ICON_DP) })
                     .semantics { contentDescription = res.getString(R.string.a11y_dock_item, Labels.clean(r.title)) }, showLabel = false, iconDp = HomeGeometry.ICON_DP) } } }
         if (items.isEmpty()) Text(stringResource(R.string.dock_empty), color = Color.Gray, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterVertically))
     }

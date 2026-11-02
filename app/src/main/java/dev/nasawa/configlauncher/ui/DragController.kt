@@ -26,7 +26,17 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.node.ModifierNodeElement
-import androidx.compose.ui.zIndex
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.toSize
+import kotlin.math.roundToInt
 import dev.nasawa.configlauncher.model.Edit
 import dev.nasawa.configlauncher.model.Edits
 import dev.nasawa.configlauncher.model.Grid
@@ -45,6 +55,14 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
     var offset by mutableStateOf(Offset.Zero); private set
     private var startRect = Rect.Zero
     private val rects = HashMap<String, Rect>()
+    /** #228: each draggable tile's unclipped root bounds and its visual, for the [DragOverlay]. */
+    private val unclipped = HashMap<String, Rect>()
+    private val visuals = HashMap<String, @Composable () -> Unit>()
+
+    /** #228 (Archimedes): where the lifted tile sat at pickup, unclipped root px; the overlay starts there. */
+    var liftedOriginInRoot = Rect.Zero; private set
+    /** What the overlay draws for the lifted tile (null: the tile registered no visual). */
+    internal var liftedVisual: (@Composable () -> Unit)? = null; private set
 
     var gridRect = Rect.Zero
     var dockRect = Rect.Zero
@@ -69,12 +87,14 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
     var reducedMotion: () -> Boolean = { false }
     private var returnJob: Job? = null
 
-    /** What the dragged tile's graphicsLayer draws (identity when nothing is lifted). */
+    /** The lifted tile's offset from [liftedOriginInRoot] and its scale, as the [DragOverlay] draws it. */
     val visualOffset: Offset get() = if (dragged == null) Offset.Zero else offset * lift
     val visualScale: Float get() = if (dragged == null) 1f else 1f + (LIFT_SCALE - 1f) * lift
 
     fun start(item: ResolvedItem, rect: Rect) {
         settle() // a new long-press during a spring-back snaps it to the end first
+        val k = key(item)
+        liftedOriginInRoot = unclipped[k] ?: rect; liftedVisual = visuals[k]
         dragged = item; startRect = rect; offset = Offset.Zero; lift = 1f
         engine().dragging = true
         onStart()
@@ -82,7 +102,9 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
 
     fun move(delta: Offset) { if (!returning) offset += delta }
 
-    private fun end() { returnJob?.cancel(); returnJob = null; returning = false; dragged = null; offset = Offset.Zero; lift = 1f }
+    private fun end() { returnJob?.cancel(); returnJob = null; returning = false; dragged = null; offset = Offset.Zero; lift = 1f; liftedVisual = null }
+
+    private fun key(item: ResolvedItem) = item.item.id + "|" + item.app?.key
 
     /** Finishes a running spring-back at once (nothing lifted afterwards). */
     fun settle() { if (returning) end() }
@@ -132,7 +154,7 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
     /** The tile for [id]/[app] left composition (recreate, reload, page disposed): a drag on it ends at once. */
     internal fun detached(id: String, app: Any?) { if (dragged?.item?.id == id && dragged?.app == app) cancelNow() }
 
-    /** [item] is the lifted tile, during the drag and its spring-back (#221: its cell must not clip it). */
+    /** [item] is the lifted tile, during the drag and its spring-back (#228: its source node is drawn at alpha 0). */
     fun isLifted(item: ResolvedItem): Boolean = dragged?.item?.id == item.item.id && dragged?.app == item.app
 
     fun drop() {
@@ -170,15 +192,21 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
      * Tile gestures (#53, ux.md §1.1/§4.1): tap → [onClick]; hold past the long-press timeout and
      * release without moving → [onLongClick] (item sheet); hold then move more than 8 dp → drag (when
      * [canDrag]). A release after a long-press never fires [onClick].
+     *
+     * #228: while lifted the tile stays composed and keeps the gesture, its semantics and its hit area (the
+     * #212/#214 cancel paths run from this coroutine's `finally`), but draws at alpha 0; the root
+     * [DragOverlay] draws [visual] instead, so no cell, page, pager or region clips it.
      */
     fun Modifier.tile(
         item: ResolvedItem, canDrag: Boolean, onClick: () -> Unit, onLongClick: () -> Unit,
         actions: List<CustomAccessibilityAction> = emptyList(),
+        visual: (@Composable () -> Unit)? = null,
     ): Modifier {
-        val key = item.item.id + "|" + item.app?.key
+        val key = key(item)
+        if (visual != null) visuals[key] = visual else visuals.remove(key)
         val isMe = isLifted(item)
         return this
-            .onGloballyPositioned { rects[key] = it.boundsInRoot() }
+            .onGloballyPositioned { rects[key] = it.boundsInRoot(); unclipped[key] = Rect(it.localToRoot(Offset.Zero), it.size.toSize()) }
             // #212/#214: leaving composition sends a pointer cancel before the gesture coroutine ends; this
             // makes that path instant (no spring-back toward a layout that is gone) whichever runs first.
             .then(DetachElement(this@DragController, item.item.id, item.app))
@@ -225,9 +253,52 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
                     }
                 }
             }
-            .then(if (isMe) Modifier.zIndex(10f).graphicsLayer { val o = visualOffset; val k = visualScale; translationX = o.x; translationY = o.y; scaleX = k; scaleY = k } else Modifier)
+            .then(if (isMe) Modifier.alpha(0f) else Modifier)
     }
 }
+
+/**
+ * #228 (Archimedes): the one drag layer, the last child of the HomeScreen root. While a tile is lifted it
+ * draws that tile's visual at [DragController.liftedOriginInRoot] + [DragController.visualOffset], scaled by
+ * [DragController.visualScale], so the drag and the #212 spring-back stay whole over the dock, the rail
+ * (either edge) and across a fold split. Placement is absolute px (`place`, a graphicsLayer translation),
+ * never `offset`, which would mirror x in RTL; root and pointer coordinates are physical. No pointer
+ * input (hit-testing and drops are unchanged) and no semantics: TalkBack sees only the source tile.
+ */
+@Composable
+fun DragOverlay(drag: DragController, modifier: Modifier = Modifier) {
+    val host = remember { floatArrayOf(0f, 0f) }
+    Layout(
+        content = {
+            val visual = drag.liftedVisual
+            if (drag.dragged != null && visual != null) {
+                val r = drag.liftedOriginInRoot
+                Box(
+                    Modifier
+                        .layout { m, _ ->
+                            val w = r.width.roundToInt().coerceAtLeast(0); val h = r.height.roundToInt().coerceAtLeast(0)
+                            val p = m.measure(Constraints.fixed(w, h))
+                            layout(w, h) { p.place(0, 0) }
+                        }
+                        .graphicsLayer {
+                            val o = drag.visualOffset; val k = drag.visualScale
+                            translationX = r.left - host[0] + o.x; translationY = r.top - host[1] + o.y
+                            scaleX = k; scaleY = k
+                        }
+                        .testTag(DRAG_OVERLAY_TAG)
+                        .clearAndSetSemantics {},
+                ) { visual() }
+            }
+        },
+        modifier = modifier.onGloballyPositioned { val o = it.localToRoot(Offset.Zero); host[0] = o.x; host[1] = o.y },
+    ) { ms, c ->
+        val ps = ms.map { it.measure(Constraints()) }
+        layout(c.maxWidth, c.maxHeight) { ps.forEach { it.place(0, 0) } } // absolute: never mirrored in RTL
+    }
+}
+
+/** Test tag of the [DragOverlay]'s lifted-tile node (no semantics besides the tag). */
+const val DRAG_OVERLAY_TAG = "drag-overlay"
 
 private data class DetachElement(val drag: DragController, val id: String, val app: Any?) : ModifierNodeElement<DetachNode>() {
     override fun create() = DetachNode(drag, id, app)
