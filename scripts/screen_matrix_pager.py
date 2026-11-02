@@ -119,7 +119,7 @@ def score(d):
     m = c.meta_of(d)
     rtl = 'rtl' in (m.get('shape') or '').lower() or (m.get('locale') or '').startswith('ar')
     mw_txt = c.read(os.path.join(d, 'pager-mw.txt'))
-    freeform = bool(re.search(r'freeform', mw_txt, re.I))
+    freeform = bool(re.search(r'A=\d+:dev\.nasawa\.configlauncher[^\n]*mode=freeform', mw_txt))
     cases = {}
     for case, steps in EXPECT.items():
         rows = []
