@@ -132,6 +132,9 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
     /** The tile for [id]/[app] left composition (recreate, reload, page disposed): a drag on it ends at once. */
     internal fun detached(id: String, app: Any?) { if (dragged?.item?.id == id && dragged?.app == app) cancelNow() }
 
+    /** [item] is the lifted tile, during the drag and its spring-back (#221: its cell must not clip it). */
+    fun isLifted(item: ResolvedItem): Boolean = dragged?.item?.id == item.item.id && dragged?.app == item.app
+
     fun drop() {
         val item = dragged ?: return
         if (returning) return
@@ -173,7 +176,7 @@ class DragController(private val engine: () -> ConfigEngine, private val onCance
         actions: List<CustomAccessibilityAction> = emptyList(),
     ): Modifier {
         val key = item.item.id + "|" + item.app?.key
-        val isMe = dragged?.item?.id == item.item.id && dragged?.app == item.app
+        val isMe = isLifted(item)
         return this
             .onGloballyPositioned { rects[key] = it.boundsInRoot() }
             // #212/#214: leaving composition sends a pointer cancel before the gesture coroutine ends; this
