@@ -6,11 +6,16 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.nasawa.configlauncher.ui.HomeScreen
 import dev.nasawa.configlauncher.ui.HomeViewModel
 
 class MainActivity : ComponentActivity() {
-    private val vm: HomeViewModel by viewModels()
+    // #220: build the ViewModel from this activity's own Application. The default factory goes through
+    // AndroidViewModelFactory.getInstance(app), whose static keeps the first Application it sees; in a
+    // Robolectric JVM (a new Application per test) that pinned later tests to the first test's store.
+    private val vm: HomeViewModel by viewModels { viewModelFactory { initializer { HomeViewModel(application) } } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
