@@ -1,0 +1,4 @@
+app_locales=Locales for dev.nasawa.configlauncher for user 0 are [ar-EG]
+force_rtl=1
+layout_dir=
+want_locale=ar-EG
