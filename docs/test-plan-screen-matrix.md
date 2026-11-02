@@ -160,7 +160,12 @@ lands. Under `dev8` they block. F1 (crashes/ANRs) always blocks.
 - **R1** (grid column order follows the layout direction: RTL mirrors, LTR doesn't; #187 / #210) at every point
   that seeds `launcher.json`, phones included. It's gated exactly like L*: advisory under dev7, blocking under
   dev8, and advisory at font 2.0. See §4.2.
-- **Manual edge drag-and-drop** (stable host only — hardware-accelerated emulator or a real device; software rendering hits SystemUI ANRs that limited the #194 review). Short checklist, not a matrix shard:
+- **Edge drag-and-drop.** Every debug prerelease (dev8 onward) needs a scripted CI pass
+  (`probes=edge-only`; software rendering is fine there). The hands-on pass on a stable host (a hardware-accelerated
+  emulator or a real device) is **optional for debug prereleases and blocking for v1.0** (Christopher's decision, 2026-11-02).
+  The hands-on pass covers what CI can't: drag feel, touch slop, long-press timing, the dragged tile and its spring-back near
+  edges, a real hinge, and OEM edge-gesture zones. Software rendering hits SystemUI ANRs that limited the #194 review,
+  which is why it needs a stable host. Short checklist, not a matrix shard:
 
   | Size | Orientations |
   |---|---|
@@ -251,7 +256,7 @@ side nav/cutout is not a layout bias (#197).
 | L1 full | manual | rotate ×4 / fold↔unfold |
 | L11 | dev9 | instrumented margins |
 | L8 full hash | matrix + androidTest | unit pins cancel contract; device rotate smoke is best-effort without seeded fixture |
-| Edge DnD | **manual, blocks dev8** | every grid edge/corner + side gutters; 411 / t7 / t10 port+land + fold open; stable host only (§4) |
+| Edge DnD | CI scripted pass for prereleases; **manual blocks v1.0** (optional for debug prereleases) | every grid edge/corner + side gutters; 411 / t7 / t10 port+land + fold open; manual pass on a stable host only (§4) |
 
 ## 5. CI vs on-box
 
