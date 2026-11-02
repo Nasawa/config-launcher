@@ -51,8 +51,8 @@ class FoldHalfTest {
     private val publisher = WindowLayoutInfoPublisherRule()
     @get:Rule val chain: RuleChain = RuleChain.outerRule(Seed()).around(publisher).around(compose)
 
-    // The activity's own store: AndroidViewModelFactory keeps the first test's Application in a static, so in
-    // later tests of the same JVM the HomeViewModel's store is not ApplicationProvider's.
+    // The activity's own store. Since #220 (MainActivity's factory) it is the same as `app.store`;
+    // HomeWindowChangeTest asserts that.
     private val store get() = androidx.lifecycle.ViewModelProvider(compose.activity)[HomeViewModel::class.java].store
 
     private class Seed : TestRule {

@@ -15,6 +15,8 @@ import dev.nasawa.configlauncher.ConfigLauncherApp
 import dev.nasawa.configlauncher.MainActivity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -63,7 +65,18 @@ class HomeWindowChangeTest {
         return d.substringBefore(", Pages")
     }
 
+    /**
+     * #220: the store the home screen really reads and writes is this test's `app.store`. Before the
+     * MainActivity factory fix, AndroidViewModelFactory's static pinned the first test's Application,
+     * so every no-write check here passed without looking at the live store.
+     */
+    private fun assertLiveStore() = compose.activityRule.scenario.onActivity { a ->
+        assertSame("HomeViewModel uses this test's Application store", app.store,
+            androidx.lifecycle.ViewModelProvider(a)[HomeViewModel::class.java].store)
+    }
+
     private fun goto(title: String) {
+        assertLiveStore()
         compose.onNode(hasContentDescription(", Pages", substring = true)).performClick()
         compose.waitForIdle()
         compose.onAllNodes(hasText(title) and hasClickAction()).onFirst().performClick()
@@ -140,14 +153,18 @@ class HomeWindowChangeTest {
     fun zeroWidthFrameKeepsPageRtlPhone() = zeroWidthFrameKeepsPage(1080, 2400, "ar-rEG-ldrtl-w411dp-h914dp-port-xxhdpi")
 
     // (5): rotate mid-drag. The window change cancels the pointer, then the activity is recreated.
-    private fun rotateMidDragWritesNothing(port: String) {
+    // [rtl]: the tile sits at column 0, the right edge in RTL, so the drag goes left to stay over the
+    // grid. Then an uncancelled release would land on a free cell and write (#220 mutation check).
+    private fun rotateMidDragWritesNothing(port: String, rtl: Boolean) {
         goto("Second")
         val before = app.store.engine.state.value.config
+        val sx = if (rtl) -1f else 1f
         compose.onAllNodes(hasText("Second tile")).onFirst().performTouchInput {
             down(center); advanceEventTime(1_000)
-            moveBy(Offset(width.toFloat(), height.toFloat())); moveBy(Offset(width / 2f, height / 2f))
+            moveBy(Offset(sx * width, height.toFloat())); moveBy(Offset(sx * width / 2f, height / 2f))
         }
         compose.waitForIdle()
+        assertTrue("the drag started on the store under test", app.store.engine.dragging)
         compose.onAllNodes(hasText("Second tile")).onFirst().performTouchInput { cancel() }
         recreate(port)
         val after = app.store.engine.state.value.config
@@ -157,8 +174,8 @@ class HomeWindowChangeTest {
     }
 
     @Test @Config(qualifiers = "w960dp-h600dp-land-xhdpi")
-    fun rotateMidDragWritesNothingLtr() = rotateMidDragWritesNothing("w600dp-h960dp-port-xhdpi")
+    fun rotateMidDragWritesNothingLtr() = rotateMidDragWritesNothing("w600dp-h960dp-port-xhdpi", rtl = false)
 
     @Test @Config(qualifiers = "ar-rEG-ldrtl-w960dp-h600dp-land-xhdpi")
-    fun rotateMidDragWritesNothingRtl() = rotateMidDragWritesNothing("ar-rEG-ldrtl-w600dp-h960dp-port-xhdpi")
+    fun rotateMidDragWritesNothingRtl() = rotateMidDragWritesNothing("ar-rEG-ldrtl-w600dp-h960dp-port-xhdpi", rtl = true)
 }
