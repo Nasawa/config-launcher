@@ -901,7 +901,9 @@ edge_probe() {
       cs="$o-$cs"
       echo "$cs $kind $col $row $fx $fy rot=$r" >> "$d/edge-cases.txt"
       sb_setup "$cs" edge.json
-      if [ "$kind" = cell ]; then
+      # EDGE_REC_ALL=1 (#221 / PR #223): screenrecord the cell cases too (same gesture as sb_drag_cmd), so the
+      # lifted tile's visibility next to the window edges can be scored from the video
+      if [ "$kind" = cell ] && [ "${EDGE_REC_ALL:-1}" != 1 ]; then
         echo "drag $CX $CY -> $fx $fy" > "$d/sb-$cs-times.txt"
         sh_ "$(sb_drag_cmd "$CX" "$CY" "$fx" "$fy")" >> "$d/sb-$cs-times.txt" 2>&1
       else
