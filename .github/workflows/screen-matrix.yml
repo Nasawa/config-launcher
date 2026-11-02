@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       shards:
-        description: 'Shards, comma-separated: small-a,small-b,phones,tablets,fold (or all)'
+        description: 'Shards, comma-separated: small-a,small-b,phones,tablets,fold (or all); opt-in real-hinge shards: hinge (API 35), hinge34 (API 34)'
         default: all
         type: string
       points:
@@ -53,9 +53,15 @@ jobs:
               {"shard": "phones", "api": 35, "target": "google_apis", "arch": "x86_64", "skin": "1344x2992"},
               {"shard": "tablets", "api": 35, "target": "google_apis", "arch": "x86_64", "skin": "1600x2560"},
               {"shard": "fold", "api": 36, "target": "google_apis", "arch": "x86_64", "skin": "2208x2400"},
+              # Real hinge (PR #219 QA): pixel_fold device profile = hw.sensor.hinge + postures 1/2/3, no skin.
+              # Opt-in only (not in "all"); both run the `hinge` rows of points.tsv.
+              {"shard": "hinge", "points_shard": "hinge", "api": 35, "target": "google_apis", "arch": "x86_64",
+               "profile": "pixel_fold", "skin": "", "optin": True},
+              {"shard": "hinge34", "points_shard": "hinge", "api": 34, "target": "google_apis", "arch": "x86_64",
+               "profile": "pixel_fold", "skin": "", "optin": True},
           ]
           want = {s.strip() for s in os.environ["SHARDS"].split(",") if s.strip()}
-          inc = [s for s in all_ if "all" in want or s["shard"] in want]
+          inc = [s for s in all_ if ("all" in want and not s.get("optin")) or s["shard"] in want]
           if not inc:
               raise SystemExit(f"no shard matches {sorted(want)}")
           print("matrix=" + json.dumps({"include": inc}))
@@ -71,12 +77,18 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
+      - name: Build debug APK (+ androidTest APK for the hinge probe)
+        run: ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest
       - uses: actions/upload-artifact@v7
         with:
           name: screen-matrix-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hinge-test-apk
+          path: app/build/outputs/apk/androidTest/debug/*.apk
           if-no-files-found: error
           retention-days: 7
 
@@ -93,6 +105,10 @@ jobs:
         with:
           name: screen-matrix-apk
           path: apk
+      - uses: actions/download-artifact@v8
+        with:
+          name: hinge-test-apk
+          path: apk-test
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -106,18 +122,21 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2.38.0
         env:
           POINTS: ${{ inputs.points || '.' }}
-          SHARD: ${{ matrix.shard }}
+          SHARD: ${{ matrix.points_shard || matrix.shard }}
+          OUT_SHARD: ${{ matrix.shard }}
+          HINGE_TEST_APK: apk-test/app-debug-androidTest.apk
           MATRIX_GATE: ${{ inputs.gate || (contains(github.ref, 'dev8') && 'dev8' || 'dev7') }}
           MATRIX_PROBES: ${{ inputs.probes || '' }}
         with:
           api-level: ${{ matrix.api }}
           target: ${{ matrix.target }}
           arch: ${{ matrix.arch }}
+          profile: ${{ matrix.profile || '' }}
           ram-size: 4096M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -skin ${{ matrix.skin }}
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim ${{ matrix.skin && format('-skin {0}', matrix.skin) || '' }}
           # One line: the runner executes each script line in its own sh.
-          script: bash scripts/screen-matrix.sh --shard "$SHARD" --points "$POINTS" --matrix-gate "$MATRIX_GATE" --apk apk --out "screen-matrix-out/$SHARD"
+          script: bash scripts/screen-matrix.sh --shard "$SHARD" --points "$POINTS" --matrix-gate "$MATRIX_GATE" --apk apk --out "screen-matrix-out/$OUT_SHARD"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
