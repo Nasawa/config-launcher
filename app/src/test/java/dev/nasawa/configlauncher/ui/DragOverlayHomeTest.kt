@@ -5,6 +5,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -36,6 +38,7 @@ import org.junit.runner.Description
 import org.junit.runner.RunWith
 import org.junit.runners.model.Statement
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 /**
@@ -46,7 +49,9 @@ import java.io.File
  * Cases: bottom dock (portrait), rail (landscape, LTR), rail on the mirrored edge (RTL), and the book-posture
  * split (vertical half-open hinge, home in the start half, refused drop in the end half). Each: mid-drag over the
  * dock slot, the landing (MoveToDock written, overlay gone), a refused drop springing back from over the dock
- * (every frame whole, nothing written), and reduced motion (instant return).
+ * (every frame whole, nothing written), and reduced motion (instant return). Plus (Grace's #223 note A) a tile
+ * lifted up over the title bar at the pager's top edge, LTR and RTL: whole and drawn on top of the bar (pixels),
+ * then a refused drop there springing back whole.
  *
  * "Whole" = the overlay node's [androidx.compose.ui.semantics.SemanticsNode.boundsInRoot], which Compose clips by
  * every ancestor's clip: a clipped overlay reports a smaller (or empty) rect than the tile at rest. Touch input and
@@ -282,4 +287,106 @@ class DragOverlayHomeTest {
     @Test @Config(qualifiers = "w840dp-h700dp-land-xhdpi") fun bookRefusedSpringBackFromTheEndHalf() = refusedSpringBack(Case.BOOK)
     @Test @Config(qualifiers = "ar-rEG-ldrtl-w840dp-h700dp-land-xhdpi") fun bookRtlRefusedSpringBackFromTheEndHalf() = refusedSpringBack(Case.BOOK)
     @Test @Config(qualifiers = "w840dp-h700dp-land-xhdpi") fun bookReducedMotion() = refusedSpringBack(Case.BOOK, reduced = true)
+
+    private fun titleBar(): Rect = compose.onAllNodes(hasContentDescription(", Pages", substring = true))
+        .fetchSemanticsNodes().first().boundsInRoot
+
+    /** [w]×[h] pixels of [b] from [r]'s rounded top-left (root px), non-premultiplied ARGB. */
+    private fun pixels(b: android.graphics.Bitmap, r: Rect, w: Int, h: Int): IntArray {
+        val l = kotlin.math.round(r.left).toInt(); val t = kotlin.math.round(r.top).toInt()
+        assertTrue("on screen: $r", l >= 0 && t >= 0 && l + w <= b.width && t + h <= b.height)
+        return IntArray(w * h).also { b.getPixels(it, 0, w, l, t, w, h) }
+    }
+
+    private fun capture(): android.graphics.Bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+
+    /** Source-over of non-premultiplied ARGB [top] on [under], as (a, r, g, b) in 0..255. */
+    private fun over(top: Int, under: Int): FloatArray {
+        val ta = (top ushr 24) / 255f; val ua = (under ushr 24) / 255f
+        val a = ta + ua * (1 - ta)
+        val c = { sh: Int -> if (a == 0f) 0f else ((top shr sh and 0xff) * ta + (under shr sh and 0xff) * ua * (1 - ta)) / a }
+        return floatArrayOf(a * 255, c(16), c(8), c(0))
+    }
+
+    private fun dist(p: Int, q: FloatArray): Float {
+        val v = floatArrayOf((p ushr 24).toFloat(), (p shr 16 and 0xff).toFloat(), (p shr 8 and 0xff).toFloat(), (p and 0xff).toFloat())
+        return v.indices.maxOf { kotlin.math.abs(v[it] - q[it]) }
+    }
+
+    /**
+     * Grace's #223 note A: lifted up to the pager's top edge, the tile went under the title bar. Over the title bar
+     * the overlay must be whole (semantics) and drawn on top (pixels). The lifted tile's pixels T are taken over an
+     * empty (transparent) spot of the page, the title bar's pixels P where the tile will be; over the bar, the
+     * window must show T over P, not P over T (the tile's backdrop is translucent, so the two differ).
+     */
+    private fun overTitleBar(): Pair<Rect, dev.nasawa.configlauncher.model.LauncherConfig> {
+        setUp(Case.DOCK)
+        val before = store.engine.state.value.config
+        val rest = source()
+        val bar = titleBar()
+        val window = window()
+        val empty = Offset(window.center.x, window.center.y) // Second has one tile, at (0,0): the centre is empty
+        liftAndMoveTo(empty, rest)
+        frames(30) // the lift scale has settled
+        val inner = { r: Rect -> Rect(r.left + r.width * 0.1f, r.top + r.height * 0.1f, r.right - r.width * 0.1f, r.bottom - r.height * 0.1f) }
+        val r0 = inner(overlayFull())
+        val w = r0.width.toInt(); val h = r0.height.toInt()
+        val ref = capture()
+        val tile = pixels(ref, r0, w, h)
+        step(empty, bar.center, rest, "up to the title bar")
+        frames(30)
+        val o = overlay()!!
+        assertTrue("mid-drag: the tile is over the title bar $bar: $o", o.overlaps(bar) && o.contains(bar.center))
+        assertWhole(rest, "over the title bar")
+        assertEquals(1, tileNodes())
+        val r1 = inner(overlayFull())
+        val under = pixels(ref, r1, w, h) // the bar there, before the tile came
+        val got = pixels(capture(), r1, w, h)
+        var told = 0; var onTop = 0
+        for (i in got.indices) {
+            val tp = over(tile[i], under[i]); val pt = over(under[i], tile[i])
+            if (dist(tile[i], floatArrayOf(0f, 0f, 0f, 0f)) < 1f || tp.indices.maxOf { kotlin.math.abs(tp[it] - pt[it]) } < 12f) continue
+            told++
+            if (dist(got[i], tp) < dist(got[i], pt)) onTop++
+        }
+        assertTrue("the bar is behind the tile at enough pixels to tell ($told of ${got.size})", told >= got.size / 10)
+        assertTrue("drawn over the title bar, not under it: $onTop of $told pixels", onTop >= told * 3 / 4)
+        return rest to before
+    }
+
+    @Test @GraphicsMode(GraphicsMode.Mode.NATIVE) @Config(qualifiers = "w411dp-h891dp-port-xhdpi")
+    fun titleBarMidDrag() { overTitleBar() }
+
+    @Test @GraphicsMode(GraphicsMode.Mode.NATIVE) @Config(qualifiers = "ar-rEG-ldrtl-w411dp-h891dp-port-xhdpi")
+    fun rtlTitleBarMidDrag() { overTitleBar() }
+
+    /** Released over the title bar (outside the grid and the dock): refused, springs back whole every frame. */
+    private fun titleBarSpringBack() {
+        val (rest, before) = overTitleBar()
+        compose.onRoot().performTouchInput { up() }
+        var whole = 0
+        for (i in 0 until 60) {
+            compose.mainClock.advanceTimeByFrame(); compose.waitForIdle()
+            overlay() ?: break
+            assertWhole(rest, "spring-back from the title bar, frame $i")
+            whole++
+        }
+        assertTrue("the return took frames ($whole), all whole", whole >= 3)
+        frames(2)
+        assertNull(overlay())
+        assertFalse(store.engine.dragging)
+        assertEquals("back in its cell", rest, source())
+        compose.mainClock.autoAdvance = true
+        compose.waitForIdle()
+        val after = store.engine.state.value.config
+        assertEquals("a refused drop writes nothing", before.revision, after.revision)
+        assertEquals(before.pages, after.pages)
+        assertEquals(before.dock, after.dock)
+    }
+
+    @Test @GraphicsMode(GraphicsMode.Mode.NATIVE) @Config(qualifiers = "w411dp-h891dp-port-xhdpi")
+    fun titleBarRefusedSpringBack() = titleBarSpringBack()
+
+    @Test @GraphicsMode(GraphicsMode.Mode.NATIVE) @Config(qualifiers = "ar-rEG-ldrtl-w411dp-h891dp-port-xhdpi")
+    fun rtlTitleBarRefusedSpringBack() = titleBarSpringBack()
 }

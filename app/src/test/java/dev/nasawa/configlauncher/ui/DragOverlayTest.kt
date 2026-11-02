@@ -56,11 +56,11 @@ class DragOverlayTest {
     private lateinit var drag: DragController
     private var cancelled = 0
 
-    private fun show() {
+    private fun show(reduced: Boolean = false) {
         val engine = ConfigEngine(LocalFileSource(tmp.newFolder("src")), LastGoodStore(tmp.newFolder("lg")), stabilityMs = 0)
         // No grid or dock rects: every drop is refused and springs back.
         drag = DragController({ engine }, onCancel = { cancelled++ }) { error("nothing is written: $it") }
-        drag.reducedMotion = { false }
+        drag.reducedMotion = { reduced }
         rule.mainClock.autoAdvance = false
         rule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
@@ -98,5 +98,42 @@ class DragOverlayTest {
         assertEquals("back: the source draws again", tile, px(30, 30))
         assertEquals("the overlay is gone", dock, px(200, 200))
         assertEquals(1, cancelled)
+    }
+
+    /**
+     * Pragma (#231): with reduced motion no frame may show no tile. Every frame from the release on (including the
+     * one drawn before any recomposition), the tile is painted either by the overlay (still at the dock) or by the
+     * source at its origin, which comes back no later than the overlay clears.
+     */
+    @Test fun reducedMotionNeverShowsAFrameWithNoTile() {
+        show(reduced = true)
+        rule.runOnIdle { drag.start(item, Rect(0f, 0f, 60f, 60f)); drag.move(Offset(170f, 170f)) }
+        frames(3)
+        assertEquals("held over the dock", tile, px(200, 200)); assertEquals(bg, px(30, 30))
+        rule.runOnIdle { drag.drop() } // refused, reduced motion: an instant return
+        for (i in 0 until 6) {
+            val img = rule.onNodeWithTag("root").captureToImage().toPixelMap()
+            val overlay = img[200, 200] == tile; val source = img[30, 30] == tile
+            assertTrue("frame $i after release: overlay drawn ($overlay) or source back ($source)", overlay || source)
+            rule.mainClock.advanceTimeByFrame(); rule.waitForIdle()
+        }
+        assertEquals("back at its origin", tile, px(30, 30)); assertEquals("the overlay is gone", dock, px(200, 200))
+        assertEquals(1, cancelled)
+    }
+
+    /** Every frame of the animated #218 return paints the tile somewhere along its path (the overlay or the source). */
+    @Test fun springBackNeverShowsAFrameWithNoTile() {
+        show()
+        rule.runOnIdle { drag.start(item, Rect(0f, 0f, 60f, 60f)); drag.move(Offset(170f, 170f)) }
+        frames(30)
+        rule.runOnIdle { drag.drop() }
+        for (i in 0 until 40) {
+            val img = rule.onNodeWithTag("root").captureToImage().toPixelMap()
+            val o = drag.visualOffset // the overlay's centre tracks the return; once it ends, the source at (30, 30)
+            val cx = (30 + o.x).toInt().coerceIn(0, 299); val cy = (30 + o.y).toInt().coerceIn(0, 299)
+            assertTrue("frame $i: tile at ($cx, $cy) or at its origin", img[cx, cy] == tile || img[30, 30] == tile)
+            rule.mainClock.advanceTimeByFrame(); rule.waitForIdle()
+        }
+        assertEquals(tile, px(30, 30))
     }
 }
