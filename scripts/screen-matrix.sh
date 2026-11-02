@@ -779,12 +779,12 @@ drop_probe() {
     if [ "$rtl" = 1 ]; then sb_setup rtl-valid-left; sb_run rtl-valid-left "$AX" "$AY" "$CELL10_X" "$CELL10_Y" 7; sb_end rtl-valid-left; fi
     # 5: reduced motion — instant return and nothing blocked: a pager swipe right after UP must page
     sb_setup rm; sh_ "settings put global animator_duration_scale 0"
-    sb_run rm "$AX" "$AY" "$TITLE_X" "$TITLE_Y" 7 "input swipe $SW_X1 $SW_Y $SW_X2 $SW_Y 150"
+    sb_run rm "$AX" "$AY" "$TITLE_X" "$TITLE_Y" 7 "input swipe $SW_X1 $SW_Y $SW_X2 $SW_Y 300"
     sh_ "settings put global animator_duration_scale 1"; sb_end rm later
     # 6a: pager swipe during the return is dropped (not replayed later); then a control swipe pages
-    sb_setup swipe; sb_run swipe "$AX" "$AY" "$TITLE_X" "$TITLE_Y" 7 "input swipe $SW_X1 $SW_Y $SW_X2 $SW_Y 150"
+    sb_setup swipe; sb_run swipe "$AX" "$AY" "$TITLE_X" "$TITLE_Y" 7 "input swipe $SW_X1 $SW_Y $SW_X2 $SW_Y 300"
     pause 2; anr "$d"; pg_snap "$d" swipe 1-after; sleep 4; pg_snap "$d" swipe 2-later
-    sh_ "input swipe $SW_X1 $SW_Y $SW_X2 $SW_Y 150"; pause 3; pg_snap "$d" swipe 3-control
+    sh_ "input swipe $SW_X1 $SW_Y $SW_X2 $SW_Y 300"; pause 3; pg_snap "$d" swipe 3-control
     sb_cfg "$d/pg-swipe-config-after.json"; pg_case_end "$d" swipe
     # 6b/6c: quick re-drag of the same tile, then of another tile, right after a refused release
     sb_setup redrag-same
