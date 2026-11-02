@@ -11,6 +11,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 
 /**
  * #188 / ux.md §1.5 "what's kept": the pager keeps its page by page `id`, not by index, across a window change
@@ -61,7 +63,9 @@ fun rememberPagerById(ids: List<String>): PagerState {
     // rotate) is still what's saved.
     memory.live = {
         val i = pager.settledPage
-        if (handled == latest && i == pager.currentPage) latest.getOrNull(i)?.let { it to i } else null
+        // #214 (4): a pager measured at zero width snaps to its last page; that index is not a page anyone chose.
+        val laidOut = pager.layoutInfo.pageSize > 0
+        if (laidOut && handled == latest && i == pager.currentPage) latest.getOrNull(i)?.let { it to i } else null
     }
     // Track what's on screen once it settles (swipe, page list, Home → page 1), for the reload effect below.
     val settled = pager.settledPage
@@ -74,4 +78,16 @@ fun rememberPagerById(ids: List<String>): PagerState {
         handled = ids
     }
     return pager
+}
+
+/**
+ * #214 (4): don't measure the pager while it is given zero width. A [androidx.compose.foundation.pager.HorizontalPager]
+ * measured at width 0 has page size 0 and snaps to its last page, and stays there when the width comes back. A
+ * window resize or density change can lay the old window out at zero width for a frame, which (saved on the
+ * recreate that follows) put an RTL tablet or phone on the last page. Skipping that measure keeps the pager where it
+ * was; nothing is drawn for a zero-width frame anyway.
+ */
+fun Modifier.keepPageWhenCollapsed(): Modifier = layout { measurable, constraints ->
+    if (constraints.maxWidth == 0) layout(0, constraints.minHeight) {}
+    else measurable.measure(constraints).let { p -> layout(p.width, p.height) { p.place(0, 0) } }
 }
