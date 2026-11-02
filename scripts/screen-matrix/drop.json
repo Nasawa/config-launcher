@@ -7,7 +7,7 @@
   },
   "pages": [
     {
-      "id": "drag",
+      "id": "home",
       "title": "Drag",
       "items": [
         {
@@ -29,8 +29,8 @@
       ]
     },
     {
-      "id": "home",
-      "title": "Home",
+      "id": "second",
+      "title": "Second",
       "items": [
         {
           "id": "a-settings",
