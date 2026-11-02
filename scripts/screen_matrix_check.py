@@ -42,6 +42,25 @@ class Node:
     cy = property(lambda s: (s.b[1] + s.b[3]) // 2)
 
 
+# Book posture on a real hinge (hinge shard, PR #219): home lays out in one half of the window and the other half is
+# wallpaper. run_checks sets these from meta (home_half / hinge_window) so home* dumps and safeDrawing are scored in
+# the home half's own coordinates (x from the half's start, width = half width) instead of the whole window.
+_HALF = None   # (l, t, r, b) screen px of the home half
+_FULL = None   # (W, H) of the whole window
+
+
+def _to_half(nodes):
+    l, t, r, b = _HALF
+    out = []
+    for n in nodes:
+        x0, y0, x1, y1 = n.b
+        if n.b[2] > n.b[0] and (min(x1, r) <= max(x0, l)):
+            continue           # wholly in the wallpaper half (the hinge checks report these)
+        n.b = (max(x0, l) - l, y0, min(x1, r) - l, y1)
+        out.append(n)
+    return out
+
+
 def load(path):
     """List of Nodes, or None when the file is missing or not XML."""
     if not os.path.exists(path):
@@ -50,7 +69,10 @@ def load(path):
         root = ET.parse(path).getroot()
     except ET.ParseError:
         return None
-    return [Node(n.attrib) for n in root.iter('node')]
+    nodes = [Node(n.attrib) for n in root.iter('node')]
+    if _HALF and os.path.basename(path).startswith('home'):
+        nodes = _to_half(nodes)
+    return nodes
 
 
 def inter(a, b):
@@ -102,7 +124,12 @@ def hexc(c):
 def open_png(path):
     try:
         from PIL import Image
-        return Image.open(path).convert('RGB') if os.path.exists(path) else None
+        if not os.path.exists(path):
+            return None
+        im = Image.open(path).convert('RGB')
+        if _HALF and os.path.basename(path).startswith('home'):
+            im = im.crop(_HALF)   # same coordinates as the home* dumps (see _to_half)
+        return im
     except Exception:   # no Pillow, or an empty/corrupt screenshot
         return None
 
@@ -622,6 +649,16 @@ def pitch_with_fixture(tile_nodes, pairs, card_nodes, s, fixture_name, rtl=False
 
 
 def parse_safe_drawing_insets(text, W, H):
+    """safeDrawing in px for the scored area: the whole window, or the home half in book posture (see _HALF)."""
+    if not _HALF:
+        return _parse_safe_drawing_insets_full(text, W, H)
+    Wf, Hf = _FULL
+    sl, st, sr, sb = _parse_safe_drawing_insets_full(text, Wf, Hf)
+    l, t, r, b = _HALF
+    return (max(0, sl - l), max(0, st - t), max(0, sr - (Wf - r)), max(0, sb - (Hf - b)))
+
+
+def _parse_safe_drawing_insets_full(text, W, H):
     """Derive WindowInsets.safeDrawing-equivalent insets (px) from `dumpsys window` output.
 
     safeDrawing ≈ system bars ∪ display cutout (IME closed on the home screen). We take the
@@ -756,7 +793,13 @@ def severity(cid, m):
 
 
 def run_checks(d):
+    global _HALF, _FULL
     m = meta_of(d)
+    _HALF = _FULL = None
+    if m.get('hinge_split') == 'book' and m.get('home_half') and m.get('hinge_window'):
+        _HALF = tuple(int(v) for v in m['home_half'].split(','))
+        wl, wt, wr, wb = (int(v) for v in m['hinge_window'].split(','))
+        _FULL = (wr - wl, wb - wt)
     dens = int(m.get('density', '0') or 0)
     if not dens:
         hits = re.findall(r'(?:Override|Physical) density: (\d+)', read(os.path.join(d, 'run.txt')))
