@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "grid": {
+    "columns": 4,
+    "rows": 5
+  },
+  "pages": [
+    {
+      "id": "home",
+      "title": "Drag",
+      "items": [
+        {
+          "id": "a-edge-c",
+          "type": "app",
+          "package": "com.android.settings",
+          "label": "Edge C",
+          "x": 1,
+          "y": 1
+        },
+        {
+          "id": "a-edge-d",
+          "type": "app",
+          "package": "com.android.settings",
+          "label": "Edge D",
+          "x": 2,
+          "y": 3
+        }
+      ]
+    },
+    {
+      "id": "second",
+      "title": "Second",
+      "items": [
+        {
+          "id": "a-settings",
+          "type": "app",
+          "package": "com.android.settings",
+          "label": "QA Settings",
+          "x": 0,
+          "y": 0
+        }
+      ]
+    },
+    {
+      "id": "third",
+      "title": "Third",
+      "items": [
+        {
+          "id": "a-third",
+          "type": "app",
+          "package": "com.android.settings",
+          "label": "Third tile",
+          "x": 0,
+          "y": 0
+        }
+      ]
+    }
+  ],
+  "dock": [
+    {
+      "id": "d-settings",
+      "type": "app",
+      "package": "com.android.settings"
+    }
+  ],
+  "elements": [
+    {
+      "id": "t-main",
+      "type": "titleBar",
+      "anchor": "top",
+      "content": {
+        "slots": {
+          "start": "{date:EEE d MMM yyyy}",
+          "center": "{page}",
+          "end": "{time:HH:mm}"
+        }
+      },
+      "style": {
+        "size": "large",
+        "color": "light",
+        "padding": {
+          "horizontal": 16,
+          "vertical": 6
+        },
+        "backdrop": {
+          "color": "#000000",
+          "opacity": 60,
+          "radius": 12
+        }
+      }
+    }
+  ]
+}
