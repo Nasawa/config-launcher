@@ -49,6 +49,13 @@ _HALF = None   # (l, t, r, b) screen px of the home half
 _FULL = None   # (W, H) of the whole window
 
 
+def _half_dump(path):
+    """home1/home2 dumps taken in book posture. home2-rot is after the L1/L7 rotation, which turns book into
+    tabletop (a horizontal hinge), so it is in full-window coordinates and must not be cut to the book half."""
+    n = os.path.basename(path)
+    return bool(_HALF) and n.startswith('home') and '-rot' not in n
+
+
 def _to_half(nodes):
     l, t, r, b = _HALF
     out = []
@@ -70,7 +77,7 @@ def load(path):
     except ET.ParseError:
         return None
     nodes = [Node(n.attrib) for n in root.iter('node')]
-    if _HALF and os.path.basename(path).startswith('home'):
+    if _half_dump(path):
         nodes = _to_half(nodes)
     return nodes
 
@@ -127,7 +134,7 @@ def open_png(path):
         if not os.path.exists(path):
             return None
         im = Image.open(path).convert('RGB')
-        if _HALF and os.path.basename(path).startswith('home'):
+        if _half_dump(path):
             im = im.crop(_HALF)   # same coordinates as the home* dumps (see _to_half)
         return im
     except Exception:   # no Pillow, or an empty/corrupt screenshot
@@ -392,6 +399,21 @@ def cmd_screen(path):
     return 0
 
 
+def pager_box(path):
+    """Bounds of the launcher's largest scrollable node (the page pager), from the raw dump; None if absent."""
+    best = None
+    for m in re.finditer(r'<node [^>]*?>', read(path)):
+        t = m.group(0)
+        if 'scrollable="true"' not in t or 'package="dev.nasawa' not in t:
+            continue
+        b = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', t)
+        if b:
+            b = tuple(map(int, b.groups()))
+            if best is None or (b[2]-b[0])*(b[3]-b[1]) > (best[2]-best[0])*(best[3]-best[1]):
+                best = b
+    return best
+
+
 def cmd_find_empty(path, density):
     """Print an empty-space long-press target inside the *page column* (not the rail)."""
     nodes = load(path) or []
@@ -406,6 +428,11 @@ def cmd_find_empty(path, density):
     right = min(col_r, W)
     top = max(top, col_t)
     bottom = min(bottom, col_b)
+    # Stay inside the scrollable pager too: in tabletop it ends at the hinge, and the band below it (dots, dock)
+    # is not grid space (PR #219 run 41498249766: the old target 920,1764 fell in the lower half).
+    pg = pager_box(path)
+    if pg:
+        top = max(top, pg[1]); bottom = min(bottom, pg[3])
     blockers = [n.b for n in labels + tiles + cards + dock]
     # Also block rail-head chrome (Apps / ⋮) even when not in dock[].
     for n in nodes:

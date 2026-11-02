@@ -84,6 +84,9 @@ dump() {
     [ "$i" = 1 ] && anr "$1"
   done
   A exec-out screencap -p > "$1/$2.png" < /dev/null 2> /dev/null || true
+  # Multi-display devices (pixel_fold: inner + cover) print "[Warning] Multiple displays were found..." on stdout
+  # before the PNG; cut everything before the PNG signature (run 41498249766: 524 PNGs unreadable, TH/contrast SKIP).
+  [ -s "$1/$2.png" ] && python3 -c 'import sys;p=sys.argv[1];b=open(p,"rb").read();i=b.find(b"\x89PNG");i>0 and open(p,"wb").write(b[i:])' "$1/$2.png"
   [ -s "$1/$2.png" ] || rm -f "$1/$2.png"
 }
 # at <xml> <text|desc> <regex>: echo "x y" of the first matching node
