@@ -345,6 +345,11 @@ run_point() {
 
   # Warm-up + F3–F7 only when seed produced home (else product checks would score FirstRun as app bugs).
   hd="$d/home1.xml"
+  if [[ ",$MATRIX_PROBES," == *,drop-only,* ]]; then
+    if [[ $id =~ $PAGER_POINTS ]] && [ "$seed_ok" -eq 1 ]; then drop_probe "$d" "$dens" "$size" "$rot" "$shape"; fi
+    sh_ "settings put system user_rotation $rot"
+    return
+  fi
   if [[ ",$MATRIX_PROBES," == *,pager-only,* ]]; then
     if [[ $id =~ $PAGER_POINTS ]] && [ "$seed_ok" -eq 1 ]; then pager_probe "$d" "$dens" "$size" "$rot" "$shape"; fi
     sh_ "settings put system user_rotation $rot"
@@ -517,6 +522,50 @@ pg_case_end() {
   { sh_ logcat -d -b crash; sh_ logcat -d -b main -b system | grep -E "ANR in $PKG|FATAL EXCEPTION|AndroidRuntime.*$PKG"; } > "$1/pg-$2-crash.txt" 2>&1
 }
 pg_task() { sh_ "dumpsys activity activities" 2>/dev/null | tr -d '\r' | grep -E "Task\{|mWindowingMode|windowingMode=" | grep -m3 -iE "configlauncher|freeform|multi" ; }
+# dragrot + plain drop (#214 r2) as functions so the drop probe (#218) can re-run them; they use the caller's
+# d, dens, rot, flip, W, H (bash dynamic scope).
+pg_dragrot() {
+  local p x y
+  # dragrot: page 2, edit mode, long-press-drag "Second tile", rotate while the finger is down, then UP.
+  # Want: drag cancelled, launcher.json unchanged, no crash, still page 2.
+  pg_case_start "$d" dragrot; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager dragrot: goto failed" >> "$d/run.txt"
+  dnd_edit "$d" "$dens" || echo "pager dragrot: no edit mode" >> "$d/run.txt"
+  pg_snap "$d" dragrot 0-edit
+  pg_hash > "$d/pg-dragrot-hash-before.txt"
+  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-dragrot-config-before.json" 2>/dev/null || true
+  if p=$($CHECK find "$d/pg-dragrot-0-edit.xml" text '^Second tile$' || $CHECK find "$d/pg-dragrot-0-edit.xml" desc '^Second tile$'); then
+    read -r x y <<< "$p"
+    sh_ "input motionevent DOWN $x $y; sleep 1.6; input motionevent MOVE $((x + W / 20)) $((y + H / 40)); input motionevent MOVE $((x + W / 10)) $((y + H / 20)); input motionevent MOVE $((x + W / 6)) $((y + H / 12))"
+    dump "$d" pg-dragrot-1-dragging
+    sh_ "settings put system user_rotation $flip"; pause
+    sh_ "input motionevent MOVE $((x + W / 5)) $((y + H / 10)); input motionevent UP $((x + W / 5)) $((y + H / 10))"
+    pause 3; anr "$d"; pg_snap "$d" dragrot 2-rotated
+    sh_ "settings put system user_rotation $rot"; pause; anr "$d"; pg_snap "$d" dragrot 3-back
+  else
+    echo "pager dragrot: Second tile not found" >> "$d/run.txt"
+  fi
+  pg_hash > "$d/pg-dragrot-hash-after.txt"
+  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-dragrot-config-after.json" 2>/dev/null || true
+  pg_case_end "$d" dragrot
+
+}
+pg_plaindrop() {
+  local p x y
+  # drop (r2 LTR/RTL regression): plain drag-and-drop in edit mode, no rotation → the drop must still commit.
+  pg_case_start "$d" drop; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager drop: goto failed" >> "$d/run.txt"
+  dnd_edit "$d" "$dens" || echo "pager drop: no edit mode" >> "$d/run.txt"
+  pg_snap "$d" drop 0-edit
+  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-drop-config-before.json" 2>/dev/null || true
+  if p=$($CHECK find "$d/pg-drop-0-edit.xml" text '^Second tile$' || $CHECK find "$d/pg-drop-0-edit.xml" desc '^Second tile$'); then
+    read -r x y <<< "$p"
+    sh_ "input motionevent DOWN $x $y; sleep 1.6; input motionevent MOVE $((x + W / 20)) $((y + H / 40)); input motionevent MOVE $((x + W / 10)) $((y + H / 20)); input motionevent MOVE $((x + W / 6)) $((y + H / 12)); sleep 0.6; input motionevent MOVE $((x + W / 5)) $((y + H / 10)); sleep 0.6; input motionevent UP $((x + W / 5)) $((y + H / 10))"
+    pause 3; anr "$d"; pg_snap "$d" drop 1-dropped
+  else
+    echo "pager drop: Second tile not found" >> "$d/run.txt"
+  fi
+  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-drop-config-after.json" 2>/dev/null || true
+  pg_case_end "$d" drop
+}
 pager_probe() {
   local d=$1 dens=$2 size=$3 rot=$4 shape=$5 flip w h hw x y tid
   w=${size%x*}; h=${size#*x}; flip=$((1 - rot))
@@ -601,42 +650,7 @@ pager_probe() {
   pg_reload "$d" pager-remove-mid.json; pg_snap "$d" rmmid 1-reloaded
   pg_case_end "$d" rmmid
 
-  # dragrot: page 2, edit mode, long-press-drag "Second tile", rotate while the finger is down, then UP.
-  # Want: drag cancelled, launcher.json unchanged, no crash, still page 2.
-  pg_case_start "$d" dragrot; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager dragrot: goto failed" >> "$d/run.txt"
-  dnd_edit "$d" "$dens" || echo "pager dragrot: no edit mode" >> "$d/run.txt"
-  pg_snap "$d" dragrot 0-edit
-  pg_hash > "$d/pg-dragrot-hash-before.txt"
-  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-dragrot-config-before.json" 2>/dev/null || true
-  if p=$($CHECK find "$d/pg-dragrot-0-edit.xml" text '^Second tile$' || $CHECK find "$d/pg-dragrot-0-edit.xml" desc '^Second tile$'); then
-    read -r x y <<< "$p"
-    sh_ "input motionevent DOWN $x $y; sleep 1.6; input motionevent MOVE $((x + W / 20)) $((y + H / 40)); input motionevent MOVE $((x + W / 10)) $((y + H / 20)); input motionevent MOVE $((x + W / 6)) $((y + H / 12))"
-    dump "$d" pg-dragrot-1-dragging
-    sh_ "settings put system user_rotation $flip"; pause
-    sh_ "input motionevent MOVE $((x + W / 5)) $((y + H / 10)); input motionevent UP $((x + W / 5)) $((y + H / 10))"
-    pause 3; anr "$d"; pg_snap "$d" dragrot 2-rotated
-    sh_ "settings put system user_rotation $rot"; pause; anr "$d"; pg_snap "$d" dragrot 3-back
-  else
-    echo "pager dragrot: Second tile not found" >> "$d/run.txt"
-  fi
-  pg_hash > "$d/pg-dragrot-hash-after.txt"
-  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-dragrot-config-after.json" 2>/dev/null || true
-  pg_case_end "$d" dragrot
-
-  # drop (r2 LTR/RTL regression): plain drag-and-drop in edit mode, no rotation → the drop must still commit.
-  pg_case_start "$d" drop; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager drop: goto failed" >> "$d/run.txt"
-  dnd_edit "$d" "$dens" || echo "pager drop: no edit mode" >> "$d/run.txt"
-  pg_snap "$d" drop 0-edit
-  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-drop-config-before.json" 2>/dev/null || true
-  if p=$($CHECK find "$d/pg-drop-0-edit.xml" text '^Second tile$' || $CHECK find "$d/pg-drop-0-edit.xml" desc '^Second tile$'); then
-    read -r x y <<< "$p"
-    sh_ "input motionevent DOWN $x $y; sleep 1.6; input motionevent MOVE $((x + W / 20)) $((y + H / 40)); input motionevent MOVE $((x + W / 10)) $((y + H / 20)); input motionevent MOVE $((x + W / 6)) $((y + H / 12)); sleep 0.6; input motionevent MOVE $((x + W / 5)) $((y + H / 10)); sleep 0.6; input motionevent UP $((x + W / 5)) $((y + H / 10))"
-    pause 3; anr "$d"; pg_snap "$d" drop 1-dropped
-  else
-    echo "pager drop: Second tile not found" >> "$d/run.txt"
-  fi
-  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-drop-config-after.json" 2>/dev/null || true
-  pg_case_end "$d" drop
+  pg_dragrot; pg_plaindrop
 
   # rcycle (r2): repeated resize cycles — half width / back / ×3/4 density / back, three times.
   pg_case_start "$d" rcycle; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager rcycle: goto failed" >> "$d/run.txt"
@@ -661,6 +675,128 @@ pager_probe() {
 
   $PAGER score "$d" >> "$d/run.txt" 2>&1 || echo "pager score non-zero" >> "$d/run.txt"
   grep -m1 '^# Pager' "$d/pager.md" 2>/dev/null || true
+  sh_ "wm size $size; wm density $dens; settings put system user_rotation $rot"
+  dnd_reset "$d"; home
+}
+
+# --- Drop spring-back probe (#212 / PR #218; scored off-CI from the artifacts, scripts/screen_matrix_drop.py
+# computes the targets). CI boots with animations disabled, so this probe sets animator_duration_scale 1 (0 for the
+# reduced-motion case) and restores 0 at the end. Every case: cold start on drop.json (page 1 "Drag": Drag A at
+# (0,0), Drag B at (3,4)), Edit layout, screenrecord while one `input motionevent` chain drags and releases, then
+# dumps. Files: sb-<case>.mp4, sb-<case>-times.txt (device /proc/uptime around UP), pg-<case>-<step>.xml/.png,
+# pg-<case>-config-{before,after}.json, sb-targets-<orient>.txt.
+DROPH="python3 $HERE/screen_matrix_drop.py"
+sb_moves() {  # sb_moves x0 y0 x1 y1 -> "input motionevent MOVE ..." x8
+  local i out=''
+  for i in 1 2 3 4 5 6 7 8; do out="$out; input motionevent MOVE $(( $1 + ($3 - $1) * i / 8 )) $(( $2 + ($4 - $2) * i / 8 ))"; done
+  echo "${out#; }"
+}
+sb_drag_cmd() { echo "input motionevent DOWN $1 $2; sleep 1.6; $(sb_moves "$1" "$2" "$3" "$4"); sleep 0.5; input motionevent UP $3 $4"; }
+sb_cfg() { sh_ "run-as $PKG cat files/config/source/launcher.json" > "$1" 2>/dev/null || true; }
+sb_setup() {  # sb_setup <case> [fixture]: cold start, edit mode, 0-edit snapshot, config before
+  pg_case_start "$d" "$1"; pg_seed "$d" "${2:-drop.json}"
+  dnd_edit "$d" "$dens" || echo "drop $1: no edit mode" >> "$d/run.txt"
+  pg_snap "$d" "$1" 0-edit; sb_cfg "$d/pg-$1-config-before.json"
+}
+# sb_run <case> <x0> <y0> <fx> <fy> <rec-seconds> [after-cmds]: record, drag (x0,y0)->(fx,fy), UP, then after-cmds
+# in the same device shell (no adb round trip between UP and them).
+sb_run() {
+  local cs=$1 rp cmd
+  cmd="echo T_DOWN \$(cat /proc/uptime); input motionevent DOWN $2 $3; sleep 1.6; $(sb_moves "$2" "$3" "$4" "$5"); sleep 0.5; echo T_UP0 \$(cat /proc/uptime); input motionevent UP $4 $5; echo T_UP1 \$(cat /proc/uptime)"
+  [ -n "${7:-}" ] && cmd="$cmd; $7; echo T_AFTER \$(cat /proc/uptime)"
+  echo "drag $2 $3 -> $4 $5 after=[${7:-}]" > "$d/sb-$cs-times.txt"
+  sh_ "rm -f /sdcard/sb.mp4"
+  sh_ "screenrecord --time-limit $6 --bit-rate 6000000 --size $RECSZ /sdcard/sb.mp4" > "$d/sb-$cs-rec.txt" 2>&1 &
+  rp=$!; sleep 1.5
+  echo "T_REC_GO $(sh_ cat /proc/uptime | tr -d '\r')" >> "$d/sb-$cs-times.txt"
+  sh_ "$cmd" 2>&1 | tr -d '\r' >> "$d/sb-$cs-times.txt"
+  wait "$rp" || true
+  A pull /sdcard/sb.mp4 "$d/sb-$cs.mp4" > /dev/null 2>&1 < /dev/null || echo "drop $cs: no video" >> "$d/run.txt"
+}
+sb_end() {  # sb_end <case> [later]: after snapshot (+ one ~5 s later), config after, crash/ANR
+  pause 2; anr "$d"; pg_snap "$d" "$1" 1-after
+  if [ -n "${2:-}" ]; then sleep 4; pg_snap "$d" "$1" 2-later; fi
+  sb_cfg "$d/pg-$1-config-after.json"; pg_case_end "$d" "$1"
+}
+sb_geo() {  # sb_geo <orient>: one cold start + edit dump, targets -> variables
+  local o=$1
+  pg_case_start "$d" "geo-$o"; pg_seed "$d" drop.json; dnd_edit "$d" "$dens" || echo "drop geo-$o: no edit mode" >> "$d/run.txt"
+  pg_snap "$d" "geo-$o" 0-edit; pg_case_end "$d" "geo-$o"
+  for v in AX AY BX BY PW PH RAIL SIDE_NEAR_X SIDE_NEAR_Y SIDE_LEFT_X SIDE_LEFT_Y SIDE_RIGHT_X SIDE_RIGHT_Y TITLE_X TITLE_Y \
+           DOTS_X DOTS_Y GAP_X GAP_Y DOCK_X DOCK_Y DOCKI_X DOCKI_Y CELL11_X CELL11_Y CELL10_X CELL10_Y B24_X B24_Y SW_X1 SW_X2 SW_Y ERR; do
+    unset "$v"
+  done
+  $DROPH targets "$d/pg-geo-$o-0-edit.xml" "$d/pg-geo-$o-0-edit.png" "$rtl" "$dens" > "$d/sb-targets-$o.txt" 2>> "$d/run.txt" || true
+  # shellcheck disable=SC1090
+  . "$d/sb-targets-$o.txt"
+  RECSZ="$(( ${W:-1080} / 2 / 2 * 2 ))x$(( ${H:-1920} / 2 / 2 * 2 ))"
+  [ -z "${ERR:-}" ] && [ -n "${AX:-}" ]
+}
+sb_refused() {  # sb_refused <case> <fx> <fy> [from=A|dock]: one refused drop, recorded
+  local cs=$1 x0=$AX y0=$AY
+  [ "${4:-A}" = dock ] && { x0=$DOCKI_X; y0=$DOCKI_Y; }
+  if [ -z "$2" ]; then echo "$cs n/a" >> "$d/drop-na.txt"; return; fi
+  sb_setup "$cs"; sb_run "$cs" "$x0" "$y0" "$2" "$3" 7; sb_end "$cs"
+}
+drop_probe() {
+  local d=$1 dens=$2 size=$3 rot=$4 shape=$5 flip rtl=0 o
+  flip=$((1 - rot)); { [[ $id == rtl-* ]] || echo "$shape" | grep -qi rtl; } && rtl=1
+  echo "== drop probe ($id) rtl=$rtl" >> "$d/run.txt"
+  : > "$d/pager-cases.txt"; : > "$d/pager-hashes.txt"; : > "$d/drop-na.txt"
+  sh_ "settings put system user_rotation $rot; settings put global animator_duration_scale 1; settings put system show_touches 1"
+  sh_ "settings get global animator_duration_scale" > "$d/sb-animscale.txt" 2>&1
+  for o in base flip; do
+    [ "$o" = flip ] && { sh_ "settings put system user_rotation $flip"; pause; anr "$d"; }
+    sb_geo "$o" || { echo "drop geo-$o: targets failed" >> "$d/run.txt"; continue; }
+    # 1-3: refused drops (side margin on A's side, title/notice row, dots, gap above the dock); RTL: left margin too
+    sb_refused "$o-side" "${SIDE_NEAR_X:-}" "${SIDE_NEAR_Y:-}"
+    [ "$rtl" = 1 ] && sb_refused "$o-rtl-left" "${SIDE_LEFT_X:-}" "${SIDE_LEFT_Y:-}"
+    sb_refused "$o-title" "${TITLE_X:-}" "${TITLE_Y:-}"
+    if [ "$o" = base ]; then
+      sb_refused "$o-dots" "${DOTS_X:-}" "${DOTS_Y:-}"
+      sb_refused "$o-gap" "${GAP_X:-}" "${GAP_Y:-}"
+    fi
+    # 4: rail — from the grid and from the rail, into the gap beside the rail (or the title when there is none)
+    if [ -n "${RAIL:-}" ]; then
+      if [ "$RAIL" = left ]; then gx=${SIDE_LEFT_X:-$TITLE_X}; gy=${SIDE_LEFT_Y:-$TITLE_Y}; else gx=${SIDE_RIGHT_X:-$TITLE_X}; gy=${SIDE_RIGHT_Y:-$TITLE_Y}; fi
+      sb_refused "$o-rail-grid" "$gx" "$gy"
+      # from the rail: same drop point; the dock item has no label, so its press point is its centre
+      sb_refused "$o-rail-rail" "$gx" "$gy" dock
+    fi
+    [ "$o" = flip ] && continue
+    # RTL valid drop toward the left: A (0,0) -> mirrored (1,0), physical -x; must commit
+    if [ "$rtl" = 1 ]; then sb_setup rtl-valid-left; sb_run rtl-valid-left "$AX" "$AY" "$CELL10_X" "$CELL10_Y" 7; sb_end rtl-valid-left; fi
+    # 5: reduced motion — instant return and nothing blocked: a pager swipe right after UP must page
+    sb_setup rm; sh_ "settings put global animator_duration_scale 0"
+    sb_run rm "$AX" "$AY" "$TITLE_X" "$TITLE_Y" 7 "input swipe $SW_X1 $SW_Y $SW_X2 $SW_Y 150"
+    sh_ "settings put global animator_duration_scale 1"; sb_end rm later
+    # 6a: pager swipe during the return is dropped (not replayed later); then a control swipe pages
+    sb_setup swipe; sb_run swipe "$AX" "$AY" "$TITLE_X" "$TITLE_Y" 7 "input swipe $SW_X1 $SW_Y $SW_X2 $SW_Y 150"
+    pause 2; anr "$d"; pg_snap "$d" swipe 1-after; sleep 4; pg_snap "$d" swipe 2-later
+    sh_ "input swipe $SW_X1 $SW_Y $SW_X2 $SW_Y 150"; pause 3; pg_snap "$d" swipe 3-control
+    sb_cfg "$d/pg-swipe-config-after.json"; pg_case_end "$d" swipe
+    # 6b/6c: quick re-drag of the same tile, then of another tile, right after a refused release
+    sb_setup redrag-same
+    sb_run redrag-same "$AX" "$AY" "$TITLE_X" "$TITLE_Y" 10 "$(sb_drag_cmd "$AX" "$AY" "$CELL11_X" "$CELL11_Y")"
+    sb_end redrag-same
+    sb_setup redrag-other
+    sb_run redrag-other "$AX" "$AY" "$TITLE_X" "$TITLE_Y" 10 "$(sb_drag_cmd "$BX" "$BY" "$B24_X" "$B24_Y")"
+    sb_end redrag-other
+    # 7: rotate during the return
+    sb_setup rot; sb_run rot "$AX" "$AY" "$TITLE_X" "$TITLE_Y" 7 "settings put system user_rotation $flip"
+    pause 3; anr "$d"; pg_snap "$d" rot 1-after
+    sh_ "settings put system user_rotation $rot"; pause; anr "$d"; pg_snap "$d" rot 2-back
+    sb_cfg "$d/pg-rot-config-after.json"; pg_case_end "$d" rot
+    # 8: successful drops are unchanged (cell, dock)
+    sb_setup ok-cell; sb_run ok-cell "$AX" "$AY" "$CELL11_X" "$CELL11_Y" 7; sb_end ok-cell
+    sb_setup ok-dock; sb_run ok-dock "$AX" "$AY" "${DOCK_X:-$AX}" "${DOCK_Y:-$AY}" 7; sb_end ok-dock
+  done
+  sh_ "settings put system user_rotation $rot"; pause; anr "$d"
+  # #214 regressions with animations on: rotate mid-drag writes nothing; plain drop commits (pager.json, page 2)
+  W=${size%x*}; H=${size#*x}
+  read -r W H <<< "$($CHECK screen "$d/pg-geo-base-0-edit.xml" 2>/dev/null || echo "$W $H")"
+  pg_dragrot; pg_plaindrop
+  sh_ "settings put global animator_duration_scale 0; settings put system show_touches 0"
   sh_ "wm size $size; wm density $dens; settings put system user_rotation $rot"
   dnd_reset "$d"; home
 }
