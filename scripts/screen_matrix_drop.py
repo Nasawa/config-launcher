@@ -160,6 +160,8 @@ def targets(xml, png, rtl, dens):
     out['CELL11_X'], out['CELL11_Y'] = fa(A['c'][0] + s * pw, A['c'][1] + ph)
     out['CELL10_X'], out['CELL10_Y'] = fa(A['c'][0] + s * pw, A['c'][1])
     out['B24_X'], out['B24_Y'] = fb(B['c'][0] - s * pw, B['c'][1])
+    # #221 / PR #223: long diagonal A (0,0) -> (3,3), across the middle of the grid (and the drop-cards.json host)
+    out['CELL33_X'], out['CELL33_Y'] = fa(A['c'][0] + s * 3 * pw, A['c'][1] + 3 * ph)
     # pager swipe across the middle of the page, toward the next page
     sy = int(A['c'][1] + 2 * ph)
     # Same gesture the #214 cold-start check uses (80% -> 20% of the width, 300 ms): run 41498516476's 150 ms
