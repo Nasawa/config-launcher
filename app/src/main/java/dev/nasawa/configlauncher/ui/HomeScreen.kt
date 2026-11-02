@@ -259,6 +259,20 @@ fun HomeScreen(vm: HomeViewModel) {
     // §1.5 RTL (#187): drop math mirrors columns and the bottom dock; the rail itself is placed by the Row.
     drag.rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
 
+    val pages = ui.layout.pages
+    // #188: kept by page id across recreation (rotate/fold/resize) and reloads, not by index.
+    // #214: remembered here, above the rail / bottom-dock branch. HomeBody has two call sites, and saved state is
+    // keyed by composition position, so a pager remembered inside it lost its page whenever useRail flipped.
+    val pager = rememberPagerById(pages.map { it.id })
+    // ux.md §1 / §14 R4: Home on home leaves edit mode (saving first), closes drawer and folder, goes to page 1.
+    LaunchedEffect(Unit) {
+        vm.homePresses.collect {
+            leaveEdit(); drawerOpen = false; openFolder = null; hiddenSheet = false
+            sheetFor = null; homeMenu = false; drawerSheet = null
+            if (pager.pageCount > 0) pager.animateScrollToPage(0)
+        }
+    }
+
     HomeThemed(themeDark) {
         // Transparent over the system wallpaper (theme windowShowWallpaper, #58).
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
@@ -372,17 +386,6 @@ fun HomeScreen(vm: HomeViewModel) {
                     if (b9) B9Banner(reviewCount, onReview = { b9DismissedAt = reviewCount; reviewOpen = true }, onDismiss = { b9DismissedAt = reviewCount })
                     ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
                 }
-                val pages = ui.layout.pages
-                // #188: kept by page id across recreation (rotate/fold/resize) and reloads, not by index.
-                val pager = rememberPagerById(pages.map { it.id })
-                // ux.md §1 / §14 R4: Home on home leaves edit mode (saving first), closes drawer and folder, goes to page 1.
-                LaunchedEffect(Unit) {
-                    vm.homePresses.collect {
-                        leaveEdit(); drawerOpen = false; openFolder = null; hiddenSheet = false
-                        sheetFor = null; homeMenu = false; drawerSheet = null
-                        if (pager.pageCount > 0) pager.animateScrollToPage(0)
-                    }
-                }
                 pages.getOrNull(pager.currentPage).let { p ->
                     drag.currentPageId = p?.id
                 }
@@ -407,7 +410,7 @@ fun HomeScreen(vm: HomeViewModel) {
                 val listPages = stringResource(R.string.pages_action)
                 val openAppList = stringResource(R.string.a11y_open_drawer)
                 HorizontalPager(
-                    pager, Modifier.weight(1f).fillMaxWidth()
+                    pager, Modifier.weight(1f).fillMaxWidth().keepPageWhenCollapsed()
                         // §1.4 "Open app list" and §1.3 "List pages" (≥ 2 pages) custom actions on the home grid.
                         .semantics {
                             customActions = listOfNotNull(
