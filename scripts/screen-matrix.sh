@@ -734,7 +734,7 @@ sb_geo() {  # sb_geo <orient>: one cold start + edit dump, targets -> variables
   dnd_edit "$d" "$dens" || echo "drop geo-$o: no edit mode" >> "$d/run.txt"
   pg_snap "$d" "geo-$o" 0-edit; pg_case_end "$d" "geo-$o"
   for v in AX AY BX BY PW PH RAIL SIDE_NEAR_X SIDE_NEAR_Y SIDE_LEFT_X SIDE_LEFT_Y SIDE_RIGHT_X SIDE_RIGHT_Y TITLE_X TITLE_Y \
-           DOTS_X DOTS_Y GAP_X GAP_Y DOCK_X DOCK_Y DOCKI_X DOCKI_Y CELL11_X CELL11_Y CELL10_X CELL10_Y B24_X B24_Y SW_X1 SW_X2 SW_Y ERR; do
+           DOTS_X DOTS_Y GAP_X GAP_Y DOCK_X DOCK_Y DOCKI_X DOCKI_Y CELL11_X CELL11_Y CELL10_X CELL10_Y CELL33_X CELL33_Y B24_X B24_Y SW_X1 SW_X2 SW_Y ERR; do
     unset "$v"
   done
   $DROPH targets "$d/pg-geo-$o-0-edit.xml" "$d/pg-geo-$o-0-edit.png" "$rtl" "$dens" > "$d/sb-targets-$o.txt" 2>> "$d/run.txt" || true
@@ -748,6 +748,47 @@ sb_refused() {  # sb_refused <case> <fx> <fy> [from=A|dock]: one refused drop, r
   [ "${4:-A}" = dock ] && { x0=$DOCKI_X; y0=$DOCKI_Y; }
   if [ -z "$2" ]; then echo "$cs n/a" >> "$d/drop-na.txt"; return; fi
   sb_setup "$cs"; sb_run "$cs" "$x0" "$y0" "$2" "$3" 7; sb_end "$cs"
+}
+# #221 / PR #223: two uiautomator dumps while the finger holds the lifted tile (lifted in place, then over the
+# neighbour cell (1,1)), then a refused drop on the title row; after the return, a tap on Drag B (neighbour routing).
+# Files: pg-lift-0-edit.*, pg-lift-m1-held.*, pg-lift-m2-over11.*, pg-lift-1-after.*, pg-lift-2-tapb.*, sb-lift-times.txt
+sb_lift() {
+  local hx=$((AX + 3)) hy=$((AY + 3)) cmd
+  sb_setup lift
+  cmd="echo T_DOWN \$(cat /proc/uptime); input motionevent DOWN $AX $AY; sleep 1.6; input motionevent MOVE $hx $hy; sleep 0.6"
+  cmd="$cmd; echo T_M1 \$(cat /proc/uptime); uiautomator dump /sdcard/sb-m1.xml; screencap -p /sdcard/sb-m1.png; echo T_M1E \$(cat /proc/uptime)"
+  cmd="$cmd; $(sb_moves "$hx" "$hy" "$CELL11_X" "$CELL11_Y"); sleep 0.6"
+  cmd="$cmd; echo T_M2 \$(cat /proc/uptime); uiautomator dump /sdcard/sb-m2.xml; screencap -p /sdcard/sb-m2.png; echo T_M2E \$(cat /proc/uptime)"
+  cmd="$cmd; $(sb_moves "$CELL11_X" "$CELL11_Y" "$TITLE_X" "$TITLE_Y"); sleep 0.5; echo T_UP0 \$(cat /proc/uptime); input motionevent UP $TITLE_X $TITLE_Y; echo T_UP1 \$(cat /proc/uptime)"
+  echo "lift $AX $AY -> $CELL11_X $CELL11_Y -> $TITLE_X $TITLE_Y" > "$d/sb-lift-times.txt"
+  sh_ "$cmd" 2>&1 | tr -d '\r' >> "$d/sb-lift-times.txt"
+  sh_ cat /sdcard/sb-m1.xml > "$d/pg-lift-m1-held.xml" 2>/dev/null; A pull /sdcard/sb-m1.png "$d/pg-lift-m1-held.png" > /dev/null 2>&1 < /dev/null
+  sh_ cat /sdcard/sb-m2.xml > "$d/pg-lift-m2-over11.xml" 2>/dev/null; A pull /sdcard/sb-m2.png "$d/pg-lift-m2-over11.png" > /dev/null 2>&1 < /dev/null
+  pause 2; anr "$d"; pg_snap "$d" lift 1-after
+  sb_cfg "$d/pg-lift-config-after.json"
+  sh_ input tap "$BX" "$BY"; pause 2; anr "$d"; pg_snap "$d" lift 2-tapb
+  sh_ input keyevent BACK > /dev/null 2>&1; pause 1
+  pg_case_end "$d" lift
+}
+# #221 / PR #223: drop-cards.json = drop.json + a 2x1 card (widget host) at (1,2)-(2,2). Own geo pass (a review
+# notice may move the grid); then a long diagonal A -> (3,3) across the host (commit) and a refused drop on the
+# dots row whose spring-back crosses the host. Leaves the cards targets in the variables (flip re-runs sb_geo).
+sb_cards() {
+  pg_case_start "$d" geo-cards; pg_seed "$d" drop-cards.json
+  dump "$d" .sbchk
+  grep -q 'content-desc="Drag, Pages"' "$d/.sbchk.xml" || { echo "drop geo-cards: not on Drag, goto" >> "$d/run.txt"; pg_goto "$d" Drag; }
+  rm -f "$d"/.sbchk.*
+  dnd_edit "$d" "$dens" || echo "drop geo-cards: no edit mode" >> "$d/run.txt"
+  pg_snap "$d" geo-cards 0-edit; pg_case_end "$d" geo-cards
+  for v in AX AY BX BY CELL33_X CELL33_Y DOTS_X DOTS_Y ERR; do unset "$v"; done
+  $DROPH targets "$d/pg-geo-cards-0-edit.xml" "$d/pg-geo-cards-0-edit.png" "$rtl" "$dens" > "$d/sb-targets-cards.txt" 2>> "$d/run.txt" || true
+  # shellcheck disable=SC1090
+  . "$d/sb-targets-cards.txt"
+  if [ -n "${ERR:-}" ] || [ -z "${AX:-}" ]; then echo "drop geo-cards: targets failed" >> "$d/run.txt"; return; fi
+  sb_setup cards-diag drop-cards.json; sb_run cards-diag "$AX" "$AY" "$CELL33_X" "$CELL33_Y" 7; sb_end cards-diag
+  if [ -n "${DOTS_X:-}" ]; then
+    sb_setup cards-dots drop-cards.json; sb_run cards-dots "$AX" "$AY" "$DOTS_X" "$DOTS_Y" 7; sb_end cards-dots
+  else echo "cards-dots n/a" >> "$d/drop-na.txt"; fi
 }
 drop_probe() {
   local d=$1 dens=$2 size=$3 rot=$4 shape=$5 flip rtl=0 o
@@ -801,6 +842,10 @@ drop_probe() {
     # 8: successful drops are unchanged (cell, dock)
     sb_setup ok-cell; sb_run ok-cell "$AX" "$AY" "$CELL11_X" "$CELL11_Y" 7; sb_end ok-cell
     sb_setup ok-dock; sb_run ok-dock "$AX" "$AY" "${DOCK_X:-$AX}" "${DOCK_Y:-$AY}" 7; sb_end ok-dock
+    # #221 / PR #223: hit areas while lifted, neighbour tap, long diagonal, drags across a widget host
+    sb_lift
+    sb_setup diag; sb_run diag "$AX" "$AY" "$CELL33_X" "$CELL33_Y" 7; sb_end diag
+    sb_cards
   done
   sh_ "settings put system user_rotation $rot"; pause; anr "$d"
   # #214 regressions with animations on: rotate mid-drag writes nothing; plain drop commits (pager.json, page 2)
