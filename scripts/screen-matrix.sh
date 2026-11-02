@@ -722,10 +722,14 @@ sb_end() {  # sb_end <case> [later]: after snapshot (+ one ~5 s later), config a
 }
 sb_geo() {  # sb_geo <orient>: one cold start + edit dump, targets -> variables
   local o=$1
-  pg_case_start "$d" "geo-$o"; pg_seed "$d" drop.json; dnd_edit "$d" "$dens" || echo "drop geo-$o: no edit mode" >> "$d/run.txt"
+  # run 41493658236: the first cold start opened page 2 (id "home"); drop.json now gives Drag that id, and
+  # this falls back to the Pages list when Drag is still not shown
+  pg_case_start "$d" "geo-$o"; pg_seed "$d" drop.json
+  dump "$d" .sbchk
+  grep -q 'content-desc="Drag, Pages"' "$d/.sbchk.xml" || { echo "drop geo-$o: not on Drag, goto" >> "$d/run.txt"; pg_goto "$d" Drag; }
+  rm -f "$d"/.sbchk.*
+  dnd_edit "$d" "$dens" || echo "drop geo-$o: no edit mode" >> "$d/run.txt"
   pg_snap "$d" "geo-$o" 0-edit; pg_case_end "$d" "geo-$o"
-  # cold start opens the page with id "home" (run 41493658236 opened page 2): drop.json puts Drag A/B there
-  grep -q 'content-desc="Drag, Pages"' "$d/pg-geo-$o-0-edit.xml" || echo "drop geo-$o: not on the Drag page" >> "$d/run.txt"
   for v in AX AY BX BY PW PH RAIL SIDE_NEAR_X SIDE_NEAR_Y SIDE_LEFT_X SIDE_LEFT_Y SIDE_RIGHT_X SIDE_RIGHT_Y TITLE_X TITLE_Y \
            DOTS_X DOTS_Y GAP_X GAP_Y DOCK_X DOCK_Y DOCKI_X DOCKI_Y CELL11_X CELL11_Y CELL10_X CELL10_Y B24_X B24_Y SW_X1 SW_X2 SW_Y ERR; do
     unset "$v"
