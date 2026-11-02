@@ -72,8 +72,24 @@ def tile(nodes, img, label, dpx):
     if ib is None:
         return None
     u = ib if hidden else (min(ib[0], n.b[0]), ib[1], max(ib[2], n.b[2]), n.b[3])
+    # DragController.drop() uses the tile node's own rect (rects[key] = boundsInRoot of the .tile() node, the
+    # same node as the merged clickable), not the icon+label union. On tall cells that centre sits well below
+    # the icon (p411-a51-v1-a36: 76 px), so use the smallest clickable node that contains the label.
+    best = None
+    for x in nodes:
+        if x.click and x is not n and x.b[0] <= n.b[0] and x.b[1] <= n.b[1] and x.b[2] >= n.b[2] and x.b[3] >= n.b[3]:
+            a = (x.b[2] - x.b[0]) * (x.b[3] - x.b[1])
+            if a < W_LIMIT * (n.b[2] - n.b[0]) * (n.b[3] - n.b[1]) and (best is None or a < best[0]):
+                best = (a, x.b)
+    if hidden and n.click:
+        best = (0, n.b)
+    if best is not None:
+        u = best[1]
     return {'icon': ((ib[0] + ib[2]) // 2, (ib[1] + ib[3]) // 2), 'iw': ib[2] - ib[0],
             'c': ((u[0] + u[2]) // 2, (u[1] + u[3]) // 2), 'rect': u}
+
+
+W_LIMIT = 60  # a tile node is at most ~60x its label's area (rules out page/pager containers)
 
 
 def targets(xml, png, rtl, dens):
@@ -146,7 +162,9 @@ def targets(xml, png, rtl, dens):
     out['B24_X'], out['B24_Y'] = fb(B['c'][0] - s * pw, B['c'][1])
     # pager swipe across the middle of the page, toward the next page
     sy = int(A['c'][1] + 2 * ph)
-    x1, x2 = int(left + pw * 3.5), int(left + pw * 0.5)
+    # Same gesture the #214 cold-start check uses (80% -> 20% of the width, 300 ms): run 41498516476's 150 ms
+    # swipe across the grid block (~38% of a wide screen) did not page on fold-open-v1 / rtl-t7-land-v1 even as a control.
+    x1, x2 = int(W * 0.8), int(W * 0.2)
     if rtl:
         x1, x2 = x2, x1
     out.update(SW_X1=x1, SW_X2=x2, SW_Y=sy)
