@@ -85,7 +85,7 @@ Shape notes (ARCHITECTURE §3, §16):
 | Label | 12 sp, 1 line, ellipsized at the end, centred, white with a soft shadow for wallpaper contrast (§12) |
 | Label backdrop (v1 setting, default off, Q-C4, §18.1) | When on: a rounded **60 % black** scrim behind each home-grid label (a background on the label, 6 dp side and 2 dp top/bottom padding, hugging the text width up to the cell width). The text shadow stays on. Applies to page items and folder tiles on home, not the dock (no labels) or inside the folder card. Stored in app settings (DataStore), not in `launcher.json` |
 | Pages | Horizontal pager. One page minimum. The page indicator shows only with ≥ 2 pages. Dots are 8 dp, current = filled |
-| Dock | `dock[]` (a plain array, left to right), **0–7 items** (schema max), same icon size, **no labels**, fixed on all pages. The starter layout fills 4. Above 5 items, icons shrink to fit the width (min 48 dp). A 1 dp divider (white 24 %) above it. Becomes a **rail on the end edge** (right in LTR, left in RTL) when the window is ≥ 1.4 : 1 or under 480 dp tall; bottom otherwise, including the open fold (§1.5) |
+| Dock | `dock[]` (a plain array, start to end: left to right in LTR, right to left in RTL), **0–7 items** (schema max), same icon size, **no labels**, fixed on all pages. The starter layout fills 4. Above 5 items, icons shrink to fit the width (min 48 dp). A 1 dp divider (white 24 %) above it. Becomes a **rail on the end edge** (right in LTR, left in RTL) when the window is ≥ 1.4 : 1 or under 480 dp tall; bottom otherwise, including the open fold (§1.5) |
 | Wallpaper | System wallpaper, shown through (`windowShowWallpaper`) |
 | Density and windows | Uses dp/sp only. Phones, tablets, landscape and foldables follow §1.5: rules come from the current window's size class (width Compact < 600, Medium 600–839, Expanded ≥ 840 dp), never from the device. A rotation, fold or resize re-lays out the screen and never writes |
 
@@ -124,7 +124,8 @@ Rename and reorder pages from the list are **later** (edit the file meanwhile). 
 label is inert (page turns use the screen edge, §4.2).
 
 **Page indicator:** unchanged (dots, ≥ 2 pages, not tappable). The label and the dots always agree, and both update
-when the pager settles.
+when the pager settles. In RTL the dots mirror with the pager (dot for page 1 on the right, §1.5 RTL); the label text
+doesn't change.
 
 **TalkBack:**
 - Label: role button, announced `Home, page 2 of 3, button`, hint (`onClick` label) `list pages`, so TalkBack says
@@ -419,6 +420,11 @@ half-folded screen take no focus.
 **RTL.** Everything mirrors: column `x = 0` is the start column (on the right), a bottom dock runs `dock[0]` at the start,
 the rail is on the left, and book posture uses the right half. The rail's top-to-bottom order and the file don't change.
 Centring and the cap are symmetric.
+- **Pager** (Compose's RTL default): page 1 (`pages[0]`) is the rightmost. The next page comes in from the left, so a
+  left-to-right swipe moves forward. The dots mirror to match (§1.3). `Page 2 of 3` and the page list are unchanged.
+- **Page turn while dragging (§4.2):** the start edge (right) turns to the previous page and the end edge (left) to
+  the next page or a new one. In LTR it's left for previous and right for next.
+- **Rail head:** `Apps`/`Done` above `⋮` in both directions. It's a vertical stack, so nothing in it swaps sides.
 
 **Drawer on Medium/Expanded.** Full height (§2.1), in a sheet capped at about 640 dp. Columns: `grid.columns` on Compact;
 on Medium/Expanded `clamp(sheetWidth / 96 dp, grid.columns, 8)`. The drawer isn't positioned by the file, so it may adapt.
@@ -533,11 +539,12 @@ size, with no special case. Font 2.0 on the open fold ellipsizes labels to about
 | Empty cell | Move there |
 | Occupied cell (app) | Create a folder (§3) |
 | Folder | Add to that folder |
-| Screen edge (hold 600 ms; the window edge, not the grid's edge, §1.5) | Turn to the previous/next page. Past the last page → creates a new empty page |
+| Screen edge (hold 600 ms; the window edge, not the grid's edge, §1.5) | Start edge → previous page, end edge → next page (left/right in LTR, right/left in RTL). Past the last page → creates a new empty page |
 | Dock slot | Move into the dock (if 7 are full, the drop is refused with a short shake, or a red outline with reduced motion) |
 | Any target, dragging a work app with **Include work apps in config** off | Refused, with snackbar `Turn on "Include work apps in config" in Settings to place work apps.` |
 | `Remove` target (top bar, appears while dragging; with a dock rail, at the top of the page area, §1.5) | Remove from home. The app stays installed and in the drawer |
 | `App info` target | Opens system app info, and the item doesn't move |
+| Anywhere else: a §1.5 margin outside the placed block, the notice row, page label or title bar, the dots, the gap above the dock | Refused. Nothing is written, and the item springs back to its cell (about 200 ms, no overshoot; an instant return with reduced motion). There's no snackbar and no string. A point is never clamped to the nearest cell, in LTR or RTL |
 
 There's no automatic reflow: other items never move to make room (keeps the file diff minimal and predictable). An
 empty page is deleted when you leave edit mode.
