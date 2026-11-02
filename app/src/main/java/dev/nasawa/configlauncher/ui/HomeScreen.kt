@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -897,9 +898,12 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                 .height(pitch.blockH.dp)
                 .align(Alignment.Center)
                 .onGloballyPositioned { drag.gridRect = it.boundsInRoot() }
-            Column(blockMod.padding(if (pitch.capped) 0.dp else 8.dp)) {
+            // #221: zIndex only orders siblings, so the lifted tile's row and cell (and the block over the
+            // widget hosts drawn after it) are raised too; otherwise later cells paint over it.
+            val liftedAt = byCell.entries.firstOrNull { drag.isLifted(it.value) }?.key
+            Column(blockMod.then(if (liftedAt != null) Modifier.zIndex(1f) else Modifier).padding(if (pitch.capped) 0.dp else 8.dp)) {
                 for (y in 0 until rows) {
-                    Row(Modifier.fillMaxWidth().weight(1f)) {
+                    Row(Modifier.fillMaxWidth().weight(1f).then(if (liftedAt?.second == y) Modifier.zIndex(1f) else Modifier)) {
                         for (x in 0 until grid.columns) {
                             // When pitchH < 48, a centred min-touch expansion climbs into the title bar
                             // and Android a11y clips the {page} clickable to ~45 dp (split-phone-v1
@@ -913,9 +917,13 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                             val shortOverflow = if (shortCell) {
                                 ((HomeGeometry.MIN_TOUCH_DP - cellH) / 2f).coerceAtLeast(0f)
                             } else 0f
+                            // #221: the lifted tile's cell skips the clip (drag + spring-back) and sits above its row.
+                            val lifted = liftedAt == (x to y)
                             Box(
                                 Modifier.weight(1f).fillMaxHeight().then(
-                                    if (shortCell) Modifier else Modifier.clipToBounds(),
+                                    if (HomeGeometry.clipsCell(cellH, lifted)) Modifier.clipToBounds() else Modifier,
+                                ).then(
+                                    if (lifted) Modifier.zIndex(1f) else Modifier,
                                 ).then(
                                     if (editing) Modifier.border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(8.dp)) else Modifier,
                                 ),
