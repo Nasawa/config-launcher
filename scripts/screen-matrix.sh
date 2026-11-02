@@ -8,7 +8,8 @@ source "$SCRIPT_DIR/pkg.env"
 #
 # usage: scripts/screen-matrix.sh [--shard NAME] [--points REGEX] [--gate] [--matrix-gate LEVEL]
 #                                  [--apk PATH] [--out DIR] [--settle SEC]
-#   --shard        only rows of this shard (small-a, small-b, phones, tablets, fold)
+#   --shard        only rows of this shard (small-a, small-b, phones, tablets, fold; hinge = real-hinge pixel_fold AVD,
+#                  opt-in, needs HINGE_TEST_APK for QaHingeProbeTest)
 #   --points       only rows whose id matches this extended regex
 #   --gate         only the on-box gate subset (see the test plan)
 #   --matrix-gate  severity for L* / large G*: dev7 (advisory, default) or dev8 (blocking).
@@ -49,7 +50,7 @@ while [ $# -gt 0 ]; do
     --apk) APK=$2; shift 2;;
     --out) OUT=$2; shift 2;;
     --settle) SETTLE=$2; shift 2;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0;;
     *) echo "unknown argument: $1" >&2; exit 2;;
   esac
 done
@@ -223,8 +224,14 @@ run_point() {
     pause 2
   fi
   echo "locale=$loc" >> "$d/meta.txt"
-  sh_ "wm size $size; wm density $dens; settings put system font_scale $fs; cmd uimode night $night"
-  sh_ "settings put system accelerometer_rotation 0; settings put system user_rotation $rot"
+  if [ "$shard" = hinge ]; then
+    # Real-hinge AVD (pixel_fold profile): native panel, posture + rotation from shape (screen-matrix-hinge.sh)
+    sh_ "settings put system font_scale $fs; cmd uimode night $night; settings put system accelerometer_rotation 0"
+    hinge_setup "$d" "$shape"
+  else
+    sh_ "wm size $size; wm density $dens; settings put system font_scale $fs; cmd uimode night $night"
+    sh_ "settings put system accelerometer_rotation 0; settings put system user_rotation $rot"
+  fi
   # One-side cutout in landscape: enable tall cutout overlay (becomes a side inset when rotated).
   if echo "$shape" | grep -qi cutout; then
     sh_ "cmd overlay enable --user 0 com.android.internal.display.cutout.emulation.tall" >/dev/null 2>&1 \
@@ -494,6 +501,8 @@ run_point() {
   if [[ ",$MATRIX_PROBES," == *,pager,* ]] && [[ $id =~ $PAGER_POINTS ]] && [ "$seed_ok" -eq 1 ]; then
     pager_probe "$d" "$dens" "$size" "$rot" "$shape"
   fi
+  [ "$shard" = hinge ] && hinge_probe "$d" "$shape"
+  return 0
 }
 
 # --- Pager-restore probe (#188 / PR #214; scripts/screen_matrix_pager.py scores it).
@@ -1012,6 +1021,9 @@ tap_routing_probe() {
   grep -m1 '^# Tap-routing' "$d/tap-routing.md" 2>/dev/null || true
 }
 
+# shellcheck source=scripts/screen-matrix-hinge.sh
+. "$HERE/screen-matrix-hinge.sh"
+
 A wait-for-device < /dev/null
 wait_boot_idle
 A install -r -g "$APK" < /dev/null | tee "$OUT/install.txt"
@@ -1019,6 +1031,7 @@ grep -q '^Success' "$OUT/install.txt" || { echo "install failed" >&2; exit 1; }
 # Claim HOME and disable stock Pixel/Nexus Launcher before any point (API 35 tablet ANR storm).
 sh_ "cmd package set-home-activity $PKG/.MainActivity > /dev/null 2>&1" || true
 disable_stock_launchers
+[ "$SHARD" = hinge ] && hinge_env
 echo "stock_launcher_disabled=${MATRIX_DISABLE_STOCK_LAUNCHER:-0} (force-stop only when 0)" >> "$OUT/harness-setup.txt"
 sh_ "pm list packages -d" >> "$OUT/harness-setup.txt" 2>&1 || true
 
@@ -1035,6 +1048,7 @@ while IFS=$'\t' read -r id shard size dens rot fs night fixture tier shape <&3; 
 done 3< "$FIX/points.tsv"
 
 # Restore the emulator
+[ "$SHARD" = hinge ] && set_posture "$OUT" open
 sh_ "wm size reset; wm density reset; settings put system font_scale 1.0; cmd uimode night no; settings put system user_rotation 0; settings put system system_locales en-US"
 sh_ "settings put global debug.force_rtl 0" >/dev/null 2>&1 || true
 sh_ "cmd locale set-app-locales $PKG --locales en-US" >/dev/null 2>&1 || true
