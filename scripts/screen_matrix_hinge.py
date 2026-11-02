@@ -246,18 +246,30 @@ def score(d):
             top, bot = int(m['hinge_top']), int(m['hinge_bottom'])
             dock = [n for n in mn if (n.desc or '').endswith(', dock')]
             dots = [n for n in mn if re.search(r'^Page [0-9٠-٩]+ of', n.desc or '')]
-            lower = set(id(n) for n in dock + dots)
-            upper = [n for n in mn if id(n) not in lower]
+            # a dock/dots node's unlabelled wrapper has the same bounds; it belongs to the lower zone too
+            lower_b = set(n.b for n in dock + dots)
+            upper = [n for n in mn if n.b not in lower_b]
+            # the pager (the app's only scrollable home node) is the grid area: in tabletop it must end at the hinge
+            # (on main it runs down to the dots, which is what tells the two apart with a short fixture)
+            raw = open(os.path.join(d, 'home1.xml'), encoding='utf-8', errors='replace').read()
+            pagers = [tuple(int(v) for v in re.findall(r'\d+', mm.group(1)))
+                      for mm in re.finditer(r'<node [^>]*?scrollable="true"[^>]*?bounds="([^"]+)"', raw)
+                      if 'package="dev.nasawa' in mm.group(0)]
+            pager = max(pagers, key=lambda b: (b[2] - b[0]) * (b[3] - b[1])) if pagers else None
             bad_up = [n for n in upper if n.b[3] > top + 2]
             bad_lo = [n for n in dock + dots if n.b[1] < bot - 2]
             across = [n for n in mn if n.b[1] < top - 2 and n.b[3] > bot + 2]
-            bottom_dock = bool(dock) and (max(n.cy for n in dock) - min(n.cy for n in dock) < 8) and len(dock) >= 2
-            ok = not bad_up and not bad_lo and not across and dock and dots and bottom_dock
+            pager_ok = pager is not None and pager[3] <= top + 2
+            # bottom dock: one row (all items share a centre line), below the dots, in the lower half
+            bottom_dock = bool(dock) and (max(n.cy for n in dock) - min(n.cy for n in dock) < 8) and \
+                bool(dots) and min(n.b[1] for n in dock) >= max(n.b[3] for n in dots) - 2
+            ok = not bad_up and not bad_lo and not across and dock and dots and bottom_dock and pager_ok
             add('HT', 'Tabletop: grid + title above the hinge, dots + bottom dock below', 'PASS' if ok else 'FAIL',
-                f"hinge y={top}..{bot}; upper {len(upper)} nodes, below-hinge offenders: "
+                f"hinge y={top}..{bot}; grid area (pager) {list(pager) if pager else 'not found'}"
+                f" {'ends at/above' if pager_ok else 'does NOT end at'} the hinge; upper {len(upper)} nodes, below-hinge offenders: "
                 + (', '.join(f'{lab(n)}{list(n.b)}' for n in bad_up[:6]) or 'none')
                 + '; lower offenders: ' + (', '.join(f'{lab(n)}{list(n.b)}' for n in bad_lo[:6]) or 'none')
-                + f"; across: {len(across)}; dock {len(dock)} ({'bottom row' if bottom_dock else 'NOT a bottom row'}), dots {len(dots)}")
+                + f"; across: {len(across)}; dock {len(dock)} item(s) {'in one bottom row' if bottom_dock else 'NOT a bottom row'}, dots {len(dots)}")
 
     # Posture change mid-drag
     plans = c.read(os.path.join(d, 'md-plan.txt'))
@@ -300,7 +312,8 @@ def score(d):
 
 def sig(nodes):
     W, H = c.screen_of(nodes)
-    return sorted((lab(n), n.cls, n.b) for n in meaningful(nodes, W, H))
+    # the clock text changes minute to minute between runs; compare its place, not its value
+    return sorted((re.sub(r'\b\d{1,2}:\d{2}\b', 'HH:MM', lab(n)), n.cls, n.b) for n in meaningful(nodes, W, H))
 
 
 def cmd_parity(a, b, out=None):
