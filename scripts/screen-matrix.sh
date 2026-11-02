@@ -608,7 +608,7 @@ pager_probe() {
   pg_snap "$d" dragrot 0-edit
   pg_hash > "$d/pg-dragrot-hash-before.txt"
   sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-dragrot-config-before.json" 2>/dev/null || true
-  if p=$($CHECK find "$d/pg-dragrot-0-edit.xml" text '^Second tile$'); then
+  if p=$($CHECK find "$d/pg-dragrot-0-edit.xml" text '^Second tile$' || $CHECK find "$d/pg-dragrot-0-edit.xml" desc '^Second tile$'); then
     read -r x y <<< "$p"
     sh_ "input motionevent DOWN $x $y; sleep 1.6; input motionevent MOVE $((x + W / 20)) $((y + H / 40)); input motionevent MOVE $((x + W / 10)) $((y + H / 20)); input motionevent MOVE $((x + W / 6)) $((y + H / 12))"
     dump "$d" pg-dragrot-1-dragging
@@ -622,6 +622,32 @@ pager_probe() {
   pg_hash > "$d/pg-dragrot-hash-after.txt"
   sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-dragrot-config-after.json" 2>/dev/null || true
   pg_case_end "$d" dragrot
+
+  # drop (r2 LTR/RTL regression): plain drag-and-drop in edit mode, no rotation → the drop must still commit.
+  pg_case_start "$d" drop; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager drop: goto failed" >> "$d/run.txt"
+  dnd_edit "$d" "$dens" || echo "pager drop: no edit mode" >> "$d/run.txt"
+  pg_snap "$d" drop 0-edit
+  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-drop-config-before.json" 2>/dev/null || true
+  if p=$($CHECK find "$d/pg-drop-0-edit.xml" text '^Second tile$' || $CHECK find "$d/pg-drop-0-edit.xml" desc '^Second tile$'); then
+    read -r x y <<< "$p"
+    sh_ "input motionevent DOWN $x $y; sleep 1.6; input motionevent MOVE $((x + W / 20)) $((y + H / 40)); input motionevent MOVE $((x + W / 10)) $((y + H / 20)); input motionevent MOVE $((x + W / 6)) $((y + H / 12)); sleep 0.6; input motionevent MOVE $((x + W / 5)) $((y + H / 10)); sleep 0.6; input motionevent UP $((x + W / 5)) $((y + H / 10))"
+    pause 3; anr "$d"; pg_snap "$d" drop 1-dropped
+  else
+    echo "pager drop: Second tile not found" >> "$d/run.txt"
+  fi
+  sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/pg-drop-config-after.json" 2>/dev/null || true
+  pg_case_end "$d" drop
+
+  # rcycle (r2): repeated resize cycles — half width / back / ×3/4 density / back, three times.
+  pg_case_start "$d" rcycle; pg_seed "$d" pager.json; pg_goto "$d" Second || echo "pager rcycle: goto failed" >> "$d/run.txt"
+  pg_snap "$d" rcycle 0-before
+  for i in 1 2 3; do
+    sh_ "wm size $((w / 2))x$h"; pause; anr "$d"; pg_snap "$d" rcycle "$i-a-half"
+    sh_ "wm size $size"; pause; anr "$d"; pg_snap "$d" rcycle "$i-b-full"
+    sh_ "wm density $((dens * 3 / 4))"; pause; anr "$d"; pg_snap "$d" rcycle "$i-c-density"
+    sh_ "wm density $dens"; pause; anr "$d"; pg_snap "$d" rcycle "$i-d-back"
+  done
+  pg_case_end "$d" rcycle
 
   # oos (out of scope, #188 stays open): drawer / edit mode across a rotate, recorded not scored
   pg_case_start "$d" oos; pg_seed "$d" pager.json; pg_goto "$d" Second || true
