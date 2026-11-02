@@ -682,7 +682,7 @@ pager_probe() {
 # --- Drop spring-back probe (#212 / PR #218; scored off-CI from the artifacts, scripts/screen_matrix_drop.py
 # computes the targets). CI boots with animations disabled, so this probe sets animator_duration_scale 1 (0 for the
 # reduced-motion case) and restores 0 at the end. Every case: cold start on drop.json (page 1 "Drag": Drag A at
-# (0,0), Drag B at (3,4)), Edit layout, screenrecord while one `input motionevent` chain drags and releases, then
+# (0,0), Drag B at (3,4); its id is "home" so a cold start opens it), Edit layout, screenrecord while one `input motionevent` chain drags and releases, then
 # dumps. Files: sb-<case>.mp4, sb-<case>-times.txt (device /proc/uptime around UP), pg-<case>-<step>.xml/.png,
 # pg-<case>-config-{before,after}.json, sb-targets-<orient>.txt.
 DROPH="python3 $HERE/screen_matrix_drop.py"
@@ -695,6 +695,9 @@ sb_drag_cmd() { echo "input motionevent DOWN $1 $2; sleep 1.6; $(sb_moves "$1" "
 sb_cfg() { sh_ "run-as $PKG cat files/config/source/launcher.json" > "$1" 2>/dev/null || true; }
 sb_setup() {  # sb_setup <case> [fixture]: cold start, edit mode, 0-edit snapshot, config before
   pg_case_start "$d" "$1"; pg_seed "$d" "${2:-drop.json}"
+  dump "$d" .sbchk
+  grep -q 'content-desc="Drag, Pages"' "$d/.sbchk.xml" || { echo "drop $1: not on Drag, goto" >> "$d/run.txt"; pg_goto "$d" Drag; }
+  rm -f "$d"/.sbchk.*
   dnd_edit "$d" "$dens" || echo "drop $1: no edit mode" >> "$d/run.txt"
   pg_snap "$d" "$1" 0-edit; sb_cfg "$d/pg-$1-config-before.json"
 }
@@ -722,6 +725,8 @@ sb_geo() {  # sb_geo <orient>: one cold start + edit dump, targets -> variables
   local o=$1
   pg_case_start "$d" "geo-$o"; pg_seed "$d" drop.json; dnd_edit "$d" "$dens" || echo "drop geo-$o: no edit mode" >> "$d/run.txt"
   pg_snap "$d" "geo-$o" 0-edit; pg_case_end "$d" "geo-$o"
+  # cold start opens the page with id "home" (run 41493658236 opened page 2): drop.json puts Drag A/B there
+  grep -q 'content-desc="Drag, Pages"' "$d/pg-geo-$o-0-edit.xml" || echo "drop geo-$o: not on the Drag page" >> "$d/run.txt"
   for v in AX AY BX BY PW PH RAIL SIDE_NEAR_X SIDE_NEAR_Y SIDE_LEFT_X SIDE_LEFT_Y SIDE_RIGHT_X SIDE_RIGHT_Y TITLE_X TITLE_Y \
            DOTS_X DOTS_Y GAP_X GAP_Y DOCK_X DOCK_Y DOCKI_X DOCKI_Y CELL11_X CELL11_Y CELL10_X CELL10_Y B24_X B24_Y SW_X1 SW_X2 SW_Y ERR; do
     unset "$v"
