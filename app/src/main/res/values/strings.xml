@@ -75,6 +75,7 @@
     <string name="menu_pick_folder">Choose folder</string>
     <string name="menu_use_phone_storage">Use phone storage</string>
     <string name="menu_label_backdrop">Label backdrop</string>
+    <string name="menu_show_source">Show config location</string>
     <string name="menu_ask_before_merging">Ask before merging</string>
     <string name="menu_open_keyboard">Open keyboard with drawer</string>
     <string name="menu_reload">Reload layout</string>
