@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -80,6 +81,7 @@ fun HomeScreen(vm: HomeViewModel) {
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }
     var backdrop by remember { mutableStateOf(vm.store.prefs.labelBackdrop) }
+    var showSource by remember { mutableStateOf(vm.store.prefs.showSource) }
     var askMerge by remember { mutableStateOf(vm.store.prefs.askBeforeMerging) }
     var keyboardOnOpen by remember { mutableStateOf(vm.store.prefs.drawerKeyboard) }
     var agentDocs by remember { mutableStateOf(vm.store.prefs.agentDocs) }
@@ -337,7 +339,10 @@ fun HomeScreen(vm: HomeViewModel) {
                     Box(Modifier.weight(1f)) { WallpaperText(stringResource(R.string.editing_layout), backdrop) }
                     WallpaperTextButton(leaveEdit, backdrop) { Text(stringResource(R.string.done)) }
                 } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (ui.load.reconnectable) stringResource(R.string.source_folder, ui.load.sourceName.removePrefix("Folder: ")) else stringResource(R.string.source_app_storage), style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
+                    // #217: hidden by `Show config location`, but always back while the source needs attention (any banner issue).
+                    if (showSource || ui.load.issue != null)
+                        Text(if (ui.load.reconnectable) stringResource(R.string.source_folder, ui.load.sourceName.removePrefix("Folder: ")) else stringResource(R.string.source_app_storage), style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.weight(1f))
+                    else Spacer(Modifier.weight(1f))
                     // §1.4: the Apps button is the tap path (hint "open app list"); hidden in edit mode.
                     val hint = stringResource(R.string.a11y_open_drawer_hint)
                     WallpaperTextButton({ drawerOpen = true }, backdrop, Modifier.semantics { onClick(label = hint) { drawerOpen = true; true } }) { Text(stringResource(R.string.apps)) }
@@ -357,6 +362,10 @@ fun HomeScreen(vm: HomeViewModel) {
                             DropdownMenuItem({ Text(stringResource(R.string.menu_label_backdrop)) }, {
                                 backdrop = !backdrop; vm.store.prefs.labelBackdrop = backdrop
                             }, trailingIcon = { Checkbox(backdrop, null) })
+                            DropdownMenuItem({ Text(stringResource(R.string.menu_show_source)) }, {
+                                showSource = !showSource; vm.store.prefs.showSource = showSource
+                            }, Modifier.semantics { role = Role.Checkbox; toggleableState = androidx.compose.ui.state.ToggleableState(showSource) },
+                                trailingIcon = { Checkbox(showSource, null) })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_ask_before_merging)) }, {
                                 askMerge = !askMerge; vm.store.setAskBeforeMerging(askMerge)
                             }, trailingIcon = { Checkbox(askMerge, null) })
@@ -528,6 +537,10 @@ fun HomeScreen(vm: HomeViewModel) {
                                     DropdownMenuItem({ Text(stringResource(R.string.menu_label_backdrop)) }, {
                                         backdrop = !backdrop; vm.store.prefs.labelBackdrop = backdrop
                                     }, trailingIcon = { Checkbox(backdrop, null) })
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_show_source)) }, {
+                                        showSource = !showSource; vm.store.prefs.showSource = showSource
+                                    }, Modifier.semantics { role = Role.Checkbox; toggleableState = androidx.compose.ui.state.ToggleableState(showSource) },
+                                        trailingIcon = { Checkbox(showSource, null) })
                                     DropdownMenuItem({ Text(stringResource(R.string.menu_ask_before_merging)) }, {
                                         askMerge = !askMerge; vm.store.setAskBeforeMerging(askMerge)
                                     }, trailingIcon = { Checkbox(askMerge, null) })
