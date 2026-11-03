@@ -1,5 +1,6 @@
 package dev.nasawa.configlauncher.ui
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -95,6 +96,7 @@ internal fun DockRail(
                                         onClick = { onOpen(r) },
                                         onLongClick = { onLong(r) },
                                         actions = a11y(r, TilePlace.DOCK),
+                                        visual = { Tile(r, apps, Modifier.fillMaxSize(), showLabel = false, iconDp = iconDp) },
                                     )
                                     .semantics {
                                         contentDescription = res.getString(R.string.a11y_dock_item, Labels.clean(r.title))

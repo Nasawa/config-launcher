@@ -40,11 +40,10 @@ object HomeGeometry {
     /**
      * Whether a home grid cell clips its content (#201, #221). Normal cells clip so density rounding
      * can't paint a step-4 icon into the neighbour (Pragma #201). Short cells (< [MIN_TOUCH_DP]) never
-     * clip: clipped semantics re-inflate centred and climb into the title bar (Grace #201 T4). The cell
-     * holding the lifted tile never clips either, for the whole drag and the #212 spring-back
-     * (`dragged` stays set while returning), or the tile vanishes once it leaves its origin cell (#221).
+     * clip: clipped semantics re-inflate centred and climb into the title bar (Grace #201 T4). The
+     * lifted tile isn't drawn in its cell (#228: the root DragOverlay draws it), so it needs no exception.
      */
-    fun clipsCell(cellH: Float, lifted: Boolean): Boolean = cellH >= MIN_TOUCH_DP && !lifted
+    fun clipsCell(cellH: Float): Boolean = cellH >= MIN_TOUCH_DP
 
     /**
      * Title-bar vertical padding on a short page column (< 480 dp).

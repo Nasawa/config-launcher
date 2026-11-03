@@ -12,6 +12,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -42,14 +43,15 @@ import org.robolectric.annotation.Config
 import java.time.ZonedDateTime
 
 /**
- * #221: since #201 the grid cell clipped the lifted tile to its origin cell, so it vanished mid-drag
- * and for most of the #212 spring-back. The lifted tile's cell now skips the clip (and is raised over
- * later cells); every other normal cell still clips, short cells keep the #201 T4 downward 48 dp hit
- * band, and no tile's hit area moves during a drag.
+ * #221 / #228: since #201 the grid cell clipped the lifted tile to its origin cell, so it vanished mid-drag
+ * and for most of the #212 spring-back. Since #228 the lifted tile is drawn by the [DragOverlay] (here the
+ * last child over the grid, as at the HomeScreen root), so no cell clips it; every normal cell clips, short
+ * cells keep the #201 T4 downward 48 dp hit band, and no tile's hit area moves during a drag.
  *
- * "Visible" = the tile content's [SemanticsNode.boundsInRoot], which Compose clips by every ancestor's
- * clip (clipToBounds), so a clipped-away tile reports an empty rect. The compose main clock drives the
- * spring-back (autoAdvance off); the title-bar clock is pinned with [LocalTitleBarNow]; no real clock.
+ * "Visible" = [SemanticsNode.boundsInRoot], which Compose clips by every ancestor's clip (clipToBounds), so a
+ * clipped-away node reports an empty rect: the overlay node while a tile is lifted, else the tile content.
+ * The compose main clock drives the spring-back (autoAdvance off); the title-bar clock is pinned with
+ * [LocalTitleBarNow]; no real clock.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], qualifiers = "w800dp-h600dp-mdpi")
@@ -88,6 +90,7 @@ class LiftedTileClipTest {
                     drag.scope = rememberCoroutineScope()
                     Box(Modifier.size(w.dp, h.dp)) {
                         PageGrid(ResolvedPage("home", "Home", items), grid, InstalledApps(ctx), drag, true, {}, {}, { _, _ -> emptyList() }, {})
+                        DragOverlay(drag)
                     }
                 }
             }
@@ -96,8 +99,12 @@ class LiftedTileClipTest {
         rule.waitForIdle()
     }
 
-    /** Where tile [i]'s content is actually drawn (clipped by its ancestors). */
+    private fun overlay(): Rect? = rule.onAllNodes(hasTestTag(DRAG_OVERLAY_TAG), useUnmergedTree = true)
+        .fetchSemanticsNodes().singleOrNull()?.boundsInRoot
+
+    /** Where tile [i] is actually drawn (clipped by its ancestors): the overlay while tile 0 is lifted. */
     private fun visible(i: Int): Rect {
+        if (i == 0) overlay()?.let { return it }
         val label = "App $i"
         val n = rule.onAllNodes(hasText(label) or hasContentDescription(label), useUnmergedTree = true)
             .fetchSemanticsNodes()
@@ -144,6 +151,8 @@ class LiftedTileClipTest {
         // Fully drawn (with the 1.15 lift), not just a sliver.
         assertTrue("whole tile: ${v.width} vs ${rest.width}", v.width >= rest.width - 1f)
         assertTrue(submitted.isEmpty())
+        // One tile node for TalkBack: the overlay carries no text, label or actions.
+        assertEquals(1, rule.onAllNodes(hasText("App 0") or hasContentDescription("App 0")).fetchSemanticsNodes().size)
     }
 
     @Test fun liftedTileStaysVisibleForTheWholeSpringBack() {
@@ -167,6 +176,7 @@ class LiftedTileClipTest {
         rule.mainClock.advanceTimeBy(100)
         rule.waitForIdle()
         assertNull(drag.dragged); assertFalse(drag.returning)
+        assertNull("the overlay goes with the lift", overlay())
         assertEquals("back in its cell", rest, visible(0))
         assertTrue("nothing written", submitted.isEmpty())
     }
@@ -179,9 +189,9 @@ class LiftedTileClipTest {
         lift(Offset(drag.gridRect.width - origin.width / 2f + 4f, 0f))
         assertDrawnAwayFrom(origin, origin.width, "before release")
         rule.runOnIdle { drag.drop() }
-        rule.mainClock.advanceTimeByFrame()
-        rule.waitForIdle()
-        assertNull(drag.dragged); assertFalse(drag.returning)
+        assertNull("instant: nothing lifted right after the release", drag.dragged); assertFalse(drag.returning)
+        frames(2) // the overlay leaves composition on the next recomposition (the source's alpha comes back with it)
+        assertNull(overlay())
         assertEquals(rest, visible(0))
     }
 
@@ -219,12 +229,10 @@ class LiftedTileClipTest {
         assertTrue("lifted short tile still drawn", visible(0).width > 1f)
     }
 
-    @Test fun onlyTheLiftedNormalCellSkipsTheClip() {
-        assertTrue("normal cells clip (Pragma #201)", HomeGeometry.clipsCell(60f, lifted = false))
-        assertTrue(HomeGeometry.clipsCell(HomeGeometry.MIN_TOUCH_DP, lifted = false))
-        assertFalse("#221: the lifted tile's cell", HomeGeometry.clipsCell(60f, lifted = true))
-        assertFalse("#201 T4: short cells never clip", HomeGeometry.clipsCell(40f, lifted = false))
-        assertFalse(HomeGeometry.clipsCell(40f, lifted = true))
+    @Test fun cellsClipByHeightOnly() {
+        assertTrue("normal cells clip (Pragma #201), the lifted tile's too: the overlay draws it (#228)", HomeGeometry.clipsCell(60f))
+        assertTrue(HomeGeometry.clipsCell(HomeGeometry.MIN_TOUCH_DP))
+        assertFalse("#201 T4: short cells never clip", HomeGeometry.clipsCell(40f))
     }
 
     @Test fun neighboursStayClippedAndInPlaceWhileATileIsLifted() {
