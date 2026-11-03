@@ -31,7 +31,9 @@ DND_POINTS=${DND_POINTS:-'^(rtl-.*|t7-land-v1|t7-port-v1|phone-land-v1|p411-a51-
 # Pager-restore probe (#188, PR #214): MATRIX_PROBES=pager runs it after the checker on these points;
 # pager-only skips F3-F7, L1/L7 and the checker on every point (probe runs only, no matrix verdict).
 PAGER="python3 $HERE/screen_matrix_pager.py"
-PAGER_POINTS=${PAGER_POINTS:-'^(p411-a51-v1|p411-a51-v1-a36|rtl-phone-port-v1|t7-port-v1|rtl-t7-land-v1|fold-open-v1|split-phone-v1)$'}
+PAGER_POINTS=${PAGER_POINTS:-'^(p411-a51-v1|p411-a51-v1-a36|rtl-phone-port-v1|t7-port-v1|rtl-t7-land-v1|fold-open-v1|split-phone-v1|hinge-book-v1|rtl-hinge-book-v1)$'}
+# PR #231 QA: MATRIX_PROBES=drop runs drop_probe after the checker (L checks + probe in one job); nohinge skips
+# hinge_probe on the hinge shard (book-split drags come from drop_probe there).
 # dev8 edge drag-and-drop pass (test-plan-screen-matrix §4): MATRIX_PROBES=edge-only runs only edge_probe on these
 # points, in the point's rotation and (EDGE_FLIP_RE) the flipped one. No checker, no matrix verdict.
 EDGE_POINTS=${EDGE_POINTS:-'^(p411-a51-v1|t7-port-v1|t10-port-v1|fold-open-v1|rtl-phone-port-v1)$'}
@@ -504,7 +506,10 @@ run_point() {
   if [[ ",$MATRIX_PROBES," == *,pager,* ]] && [[ $id =~ $PAGER_POINTS ]] && [ "$seed_ok" -eq 1 ]; then
     pager_probe "$d" "$dens" "$size" "$rot" "$shape"
   fi
-  [ "$shard" = hinge ] && hinge_probe "$d" "$shape"
+  if [[ ",$MATRIX_PROBES," == *,drop,* ]] && [[ $id =~ $PAGER_POINTS ]] && [ "$seed_ok" -eq 1 ]; then
+    drop_probe "$d" "$dens" "$size" "$rot" "$shape"
+  fi
+  [ "$shard" = hinge ] && [[ ",$MATRIX_PROBES," != *,nohinge,* ]] && hinge_probe "$d" "$shape"
   return 0
 }
 
@@ -739,6 +744,21 @@ sb_run() {
   sh_ "dumpsys gfxinfo $PKG framestats" 2>&1 | tr -d '\r' > "$d/sb-$cs-gfx.txt"
   A pull /sdcard/sb.mp4 "$d/sb-$cs.mp4" > /dev/null 2>&1 < /dev/null || echo "drop $cs: no video" >> "$d/run.txt"
 }
+# PR #231 / #228: sb_run2 <case> <x0> <y0> <mx> <my> <fx> <fy> <rec-seconds>: drag to (mx,my), hold 0.8 s over it
+# (the dock or rail), then on to (fx,fy) and UP there (a refused drop springs back across the dock/rail).
+sb_run2() {
+  local cs=$1 rp cmd
+  cmd="echo T_DOWN \$(cat /proc/uptime); input motionevent DOWN $2 $3; sleep 1.6; $(sb_moves "$2" "$3" "$4" "$5"); sleep 0.8; echo T_MID \$(cat /proc/uptime); $(sb_moves "$4" "$5" "$6" "$7"); sleep 0.5; echo T_UP0 \$(cat /proc/uptime); input motionevent UP $6 $7; echo T_UP1 \$(cat /proc/uptime)"
+  echo "drag $2 $3 -> $4 $5 -> $6 $7" > "$d/sb-$cs-times.txt"
+  sh_ "rm -f /sdcard/sb.mp4; dumpsys gfxinfo $PKG reset" > /dev/null 2>&1
+  sh_ "screenrecord --time-limit $8 --bit-rate 6000000 --size $RECSZ /sdcard/sb.mp4" > "$d/sb-$cs-rec.txt" 2>&1 &
+  rp=$!; sleep 1.5
+  echo "T_REC_GO $(sh_ cat /proc/uptime | tr -d '\r')" >> "$d/sb-$cs-times.txt"
+  sh_ "$cmd" 2>&1 | tr -d '\r' >> "$d/sb-$cs-times.txt"
+  wait "$rp" || true
+  sh_ "dumpsys gfxinfo $PKG framestats" 2>&1 | tr -d '\r' > "$d/sb-$cs-gfx.txt"
+  A pull /sdcard/sb.mp4 "$d/sb-$cs.mp4" > /dev/null 2>&1 < /dev/null || echo "drop $cs: no video" >> "$d/run.txt"
+}
 sb_end() {  # sb_end <case> [later]: after snapshot (+ one ~5 s later), config after, crash/ANR
   pause 2; anr "$d"; pg_snap "$d" "$1" 1-after
   if [ -n "${2:-}" ]; then sleep 4; pg_snap "$d" "$1" 2-later; fi
@@ -835,6 +855,26 @@ drop_probe() {
       sb_refused "$o-rail-grid" "$gx" "$gy"
       # from the rail: same drop point; the dock item has no label, so its press point is its centre
       sb_refused "$o-rail-rail" "$gx" "$gy" dock
+    fi
+    # PR #231 (#228): over the dock/rail, held, then off it to a refused spot (bottom dock: the gap above it, else
+    # the title; rail: the margin beside it) -> the spring-back crosses the dock/rail. pexit: A across the grid to
+    # 4 px from the far window edge (past the pager's end edge), UP there.
+    if [ -n "${DOCK_X:-}" ]; then
+      if [ -n "${RAIL:-}" ]; then rx=$gx; ry=$gy; else rx=${GAP_X:-$TITLE_X}; ry=${GAP_Y:-$TITLE_Y}; fi
+      if [ -n "$rx" ]; then
+        sb_setup "$o-dock-refuse"; sb_run2 "$o-dock-refuse" "$AX" "$AY" "$DOCK_X" "$DOCK_Y" "$rx" "$ry" 9; sb_end "$o-dock-refuse"
+        if [ "$o" = base ]; then
+          sb_setup rm-dock; sh_ "settings put global animator_duration_scale 0"
+          sb_run2 rm-dock "$AX" "$AY" "$DOCK_X" "$DOCK_Y" "$rx" "$ry" 9
+          sh_ "settings put global animator_duration_scale 1"; sb_end rm-dock
+        fi
+      else echo "$o-dock-refuse n/a" >> "$d/drop-na.txt"; fi
+    else echo "$o-dock-refuse n/a" >> "$d/drop-na.txt"; fi
+    if [ "$rtl" = 1 ]; then px=4; else px=$(( ${W:-1080} - 5 )); fi
+    sb_setup "$o-pexit"; sb_run "$o-pexit" "$AX" "$AY" "$px" "$AY" 7; sb_end "$o-pexit"
+    if [ "$o" = base ] && [ -n "${DOCKI_X:-}" ]; then
+      # dock/rail item back onto the grid (cell (1,1) drop point): must commit
+      sb_setup dock-cell; sb_run dock-cell "$DOCKI_X" "$DOCKI_Y" "$CELL11_X" "$CELL11_Y" 7; sb_end dock-cell
     fi
     [ "$o" = flip ] && continue
     # RTL valid drop toward the left: A (0,0) -> mirrored (1,0), physical -x; must commit
