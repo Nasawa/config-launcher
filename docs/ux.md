@@ -83,7 +83,7 @@ Shape notes (ARCHITECTURE §3, §16):
 | Grid | `grid.columns` × `grid.rows`, default **4 × 5**. The file allows **2–12 × 2–12** (validation rule). The Settings picker offers a narrower 3–6 × 4–7 (UX choice only); a file outside the picker range still renders, and the picker then shows the file's value. Cells fill the space between the banner slot and the page indicator evenly. The same columns × rows on every device and window: on Medium/Expanded-width windows (tablets, the open fold) cells are capped at **144 dp wide** and **1.25 : 1**, and the grid is centred (§1.5) |
 | Cell | Icon **56 dp** centred, label below. **Preferred minimum cell 64 × 80 dp** (§1.1 touch/design floor). Showing **56 dp + a whole label** needs row pitch ≥ **84 dp** (56 + 16 + 12 at font 1.0); when the cell is shorter, the **icon ladder** (§1.5) steps down for the whole grid: 56 dp icon + label → 48 dp icon + label → 48 dp icon, label hidden. Never clipped. 56 dp is the size on every device; 48 dp is only this fallback |
 | Label | 12 sp, 1 line, ellipsized at the end, centred, white with a soft shadow for wallpaper contrast (§12) |
-| Label backdrop (v1 setting, default off, Q-C4, §18.1) | When on: a rounded **60 % black** scrim behind each home-grid label (a background on the label, 6 dp side and 2 dp top/bottom padding, hugging the text width up to the cell width). The text shadow stays on. Applies to page items and folder tiles on home, not the dock (no labels) or inside the folder card. Stored in app settings (DataStore), not in `launcher.json` |
+| Label backdrop (v1 setting, default off, Q-C4, §18.1) | When on: a rounded **60 % black** scrim behind each home-grid label (a background on the label, 6 dp side and 2 dp top/bottom padding, hugging the text width up to the cell width). The text shadow stays on. Applies to page items and folder tiles on home, not the dock (no labels) or inside the folder card. Stored in app settings (app settings), not in `launcher.json` |
 | Pages | Horizontal pager. One page minimum. The page indicator shows only with ≥ 2 pages. Dots are 8 dp, current = filled |
 | Dock | `dock[]` (a plain array, start to end: left to right in LTR, right to left in RTL), **0–7 items** (schema max), same icon size, **no labels**, fixed on all pages. The starter layout fills 4. Above 5 items, icons shrink to fit the width (min 48 dp). A 1 dp divider (white 24 %) above it. Becomes a **rail on the end edge** (right in LTR, left in RTL) when the window is ≥ 1.4 : 1 or under 480 dp tall; bottom otherwise, including the open fold (§1.5) |
 | Wallpaper | System wallpaper, shown through (`windowShowWallpaper`) |
@@ -196,7 +196,7 @@ layouts with `grid` exist. The old "fits the largest grid" validation line is su
 **One rule behind all of it.** Home is drawn from `launcher.json` plus the window (size, insets, cutout, hinge, font
 scale). A window change (rotate, fold, unfold, resize) re-lays out what's on screen and nothing else: it never adds or
 removes cells, never moves an item, and **never writes** (no `launcher.json`, `status.json`, `revision`, history or
-DataStore change). Without `windowOverrides`, `grid.columns` × `grid.rows`, every `x`/`y` (and `w`/`h`) and the
+app-settings change). Without `windowOverrides`, `grid.columns` × `grid.rows`, every `x`/`y` (and `w`/`h`) and the
 `dock[]` order mean the same thing wherever the file is read. With overrides, placement is per layout as in the design
 doc above; the window still never writes.
 
@@ -778,7 +778,7 @@ MVP vs later and the interim ⋮ menu: see §14.
 | `Include work apps in config` | Switch, default **off**. Off: work apps show in the drawer with the badge but can't be placed, and nothing new about them is written. Work items already in the file stay, greyed, with the hint in §1.2. Turning it on makes them live without a write (§17 Q12) |
 | `Hidden apps` | The packages in `drawer.hidden`, each with `Unhide` (one write) |
 | `Include hidden apps in apps.json` | Switch, default **off**. Off: apps in `drawer.hidden` are left out of `.configlauncher/apps.json`. On: they are listed. Rewrites `apps.json` silently when toggled or when the hidden list changes (§7.2). Hidden in app-only mode |
-| `Label backdrop` | Switch, default **off**. A rounded 60 % black scrim behind home labels for busy wallpapers (§1.1). Stored in DataStore |
+| `Label backdrop` | Switch, default **off**. A rounded 60 % black scrim behind home labels for busy wallpapers (§1.1). Stored in app settings (SharedPreferences) |
 | `Home app` | Status + `Set as home app` |
 | `Grid` | Columns/rows pickers (3–6 × 4–7). They write `grid` like any edit. Shrinking that would push items off-grid is refused with `Move apps out of the last column first.` |
 | `About` | Version and licenses. No Kvaesitso code is copied (ARCHITECTURE §13) |
@@ -1399,7 +1399,7 @@ TalkBack: `<Label>, widget, <reason>`.
 | Size out of range (§16.5) | *(live widget still shows; cue below)* | — |
 
 ### 16.3 Bind explanation (Q-W3)
-Shown **once per provider package** (DataStore set of packages), immediately before `ACTION_APPWIDGET_BIND`, and only
+Shown **once per provider package** (a string set in app settings), immediately before `ACTION_APPWIDGET_BIND`, and only
 when `bindAppWidgetIdIfAllowed` returned false. Skipped when: the launcher already has always-allow for this provider,
 or the user has dismissed this explanation for that package.
 

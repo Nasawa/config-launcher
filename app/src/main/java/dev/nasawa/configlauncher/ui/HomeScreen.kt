@@ -303,10 +303,15 @@ fun HomeScreen(vm: HomeViewModel) {
             }
             val railWidthDp = if (useRail) HomeGeometry.railWidthDp(headLabelWidthDp) else 0f
             // Page column = window minus the rail inside safeDrawing; chrome centres inside this, not the window.
-            val pageAreaW = (winW - railWidthDp).coerceAtLeast(0f)
+            // #201: minus the horizontal safeDrawing insets rootMod applies, and blockW = columns × the cell cap.
+            val sideInsetsDp = with(density) {
+                val ld = androidx.compose.ui.platform.LocalLayoutDirection.current
+                (WindowInsets.safeDrawing.getLeft(this, ld) + WindowInsets.safeDrawing.getRight(this, ld)).toDp().value
+            }
+            val pageAreaW = (winW - sideInsetsDp - railWidthDp).coerceAtLeast(0f)
             val chromeWidth = HomeGeometry.contentWidthDp(
                 pageAreaW,
-                minOf(pageAreaW, 4 * HomeGeometry.CAP_WIDTH_DP),
+                minOf(pageAreaW, ui.layout.grid.columns * HomeGeometry.CAP_WIDTH_DP),
                 widthClass,
             )
             val chromeContent = chromeWidth.takeIf { widthClass != HomeGeometry.WidthClass.Compact }
@@ -579,7 +584,8 @@ fun HomeScreen(vm: HomeViewModel) {
             // Book: the end half is wallpaper, like a margin: swipe up opens the drawer, long-press the home menu.
             // No semantics, so it takes no focus. Always present (zero wide otherwise) to keep the structure fixed.
             Box(Modifier.align(Alignment.TopEnd).fillMaxHeight().width(with(density) { (book?.endPx ?: 0).toDp() })
-                .swipeUpToOpen({ !editing && drag.dragged == null && !drawerOpen }) { drawerOpen = true }
+                // §1.4: not from the bottom system-gesture strip, like rootMod (Archimedes, #219).
+                .swipeUpToOpen({ !editing && drag.dragged == null && !drawerOpen }, { gestureBottomPx }) { drawerOpen = true }
                 .pointerInput(Unit) { detectTapGestures(onLongPress = { if (!editing) homeMenu = true }) })
             // #228: the lifted tile is drawn here, above the pager, the dock or rail and both fold halves, so no
             // page, cell or region clips it. Last child = drawn last. No input, no semantics.

@@ -113,8 +113,8 @@ class FoldHalfTest {
     }
 
     // Book: the start half only, and the end half takes nothing (no focus either: no node there).
-    private fun book(rtl: Boolean) {
-        val h = publish(FoldingFeature.State.HALF_OPENED, FoldingFeature.Orientation.VERTICAL)!!
+    private fun book(rtl: Boolean, state: FoldingFeature.State = FoldingFeature.State.HALF_OPENED) {
+        val h = publish(state, FoldingFeature.Orientation.VERTICAL)!!
         val ns = nodes()
         assertTrue(ns.isNotEmpty())
         for (n in ns) {
@@ -130,6 +130,10 @@ class FoldHalfTest {
 
     @Test @Config(qualifiers = "ar-rEG-ldrtl-w840dp-h700dp-land-xhdpi")
     fun bookPutsHomeInTheRightHalfRtl() = book(rtl = true)
+
+    // Archimedes (#219 call 1): a FLAT hinge with size > 0 is separating (a dual screen), so it splits like book.
+    @Test @Config(qualifiers = "w840dp-h700dp-land-xhdpi")
+    fun flatSize40HingeSplitsLikeBook() = book(rtl = false, state = FoldingFeature.State.FLAT)
 
     // Tabletop: top row, title bar and grid above the hinge; page dots and dock below.
     private fun tabletop() {
@@ -228,15 +232,18 @@ class FoldHalfTest {
     fun postureKeepsPageRtl() = postureKeepsPage()
 
     // A half-open fold mid-drag cancels the drag; lifting afterwards drops nothing.
-    private fun postureMidDragWritesNothing(orientation: FoldingFeature.Orientation) {
+    // Grace (#230): the drag ends over a valid empty cell in both directions (RTL: column 0 is the right edge, so it
+    // moves left), so an uncancelled release would commit; a fold-change cancel()→drop() mutation must fail here.
+    private fun postureMidDragWritesNothing(orientation: FoldingFeature.Orientation, rtl: Boolean) {
+        val sx = if (rtl) -1f else 1f
         goto("Second")
         val before = store.engine.state.value.config
         // Long-press on the test clock (no real time), then move past slop: the drag starts.
         compose.onAllNodes(hasText("Second tile")).onFirst().performTouchInput { down(center) }
         compose.mainClock.advanceTimeBy(1_000)
-        compose.onRoot().performTouchInput { moveBy(Offset(120f, 120f)) }
+        compose.onRoot().performTouchInput { moveBy(Offset(sx * 120f, 120f)) }
         compose.mainClock.advanceTimeBy(100)
-        compose.onRoot().performTouchInput { moveBy(Offset(60f, 60f)) }
+        compose.onRoot().performTouchInput { moveBy(Offset(sx * 60f, 60f)) }
         compose.mainClock.advanceTimeBy(100)
         assertTrue("the drag started", store.engine.dragging)
         publish(FoldingFeature.State.HALF_OPENED, orientation)
@@ -252,8 +259,8 @@ class FoldHalfTest {
     }
 
     @Test @Config(qualifiers = "w840dp-h700dp-land-xhdpi")
-    fun bookMidDragWritesNothingLtr() = postureMidDragWritesNothing(FoldingFeature.Orientation.VERTICAL)
+    fun bookMidDragWritesNothingLtr() = postureMidDragWritesNothing(FoldingFeature.Orientation.VERTICAL, rtl = false)
 
     @Test @Config(qualifiers = "ar-rEG-ldrtl-w840dp-h700dp-land-xhdpi")
-    fun tabletopMidDragWritesNothingRtl() = postureMidDragWritesNothing(FoldingFeature.Orientation.HORIZONTAL)
+    fun tabletopMidDragWritesNothingRtl() = postureMidDragWritesNothing(FoldingFeature.Orientation.HORIZONTAL, rtl = true)
 }
