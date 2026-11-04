@@ -508,6 +508,9 @@ run_point() {
   if [[ ",$MATRIX_PROBES," == *,drop,* ]] && [[ $id =~ $PAGER_POINTS ]] && [ "$seed_ok" -eq 1 ]; then
     drop_probe "$d" "$dens" "$size" "$rot" "$shape"
   fi
+  if [[ ",$MATRIX_PROBES," == *,src,* ]] && [[ $id =~ $SRC_POINTS ]] && [ "$seed_ok" -eq 1 ]; then
+    src_probe "$d" "$dens" "$size" "$rot"
+  fi
   [ "$shard" = hinge ] && [[ ",$MATRIX_PROBES," != *,nohinge,* ]] && hinge_probe "$d" "$shape"
   return 0
 }
@@ -829,6 +832,83 @@ sb_cards() {
   if [ -n "${DOTS_X:-}" ]; then
     sb_setup cards-dots drop-cards.json; sb_run cards-dots "$AX" "$AY" "$DOTS_X" "$DOTS_Y" 7; sb_end cards-dots
   else echo "cards-dots n/a" >> "$d/drop-na.txt"; fi
+}
+# #217 / PR #233 (dev8 final QA): ⋮ -> "Show config location". MATRIX_PROBES=src runs it after the other probes on
+# SRC_POINTS. Steps (all dumps src-<step>.xml/.png, launcher.json sha256 + mtime per step in src-hashes.txt):
+# on (default) -> menu -> toggle off -> menu closed; rotate + back; process death (force-stop, cold start);
+# problem banners with the note off: parse error, invalid, too new, missing file (RELOAD), save error (read-only
+# source dir + one drag) -> each cleared; one recorded drag with the note off (sb-src-drag.mp4).
+SRC_POINTS=${SRC_POINTS:-'^(p411-a51-v1|rtl-phone-port-v1|t7-port-v1|phone-land-v1|t7-land-v1)$'}
+src_h() { echo "$1 $(sh_ "run-as $PKG sh -c 'sha256sum files/config/source/launcher.json 2>/dev/null | cut -c1-64; stat -c %Y.%y files/config/source/launcher.json 2>/dev/null; grep -o showSource[^/]*value=.[a-z]*. shared_prefs/settings.xml'" | tr -d '\r' | tr '\n' ' ')" >> "$d/src-hashes.txt"; }
+src_snap() { dump "$d" "src-$1"; src_h "$1"; }
+src_reload() { sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" 2>&1 | tr -d '\r' | grep -m1 -o 'result=.*' >> "$d/src-reload.txt"; pause; anr "$d"; }
+src_menu_toggle() {  # open ⋮, dump menu (<step>-menu), tap the item, dump (<step>-menu2), close
+  dump "$d" .src; tap "$d/.src.xml" text '^⋮$' || { echo "src $1: no ⋮" >> "$d/run.txt"; rm -f "$d"/.src.*; return 1; }
+  pause 2; src_snap "$1-menu"
+  tap "$d/src-$1-menu.xml" text '^Show config location$' || { echo "src $1: no item" >> "$d/run.txt"; sh_ input keyevent BACK; return 1; }
+  pause 2; src_snap "$1-menu2"; sh_ input keyevent BACK; pause 2; rm -f "$d"/.src.*
+}
+src_put() {  # src_put <sed-expr|rm|good>: change launcher.json in place, then RELOAD
+  case $1 in
+    good) sh_ "run-as $PKG sh -c 'cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'";;
+    rm) sh_ "run-as $PKG sh -c 'rm -f files/config/source/launcher.json'";;
+    junk) sh_ "run-as $PKG sh -c 'echo \"{ not json\" > files/config/source/launcher.json'";;
+    *) sh_ "sed '$1' /data/local/tmp/sm-launcher.json > /data/local/tmp/sm-src.json; chmod 644 /data/local/tmp/sm-src.json; run-as $PKG sh -c 'cp /data/local/tmp/sm-src.json files/config/source/launcher.json'";;
+  esac
+  src_reload
+}
+src_probe() {
+  local d=$1 dens=$2 size=$3 rot=$4 flip p x y ex ey
+  flip=$((1 - rot))
+  echo "== src probe ($id)" >> "$d/run.txt"; : > "$d/src-hashes.txt"; : > "$d/src-reload.txt"
+  sh_ "settings put system user_rotation $rot"; sh_ logcat -b all -c > /dev/null 2>&1
+  sh_ am force-stop "$PKG"; src_put good > /dev/null 2>&1
+  sh_ "run-as $PKG sh -c 'cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml'"
+  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1; pause; anr "$d"
+  sh_ "run-as $PKG cat files/config/source/status.json" > "$d/src-status-0.json" 2>/dev/null || true
+  src_snap 0-on
+  src_menu_toggle 1 && src_snap 2-off
+  sh_ "settings put system user_rotation $flip"; pause; anr "$d"; src_snap 3-rot
+  sh_ "settings put system user_rotation $rot"; pause; anr "$d"; src_snap 4-back
+  sh_ am force-stop "$PKG"; sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1; pause; anr "$d"; src_snap 5-cold
+  # problem banners with the note off
+  src_put junk; src_snap 6-parse;   src_put good; src_snap 6-parse-clear
+  src_put 's/"columns": 4/"columns": "four"/'; src_snap 7-invalid; src_put good; src_snap 7-invalid-clear
+  src_put 's/"schemaVersion": 1/"schemaVersion": 99/'; src_snap 8-toonew; src_put good; src_snap 8-toonew-clear
+  src_put rm; src_snap 9-missing; src_put good; src_snap 9-missing-clear
+  # save error: read-only file + dir, then one committed drag (QA Settings -> empty cell), Done
+  sh_ "run-as $PKG sh -c 'chmod 444 files/config/source/launcher.json; chmod 555 files/config/source'"
+  if dnd_edit "$d" "$dens"; then
+    dump "$d" src-10-edit
+    p=$(at "$d/src-10-edit.xml" text '^QA Settings$') && read -r x y <<< "$p"
+    p=$($CHECK find-empty "$d/src-10-edit.xml" "$dens") && read -r ex ey <<< "$p"
+    [ -n "${x:-}" ] && [ -n "${ex:-}" ] && dnd_drag "$x" "$y" "$ex" "$ey"
+    pause 4; src_snap 10-saveerr-edit
+    tap "$d/src-10-saveerr-edit.xml" text '^Done$' || true
+    pause 3; anr "$d"; src_snap 10-saveerr
+    rm -f "$d"/.srce.*
+  else echo "src 10: no edit mode" >> "$d/run.txt"; fi
+  sh_ "run-as $PKG sh -c 'chmod 755 files/config/source; chmod 644 files/config/source/launcher.json'"
+  sh_ am force-stop "$PKG"; src_put good > /dev/null 2>&1
+  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1; pause; anr "$d"; src_snap 10-saveerr-clear
+  # one recorded drag with the note off (DragOverlay, #231): QA Settings -> empty cell, committed
+  if dnd_edit "$d" "$dens"; then
+    dump "$d" src-11-edit
+    W=${size%x*}; H=${size#*x}; read -r W H <<< "$($CHECK screen "$d/src-11-edit.xml" 2>/dev/null || echo "$W $H")"
+    RECSZ="$(( W / 2 / 2 * 2 ))x$(( H / 2 / 2 * 2 ))"
+    p=$(at "$d/src-11-edit.xml" text '^QA Settings$') && read -r x y <<< "$p"
+    p=$($CHECK find-empty "$d/src-11-edit.xml" "$dens") && read -r ex ey <<< "$p"
+    sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/src-drag-config-before.json" 2>/dev/null || true
+    sh_ "settings put global animator_duration_scale 1"
+    [ -n "${x:-}" ] && [ -n "${ex:-}" ] && sb_run src-drag "$x" "$y" "$ex" "$ey" 7
+    sh_ "settings put global animator_duration_scale 0"
+    pause 3; anr "$d"; src_snap 11-after
+    sh_ "run-as $PKG cat files/config/source/launcher.json" > "$d/src-drag-config-after.json" 2>/dev/null || true
+    tap "$d/src-11-after.xml" text '^Done$' || true; pause 2
+  else echo "src 11: no edit mode" >> "$d/run.txt"; fi
+  sh_ "logcat -d -b crash" 2>/dev/null | tr -d '\r' > "$d/src-crash.txt"
+  sh_ "wm size $size; wm density $dens; settings put system user_rotation $rot"
+  dnd_reset "$d"; home
 }
 drop_probe() {
   local d=$1 dens=$2 size=$3 rot=$4 shape=$5 flip rtl=0 o
