@@ -43,7 +43,9 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         watch(engine.source)
         val appOnly = prefs.folderUri == null
         pollJob = scope.launch(Dispatchers.IO) {
-            syncSchemaCopy()   // §20.2: after an app update the bundled schema may be newer
+            // §20.1/§20.2, #196: after an app update the bundled AGENTS.md and schema may be newer. Both are
+            // hash-guarded, so an up-to-date or user-edited file is left alone (no write).
+            syncAgentDocs(); syncSchemaCopy()
             runCatching { engine.poll(force = true) } // resume always hashes (§17 Q5)
             runCatching { engine.pollWidgets(force = true) } // #139: data files too
             // §18.5: app-only mode doesn't poll; nothing external writes there (debug adb edits use the FileObserver).
