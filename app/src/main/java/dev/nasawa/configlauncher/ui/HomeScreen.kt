@@ -927,6 +927,9 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
         val contentW = (cellW - HomeGeometry.CONTENT_PAD_DP).coerceAtLeast(0f)
         val contentH = (cellH - HomeGeometry.CONTENT_PAD_DP).coerceAtLeast(0f)
         val step = HomeGeometry.iconStep(contentW, contentH, labelLineDp)
+        // #235 §1.5 Row-pitch floors: below 60 dp pitch, labels hidden and the icon clamped to pitchH − 4 dp.
+        val iconDp = HomeGeometry.gridIconDp(step, cellH)
+        val drawLabels = HomeGeometry.gridShowsLabel(step, cellH)
         // Long-press on the whole pager slot: margins and empty cells open the home menu (§1.5 / #75).
         // Pointer x is physical; the block is centred (symmetric), so only the column mirrors in RTL (#187).
         val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
@@ -974,15 +977,15 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                                 contentAlignment = Alignment.TopCenter,
                             ) {
                                 byCell[x to y]?.let { r ->
-                                    val tight = !step.showLabel && cellH < HomeGeometry.ICON_FALLBACK_DP + HomeGeometry.CONTENT_PAD_DP
+                                    val tight = !drawLabels && cellH < HomeGeometry.ICON_FALLBACK_DP + HomeGeometry.CONTENT_PAD_DP
                                     val pad = if (tight) Modifier else Modifier.padding(2.dp)
                                     val actions = a11y(r, TilePlace.PAGE)
                                     // #228: what the root DragOverlay draws while this tile is lifted (the same composables,
                                     // no gesture or semantics); it fills the tile node's bounds, like the content below.
                                     val visual: @Composable () -> Unit = if (shortCell) {
-                                        { Box(Modifier.fillMaxSize().then(pad)) { Tile(r, apps, Modifier.fillMaxSize(), showLabel = true, iconDp = step.iconDp, drawLabel = step.showLabel, tight = tight) } }
+                                        { Box(Modifier.fillMaxSize().then(pad)) { Tile(r, apps, Modifier.fillMaxWidth().height(cellH.dp), showLabel = true, iconDp = iconDp, drawLabel = drawLabels, tight = tight) } }
                                     } else {
-                                        { Tile(r, apps, Modifier.fillMaxSize().then(pad), showLabel = true, iconDp = step.iconDp, drawLabel = step.showLabel, tight = tight) }
+                                        { Tile(r, apps, Modifier.fillMaxSize().then(pad), showLabel = true, iconDp = iconDp, drawLabel = drawLabels, tight = tight) }
                                     }
                                     val core = with(drag) {
                                         Modifier.tile(r, canDrag = true, onClick = { onOpen(r) }, onLongClick = { onLong(r) }, actions = actions, visual = visual)
@@ -996,12 +999,13 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                                                 .then(core)
                                                 .then(pad),
                                         ) {
+                                            // #235: centre the icon in the cell, not in the taller hit band.
                                             Tile(
                                                 r, apps,
-                                                Modifier.fillMaxSize(),
+                                                Modifier.fillMaxWidth().height(cellH.dp),
                                                 showLabel = true,
-                                                iconDp = step.iconDp,
-                                                drawLabel = step.showLabel,
+                                                iconDp = iconDp,
+                                                drawLabel = drawLabels,
                                                 tight = tight,
                                             )
                                         }
@@ -1010,8 +1014,8 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                                             r, apps,
                                             Modifier.fillMaxSize().then(core).then(pad),
                                             showLabel = true,
-                                            iconDp = step.iconDp,
-                                            drawLabel = step.showLabel,
+                                            iconDp = iconDp,
+                                            drawLabel = drawLabels,
                                             tight = tight,
                                         )
                                     }
@@ -1111,7 +1115,9 @@ fun Tile(r: ResolvedItem, apps: InstalledApps, modifier: Modifier = Modifier, sh
             minOf(iconDp, maxSide)
         } else iconDp
         Column(
-            if (showLabel && !whole) Modifier.semantics { contentDescription = label } else Modifier,
+            // #235: the label-less node fills the tile, icon centred, so a clamped icon doesn't shrink the labelled bounds.
+            if (showLabel && !whole) Modifier.fillMaxSize().semantics { contentDescription = label } else Modifier,
+            verticalArrangement = if (showLabel && !whole) Arrangement.Center else Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (r.item is FolderItem) FolderIcon(r, apps, iconSize) else AppIconImage(r.app, apps, iconSize)
