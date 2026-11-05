@@ -261,4 +261,20 @@ object HomeGeometry {
             else -> IconStep.Icon48NoLabel
         }
     }
+
+    /** §1.5 row-pitch floor: below this pitch labels stay hidden and the icon clamps to the cell (#235). */
+    const val LABEL_FLOOR_DP = 60f
+    /** §1.5: gap kept between clamped icons on adjacent rows. */
+    const val ICON_GAP_DP = 4f
+
+    /**
+     * Icon size for a grid cell of height [cellH] (#235, ux.md §1.5 Row-pitch floors): the ladder's icon at
+     * pitch ≥ [LABEL_FLOOR_DP]; below it `min(48 dp, pitchH − 4 dp)`, so tiles never touch and no row is dropped.
+     */
+    fun gridIconDp(step: IconStep, cellH: Float): Int =
+        if (cellH >= LABEL_FLOOR_DP) step.iconDp
+        else minOf(ICON_FALLBACK_DP, floor((cellH - ICON_GAP_DP).toDouble()).toInt()).coerceAtLeast(0)
+
+    /** Labels are drawn only at or above [LABEL_FLOOR_DP] pitch (and when the ladder step draws them). */
+    fun gridShowsLabel(step: IconStep, cellH: Float): Boolean = step.showLabel && cellH >= LABEL_FLOOR_DP
 }
