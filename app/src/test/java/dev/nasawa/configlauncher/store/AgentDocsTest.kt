@@ -112,4 +112,27 @@ class AgentDocsTest {
         assertEquals(AgentDocs.Update.FAILED, AgentDocs.update(f, template, confirmed = true))
         assertNull(f.agents())
     }
+
+    // #196: ConfigStore.start() runs this on every cold start, so an app upgrade refreshes an untouched AGENTS.md.
+    @Test fun startupSyncAfterUpgradeReplacesShippedFile() {
+        val f = folder()
+        File(f.dir, "AGENTS.md").writeBytes(template)          // written by the previous app version
+        val newer = "newer template".toByteArray()             // bundled by the upgraded app
+        assertEquals(Outcome.UPDATED, AgentDocs.sync(f, newer, writtenBefore = true, enabled = true))
+        assertArrayEquals(newer, f.agents())
+    }
+
+    @Test fun startupSyncWithoutUpgradeDoesNotRewrite() {
+        val f = folder()
+        val file = File(f.dir, "AGENTS.md").apply { writeBytes(template); setLastModified(1_000_000L) }
+        assertEquals(Outcome.UP_TO_DATE, AgentDocs.sync(f, template, writtenBefore = true, enabled = true))
+        assertEquals(1_000_000L, file.lastModified())
+    }
+
+    @Test fun configStoreStartSyncsAgentDocs() {
+        val src = (File("src/main/java/dev/nasawa/configlauncher/store/ConfigStore.kt").takeIf { it.isFile }
+            ?: File("app/src/main/java/dev/nasawa/configlauncher/store/ConfigStore.kt")).readText()
+        val start = src.substringAfter("fun start()").substringBefore("fun stop()")
+        assertTrue("#196: ConfigStore.start() must call syncAgentDocs()", "syncAgentDocs()" in start)
+    }
 }
