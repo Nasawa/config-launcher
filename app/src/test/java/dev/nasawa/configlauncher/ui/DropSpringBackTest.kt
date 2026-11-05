@@ -126,6 +126,16 @@ class DropSpringBackTest {
         assertEquals(Offset.Zero, drag.visualOffset); assertEquals(1f, drag.visualScale, 0f)
     }
 
+    // Grace (#230): cancelNow on a live drag over a valid cell clears at once and writes nothing (a cancelNow→drop() mutation fails).
+    @Test fun cancelNowOverAValidCellWritesNothing() {
+        drag.start(item, Rect(0f, 0f, 100f, 100f))
+        drag.move(Offset(250f, 250f)) // over (3,3): a release here would write MoveToCell
+        rule.runOnIdle { drag.cancelNow() }
+        assertTrue("nothing written", submitted.isEmpty()); assertEquals(1, cancelled)
+        assertNull(drag.dragged); assertFalse(drag.returning); assertFalse(engine.dragging)
+        assertEquals(Offset.Zero, drag.visualOffset); assertEquals(1f, drag.visualScale, 0f)
+    }
+
     @Test fun newDragDuringSpringBackStartsCleanly() {
         refusedDrop()
         rule.mainClock.advanceTimeBy(80)

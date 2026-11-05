@@ -18,7 +18,7 @@ Status: proposal for review, 2026-10-18. Author: Archimedes (architecture). Buil
 | Validation | Hand-written Kotlin validator mirroring the schema, plus schema tests on the JVM with a JSON Schema library (networknt) against the same examples | Pulling a full 2020-12 validator into the APK costs size and startup; the Kotlin validator also gives friendlier, path-based messages. The test suite keeps the two in lockstep. |
 | Async | Coroutines + `StateFlow` | Single source of truth flow into Compose. |
 | DI | Manual (one `AppGraph` object) | One module, few singletons; Hilt is not worth the build time. |
-| Persistence of app state | DataStore (Preferences) for settings and the persisted folder URI; app-private files for last-good copies | No database. |
+| Persistence of app state | SharedPreferences (app settings) for settings and the persisted folder URI; app-private files for last-good copies | No database. |
 
 **Departs from spike: JSON, not YAML.** The spike leans YAML (`layout.yaml`) but also lists YAML round-trip loss as a top risk. Write-back is a core feature, so we pick JSON: agents generate it reliably, the schema is directly applicable, and a canonical serializer makes diffs stable. Comments are not supported; use `x-` keys (preserved verbatim) for notes. JSON5/YAML can be revisited later as an *input* format only.
 
@@ -53,7 +53,7 @@ Items (discriminated by `type`):
 **Canonical form.** The launcher writes 2-space indented JSON, keys in schema order, `x-` keys after known keys, LF endings, trailing newline, UTF-8 without BOM. Agents are encouraged (not required) to emit the same so git diffs stay small. `revision` is incremented on every launcher write; agents should increment it too but correctness does not depend on it.
 
 ## 4. Config store (SAF folder)
-**Folder selection.** First run (or Settings → "Config folder") launches `ACTION_OPEN_DOCUMENT_TREE`. We call `takePersistableUriPermission(READ|WRITE)` and store the tree URI in DataStore. On every start we check `contentResolver.persistedUriPermissions`; if the grant is gone, show the "Reconnect folder" banner and keep rendering last-good. If the folder has no `launcher.json`, never create it silently: show B4 with `Create from current layout` and `Reconnect` (§17 a, AQ-8).
+**Folder selection.** First run (or Settings → "Config folder") launches `ACTION_OPEN_DOCUMENT_TREE`. We call `takePersistableUriPermission(READ|WRITE)` and store the tree URI in app settings (SharedPreferences). On every start we check `contentResolver.persistedUriPermissions`; if the grant is gone, show the "Reconnect folder" banner and keep rendering last-good. If the folder has no `launcher.json`, never create it silently: show B4 with `Create from current layout` and `Reconnect` (§17 a, AQ-8).
 
 Why a tree, not a single document: we need to create temp/backup files beside the config and re-find `launcher.json` by name after an external tool replaces it (Syncthing and git replace files by rename, which changes the document ID on some providers).
 
@@ -156,12 +156,12 @@ Single Gradle module **`:app`**, `applicationId` and `namespace` **`dev.nasawa.c
 |---|---|---|
 | `dev.nasawa.configlauncher.model` | Immutable config model, `Edit` ops, ID generator, merge/replay, grid placement | None (pure Kotlin) |
 | `dev.nasawa.configlauncher.config` | JSON codec (canonical serializer), validator, migrations, hashing | None (pure Kotlin + kotlinx.serialization) |
-| `dev.nasawa.configlauncher.store` | `ConfigStore`: SAF access, poller + observer, load pipeline, write-back queue/debounce, self-write guard, last-good/history, status.json | SAF, DataStore |
+| `dev.nasawa.configlauncher.store` | `ConfigStore`: SAF access, poller + observer, load pipeline, write-back queue/debounce, self-write guard, last-good/history, status.json | SAF, SharedPreferences |
 | `dev.nasawa.configlauncher.consent` | Dashboard-card approvals (#138): capability lines/fingerprint, per-widget approval ceiling, Turn off / Forget approval, Q-D5 Always-allow sites; device-local store in app-private files | None (pure Kotlin) |
 | `dev.nasawa.configlauncher.widgetdata` | Card data files (#139): `widgets-data/<id>.json` parse (256 KiB, strict JSON), `updatedAt` / `staleAfter`, `{data:…}` lookup, consent-gated polling with last values kept | None (pure Kotlin) |
 | `dev.nasawa.configlauncher.apps` | `AppRepository`: LauncherApps, profiles, shortcuts, icon cache, pin requests, launching | LauncherApps |
 | `dev.nasawa.configlauncher.ui` | `MainActivity`, Compose screens: home pager, dock, drawer, folder sheet, drag-and-drop, banners, onboarding; `PinShortcutActivity` | Compose |
-| `dev.nasawa.configlauncher.settings` | Settings screen, folder picker, home-role request, restore/history, DataStore prefs | Compose, DataStore |
+| `dev.nasawa.configlauncher.settings` | Settings screen, folder picker, home-role request, restore/history, SharedPreferences prefs | Compose, SharedPreferences |
 
 Root: `ConfigLauncherApp` (Application, holds `AppGraph`). Data flow: `store` emits `StateFlow<LoadState>`, `apps` emits `StateFlow<InstalledApps>`, a `HomeViewModel` in `ui` combines them into `ResolvedLayout`; UI events go to `ConfigStore.edit(op)`. `model` and `config` must stay Android-free so they test on the JVM; enforce with a simple lint/test that fails on `android.*` imports in those packages.
 
@@ -311,7 +311,7 @@ So the coordinator's 1 MiB is **not** enough for a legal config with long labels
 
 ### AQ-8 and AQ-9
 - **AQ-8: yes.** Two distinct states: **B3** (persisted grant missing from `persistedUriPermissions`, or the tree query throws `SecurityException`/`FileNotFoundException` for the tree itself) shows `Reconnect` only, since we can't create anything there. **B4** (tree readable, no `launcher.json` child) shows `Create from current layout` and `Reconnect` (picked the wrong folder, or the sync client hasn't delivered the file yet). B4 is never auto-dismissed by our own create; it clears when a valid file appears.
-- **AQ-9:** B8 is a notice (lowest priority: shown only when no B1-B6 banner is up, and below them in the stack). Copy: `launcher.json uses an older format (v{N}). It will be upgraded on your next change.` Actions `Upgrade now` and `✕`. `Upgrade now` writes immediately, after saving the original to `.configlauncher/backup/launcher.v{N}.{timestamp}.json`; it goes through the normal write path (hash check, B6 on conflict). This is consistent with §3 rule 3, which already allows an explicit upgrade action. `✕` dismisses B8 for that file hash (stored in DataStore), so it returns only if a different older-format file arrives; the next edit still upgrades with a backup. Rename the action from `Upgrade file` to `Upgrade now` since the body already says "launcher.json".
+- **AQ-9:** B8 is a notice (lowest priority: shown only when no B1-B6 banner is up, and below them in the stack). Copy: `launcher.json uses an older format (v{N}). It will be upgraded on your next change.` Actions `Upgrade now` and `✕`. `Upgrade now` writes immediately, after saving the original to `.configlauncher/backup/launcher.v{N}.{timestamp}.json`; it goes through the normal write path (hash check, B6 on conflict). This is consistent with §3 rule 3, which already allows an explicit upgrade action. `✕` dismisses B8 for that file hash (stored in app settings (SharedPreferences)), so it returns only if a different older-format file arrives; the next edit still upgrades with a backup. Rename the action from `Upgrade file` to `Upgrade now` since the body already says "launcher.json".
 
 ### Follow-ups
 **Sprite (code):**
@@ -341,7 +341,7 @@ These override earlier sections where they differ.
 | §14 Q5 | **status.json and backups in the folder: yes.** | No change (`.configlauncher/`). |
 | Q-C1 | **Add "Skip for now" with app-only storage.** | §18.2: app-private source. |
 | Q-C2 | **The drawer opens with the keyboard up.** | Drawer search field focused on open, IME shown (§18.2). |
-| Q-C4 | **Label backdrop: wanted if easy; flag if costly.** | Cheap: one boolean setting drawing a rounded 40 % black scrim behind each home label (a `Modifier.background` on the label). In v1 settings as `Label backdrop`, off by default. Stored in DataStore, not in launcher.json. Not costly, so no flag. |
+| Q-C4 | **Label backdrop: wanted if easy; flag if costly.** | Cheap: one boolean setting drawing a rounded 40 % black scrim behind each home label (a `Modifier.background` on the label). In v1 settings as `Label backdrop`, off by default. Stored in app settings (SharedPreferences), not in launcher.json. Not costly, so no flag. |
 | Q-C6 | **10 history copies is fine.** | No change. |
 | §14 Q9 widgets | **Critical to the end vision, not a v1 gate.** | Stay in Later, but widgets are the first post-MVP item. The schema v2 plan (`widget` type, `w`/`h`) should not be designed around anything that blocks them. |
 | §14 Q7 distribution | **GitHub Releases for now.** | Signed release APK built by CI and attached to a Release; no Play/F-Droid work. Releases are cut by Grok Bot or Christopher, not this doc (no tags from agents). |
@@ -402,7 +402,7 @@ Christopher clarified that the old devices are for testing only, not targets. mi
 - **Writes are truly atomic:** write `launcher.json.tmp` in the same directory, `fsync`, then `File.renameTo` over the target (same filesystem, so atomic on ext4/f2fs). There's **no temp-file read-back verify step**: that step exists only because SAF can't rename.
 - **No polling, no `status.json`, no `.configlauncher/` folder** (no backup/ or broken/ either; migration and restore backups go to app-private history). Nothing external writes there, so a **FileObserver is optional** (useful only for `adb` edits on debug builds); the store reloads after its own writes without one, through the in-memory model.
 - Banners B3, B4 and B6 can't occur; B1/B2 only if the file was corrupted (then last-good); B5 on disk-full; B8 on an older format.
-- **Persisted "no folder" state:** DataStore stores `source = APP_ONLY` (distinct from "never onboarded"), so onboarding doesn't show again, and the only reminder is ux.md's one-time hint chip.
+- **Persisted "no folder" state:** App settings (SharedPreferences) store `source = APP_ONLY` (distinct from "never onboarded"), so onboarding doesn't show again, and the only reminder is ux.md's one-time hint chip.
 - **Connecting a folder later** follows ux.md §7 exactly (#20): with no file there, the current layout is written; with an existing file, the user chooses between the folder's layout and replacing it with a backup first. **History and last-good carry over unchanged** (they already live in `filesDir/config/`), and the app-private source file becomes the last-good copy. After connecting, folder mode applies in full (polling, banners, `status.json`, `.configlauncher/`).
 - This replaces the earlier §18.2 draft, which put `.configlauncher/` under the app-private directory.
 

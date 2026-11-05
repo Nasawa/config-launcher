@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.content.edit
 
-/** Small settings store. SharedPreferences for the prototype (ARCHITECTURE.md plans DataStore). */
+/** Small settings store: the app settings, in SharedPreferences ("settings"). Never written to launcher.json. */
 class Prefs(context: Context) {
     private val sp = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 

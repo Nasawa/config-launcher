@@ -29,7 +29,7 @@ sealed interface FoldSplit {
             return if (vertical) {
                 val start = if (rtl) windowW - right else left
                 val end = if (rtl) left else windowW - right
-                if (start <= 0 || end < 0) null else Book(start, end)
+                if (start <= 0 || end <= 0) null else Book(start, end)
             } else {
                 if (top <= 0 || bottom >= windowH) null else Tabletop(top, bottom)
             }
