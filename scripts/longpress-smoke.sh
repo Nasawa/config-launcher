@@ -3,7 +3,8 @@
 # item sheet (real app name + package, `App info`) and must NOT launch the app.
 # Requires a debug build installed (run-as). Seeds app-only mode with one Settings tile.
 set -euo pipefail
-PKG=dev.nasawa.configlauncher
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/pkg.env"
 mkdir -p smoke
 adb shell am force-stop "$PKG"
 cat > smoke/launcher.json <<'J'
@@ -16,7 +17,7 @@ cat > smoke/settings.xml <<'J'
 J
 for f in launcher.json settings.xml; do adb push smoke/$f /data/local/tmp/$f >/dev/null; done
 adb shell "run-as $PKG sh -c 'mkdir -p files/config/source shared_prefs && cp /data/local/tmp/launcher.json files/config/source/launcher.json && cp /data/local/tmp/settings.xml shared_prefs/settings.xml'"
-adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+adb shell am start -W -n "$PKG/$NS.MainActivity" >/dev/null
 sleep 4
 dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb shell cat /sdcard/ui.xml; }
 dump > smoke/lp-before.xml

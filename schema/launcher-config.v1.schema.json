@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Nasawa/config-launcher/schema/launcher-config.v1.schema.json",
-  "title": "Config Launcher layout, schema version 1",
-  "description": "The home screen of dev.nasawa.configlauncher. See ARCHITECTURE.md section 3. Unknown keys starting with 'x-' are preserved and ignored; any other unknown key is an error. Files over 2 MiB are refused (ARCHITECTURE.md section 17, Q16); x- values count toward that budget.",
+  "$id": "https://reflowlauncher.com/schema/launcher-config.v1.schema.json",
+  "title": "Reflow Launcher layout, schema version 1",
+  "description": "The home screen of Reflow Launcher (com.anigeek.reflowlauncher). See ARCHITECTURE.md section 3. Unknown keys starting with 'x-' are preserved and ignored; any other unknown key is an error. Files over 2 MiB are refused (ARCHITECTURE.md section 17, Q16); x- values count toward that budget.",
   "type": "object",
   "required": [
     "schemaVersion",

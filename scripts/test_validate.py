@@ -130,7 +130,7 @@ class CardKinds(unittest.TestCase):
         raw = json.dumps(self.doc).encode()
         tree, errs = V.validate(raw, use_schema=False)
         self.assertEqual([], errs)
-        self.assertEqual(['elements[0]: capability kind "net.fetch" isn\'t supported by this Config Launcher, so the widget was skipped. '
+        self.assertEqual(['elements[0]: capability kind "net.fetch" isn\'t supported by this Reflow Launcher, so the widget was skipped. '
                           'It stays in the file. Update the app, or check the kind for a typo.'], V.warnings(tree))
         _, errs = V.validate(raw, use_schema=False, ci=True)
         self.assertEqual(['elements[0].capabilities[1].kind: unknown capability "net.fetch". Use data.file, ui.reload, ui.openApp, ui.openUrl.'], errs)
@@ -199,3 +199,41 @@ class Format(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SchemaId(unittest.TestCase):
+    """#242: old GitHub and new reflowlauncher.com $schema both validate; round-trip preserves them."""
+    OLD = "https://github.com/Nasawa/config-launcher/schema/launcher-config.v1.schema.json"
+    NEW = "https://reflowlauncher.com/schema/launcher-config.v1.schema.json"
+
+    def _doc(self, schema):
+        return json.dumps({"$schema": schema, "schemaVersion": 1, "pages": [{"id": "home", "items": []}]}).encode()
+
+    def test_old_github_url_loads_clean(self):
+        tree, errs = V.validate(self._doc(self.OLD), use_schema=False)
+        self.assertEqual([], errs)
+        self.assertEqual(self.OLD, tree["$schema"])
+
+    def test_new_reflow_url_loads_clean(self):
+        tree, errs = V.validate(self._doc(self.NEW), use_schema=False)
+        self.assertEqual([], errs)
+        self.assertEqual(self.NEW, tree["$schema"])
+
+    def test_round_trip_preserves_old(self):
+        tree, errs = V.validate(self._doc(self.OLD), use_schema=False)
+        self.assertEqual([], errs)
+        out = V.canonical(tree)
+        self.assertIn(self.OLD, out)
+        self.assertNotIn(self.NEW, out)
+        tree2, errs2 = V.validate(out.encode(), use_schema=False)
+        self.assertEqual([], errs2)
+        self.assertEqual(self.OLD, tree2["$schema"])
+
+    def test_round_trip_preserves_new(self):
+        tree, errs = V.validate(self._doc(self.NEW), use_schema=False)
+        self.assertEqual([], errs)
+        out = V.canonical(tree)
+        self.assertIn(self.NEW, out)
+        tree2, errs2 = V.validate(out.encode(), use_schema=False)
+        self.assertEqual([], errs2)
+        self.assertEqual(self.NEW, tree2["$schema"])

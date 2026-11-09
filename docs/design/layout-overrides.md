@@ -345,7 +345,7 @@ means empty in the file: no main item on it and no `positions[…].page` pointin
   with the last good layout kept**, via the existing `unknown key "…"` error. Nothing is written. Once the app updates,
   the file loads. This is acceptable pre-release (Christopher, Q3). Older `validate.py` gives the same error.
 - **Level-5 `validate.py`** prints an info line when any of these keys is present: `windowOverrides, orientationLock and
-  scale need Config Launcher feature level 5 or later; older versions reject this file.`
+  scale need Reflow Launcher feature level 5 or later; older versions reject this file.`
 - **Later additions** (a new matcher or field) take the same route: the next feature level understands them, and
   older apps reject the file. With one device and one app version that's enough, so there's no per-entry `requires`
   (§2).

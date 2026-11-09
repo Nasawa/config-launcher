@@ -85,7 +85,7 @@ class DndPlan(unittest.TestCase):
                     if it['id'] == 'a-set3':
                         it['x'], it['y'] = k['expect']['cell']
             json.dump(cfg, open(os.path.join(d, f"dnd-{k['id']}-config.json"), 'w'))
-            open(os.path.join(d, f"dnd-{k['id']}-top.txt"), 'w').write('topResumedActivity dev.nasawa.configlauncher/.MainActivity')
+            open(os.path.join(d, f"dnd-{k['id']}-top.txt"), 'w').write('topResumedActivity com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity')
         out = dnd.score(d)
         r = {x['id']: x for x in out['results']}
         self.assertIs(r['out-left']['ok'], True)      # unchanged config == cancelled

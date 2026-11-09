@@ -22,6 +22,8 @@ jobs:
           diff -r test-fixtures/configs app/src/test/resources/configs
       - name: validate.py agrees with the phone
         run: pip install jsonschema && python3 scripts/test_validate.py
+      - name: Grep gate — no stray old applicationId (#242 F)
+        run: python3 scripts/check_package_literals.py && python3 scripts/test_check_package_literals.py
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
       - name: Assemble debug APK
@@ -33,7 +35,7 @@ jobs:
           grep -qi "SHA-256 digest: 3a0cb6b59a1140b4b76d6a6fd70fbf3744f3174fd2479d89a3a148810cfd3dca" signer.txt
       - uses: actions/upload-artifact@v7
         with:
-          name: config-launcher-debug-apk
+          name: reflow-launcher-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v7

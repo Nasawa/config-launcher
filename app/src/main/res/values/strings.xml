@@ -1,5 +1,6 @@
 <resources>
-    <string name="app_name">Config Launcher</string>
+    <string name="app_name">Reflow Launcher</string>
+    <string name="launcher_label">Reflow</string>
 
     <!-- Merge snackbar, docs/ux.md §9.1 (automatic merge and Keep mine). -->
     <string name="merge_updated">Layout updated from launcher.json.</string>
@@ -56,7 +57,7 @@
     <string name="b5_too_large">Couldn\'t save your change: launcher.json would be over %1$d MB.</string>
     <string name="b5_undo_failed">Couldn\'t undo.</string>
     <string name="b5_create_failed">Couldn\'t create launcher.json.</string>
-    <string name="b7_too_new">This file needs a newer Config Launcher.</string>
+    <string name="b7_too_new">This file needs a newer Reflow Launcher.</string>
     <plurals name="b6_conflict">
         <item quantity="one">launcher.json changed while you were editing (%d change).</item>
         <item quantity="other">launcher.json changed while you were editing (%d changes).</item>
@@ -119,7 +120,7 @@
 
     <!-- Home app (ux.md §7 step 4, §8) -->
     <string name="home_role_title">Set as home app</string>
-    <string name="home_role_body">To use Config Launcher when you press Home, set it as your default home app. Shortcuts only work once it\'s your home app.</string>
+    <string name="home_role_body">To use Reflow Launcher when you press Home, set it as your default home app. Shortcuts only work once it\'s your home app.</string>
     <string name="home_role_button">Set as home app</string>
     <string name="not_now">Not now</string>
     <string name="apps">Apps</string>
@@ -138,7 +139,7 @@
 
     <!-- First run (ux.md §7, §18.2) -->
     <string name="first_run_title">Choose your config folder</string>
-    <string name="first_run_body">Pick a folder for launcher.json. A folder that a sync app (like Syncthing) or a git app keeps in sync lets you edit it from your computer, with history. Config Launcher also keeps a small .configlauncher folder there for status and backups.</string>
+    <string name="first_run_body">Pick a folder for launcher.json. A folder that a sync app (like Syncthing) or a git app keeps in sync lets you edit it from your computer, with history. Reflow Launcher also keeps a small .configlauncher folder there for status and backups.</string>
     <string name="first_run_cancelled">No folder chosen. You can skip this and connect one later in Settings.</string>
     <string name="choose_folder">Choose folder</string>
     <string name="skip_for_now">Skip for now</string>
@@ -218,8 +219,8 @@
     <string name="tile_needs_ok">Needs your OK</string>
     <string name="tile_needs_ok_again">Needs your OK again</string>
     <string name="tile_off">Turned off</string>
-    <string name="tile_update">Update Config Launcher to show this</string>
-    <string name="tile_update_hint">This widget needs a newer Config Launcher. It stays in your layout file.</string>
+    <string name="tile_update">Update Reflow Launcher to show this</string>
+    <string name="tile_update_hint">This widget needs a newer Reflow Launcher. It stays in your layout file.</string>
     <!-- %1$s = title, %2$s = reason in lower case (e.g. "needs your OK"). TalkBack only. -->
     <string name="tile_a11y">%1$s, widget, %2$s. Double-tap to review.</string>
     <!-- %1$s = reason. TalkBack only. -->

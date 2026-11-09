@@ -20,6 +20,6 @@ night_applied=no
 night_via=cmd
 seed_ok=1
 seed_attempts=1
-app_locales=Locales for dev.nasawa.configlauncher for user 0 are [en-US]
+app_locales=Locales for com.anigeek.reflowlauncher for user 0 are [en-US]
 force_rtl=0
 layout_dir=

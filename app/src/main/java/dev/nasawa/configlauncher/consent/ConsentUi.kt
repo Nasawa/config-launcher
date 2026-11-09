@@ -21,7 +21,7 @@ object ConsentUi {
 
     /**
      * Tiles for [pageId]: every shown card that is waiting or turned off, and every grid-placed element this launcher
-     * skips (newer `requires`, unknown type or capability kind: cells kept, `Update Config Launcher to show this`).
+     * skips (newer `requires`, unknown type or capability kind: cells kept, `Update Reflow Launcher to show this`).
      * Allowed cards get no tile; they're drawn by the card renderer (#140).
      */
     fun tiles(c: LauncherConfig, report: List<Consent.Status>, pageId: String): List<Tile> {

@@ -1,4 +1,6 @@
-# Config Launcher
+# Reflow Launcher
+
+Formerly **config-launcher**. The GitHub repository name is unchanged for now (`Nasawa/config-launcher`); the Android `applicationId` is `com.anigeek.reflowlauncher`.
 
 <a href="https://ko-fi.com/anigeekapps"><img src="https://img.shields.io/badge/Ko--fi-Support-FF5E5B.svg?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
 
@@ -23,7 +25,7 @@ on your phone and the file updates. Edit the file on your computer (or let an ag
 
 ### Recommended: keep the folder in git
 Git is the main way to sync. A git app on the phone (for example one that auto-pulls and auto-commits a folder) keeps a
-clone of your repo, and that clone is the folder you pick in Config Launcher. The launcher never runs git itself: it
+clone of your repo, and that clone is the folder you pick in Reflow Launcher. The launcher never runs git itself: it
 only reads and writes `launcher.json` in that folder.
 
 1. **Clone or pull.**
@@ -235,7 +237,7 @@ versioning.
 
 ### Agent kit
 - [`templates/config-folder/AGENTS.md`](templates/config-folder/AGENTS.md): copy this into your config folder. Agent tools (Claude Code, Codex, Cursor and others) read `AGENTS.md` automatically.
-- [`skills/config-launcher/SKILL.md`](skills/config-launcher/SKILL.md): a reusable skill with the same procedure, for harnesses that support skills.
+- [`skills/reflow-launcher/SKILL.md`](skills/reflow-launcher/SKILL.md): a reusable skill with the same procedure, for harnesses that support skills.
 - [`AGENTS.md`](AGENTS.md) at this repo's root is for contributors to the app, not for layout editing.
 
 ### Dos and don'ts
@@ -250,7 +252,10 @@ versioning.
 - Check `.configlauncher/status.json` after a change.
   `revision` is the applied file's `revision` (null when the file was rejected); `hash` stays the authority.
 - To reload immediately from a script (instead of waiting for the 2 s poll or pressing Home):
-  `adb shell am broadcast -a dev.nasawa.configlauncher.RELOAD -n dev.nasawa.configlauncher/.ReloadReceiver`.
+  `adb shell am broadcast -a com.anigeek.reflowlauncher.RELOAD -p com.anigeek.reflowlauncher`.
+  (Components live under the Kotlin namespace: use
+  `com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity` /
+  `…ReloadReceiver`. Do not use the slash-dot shorthand after the applicationId.)
   It runs the same load as ⋮ → Reload and rewrites `status.json` before returning Result codes: `0` unchanged,
   `1` reloaded, `2` rejected (details in `status.json`), `3` unavailable, `4` busy (phone edit, drag, or conflict
   pending), `5` timeout (8 s). On `2`, read `status.json` and fix the listed paths; on `4`, back off and retry; on
@@ -285,10 +290,10 @@ from a computer, through `run-as`:
 
 ```sh
 # push
-adb shell run-as dev.nasawa.configlauncher mkdir -p files/config/source
-adb shell run-as dev.nasawa.configlauncher sh -c "'cat > files/config/source/launcher.json.tmp && mv files/config/source/launcher.json.tmp files/config/source/launcher.json'" < launcher.json
+adb shell run-as com.anigeek.reflowlauncher mkdir -p files/config/source
+adb shell run-as com.anigeek.reflowlauncher sh -c "'cat > files/config/source/launcher.json.tmp && mv files/config/source/launcher.json.tmp files/config/source/launcher.json'" < launcher.json
 # pull
-adb exec-out run-as dev.nasawa.configlauncher cat files/config/source/launcher.json > launcher.json
+adb exec-out run-as com.anigeek.reflowlauncher cat files/config/source/launcher.json > launcher.json
 ```
 
 Debug builds watch that directory with a FileObserver, so the home screen reloads straight away.

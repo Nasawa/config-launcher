@@ -218,7 +218,7 @@ fun WidgetItemSheet(name: String, live: Boolean, reason: ConsentUi.Reason? = nul
     }
 }
 
-/** `Update Config Launcher to show this` → hint sheet (§17.3). */
+/** `Update Reflow Launcher to show this` → hint sheet (§17.3). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpdateHintSheet(onDismiss: () -> Unit) {

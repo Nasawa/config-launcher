@@ -21,6 +21,7 @@
              keeps its page by id through saved state (ui/PageById.kt), the same path a config reload uses. -->
         <activity
             android:name=".MainActivity"
+            android:label="@string/launcher_label"
             android:exported="true"
             android:launchMode="singleTask"
             android:clearTaskOnLaunch="true"
@@ -35,14 +36,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- #55: `adb shell am broadcast -a dev.nasawa.configlauncher.RELOAD -n dev.nasawa.configlauncher/.ReloadReceiver`.
-             Senders need android.permission.DUMP, which adb shell has and normal apps can't get. -->
+        <!-- #55 / #242: `adb shell am broadcast -a ${applicationId}.RELOAD -p ${applicationId}`
+             (or `-n ${applicationId}/dev.nasawa.configlauncher.ReloadReceiver`). Do NOT use a slash-dot
+             after the applicationId: namespace ≠ applicationId, so that shorthand class does not exist.
+             ACTION is derived from packageName (= applicationId). Senders need android.permission.DUMP. -->
         <receiver
             android:name=".ReloadReceiver"
             android:exported="true"
             android:permission="android.permission.DUMP">
             <intent-filter>
-                <action android:name="dev.nasawa.configlauncher.RELOAD" />
+                <action android:name="${applicationId}.RELOAD" />
             </intent-filter>
         </receiver>
     </application>

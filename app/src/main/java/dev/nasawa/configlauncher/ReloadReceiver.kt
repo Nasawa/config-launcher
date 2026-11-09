@@ -15,7 +15,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 class ReloadReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != ACTION) return
+        if (intent.action != action(context.packageName)) return
         val app = context.applicationContext as ConfigLauncherApp
         val pending = goAsync()
         app.scope.launch(Dispatchers.IO) {
@@ -27,5 +27,8 @@ class ReloadReceiver : BroadcastReceiver() {
         }
     }
 
-    companion object { const val ACTION = "dev.nasawa.configlauncher.RELOAD" }
+    companion object {
+        /** #242: derived from the applicationId / packageName so the action tracks the package. */
+        fun action(packageName: String) = "$packageName.RELOAD"
+    }
 }

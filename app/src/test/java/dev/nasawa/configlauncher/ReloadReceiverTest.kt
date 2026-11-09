@@ -19,4 +19,10 @@ class ReloadReceiverTest {
         assertTrue(info.exported)
         assertEquals("android.permission.DUMP", info.permission)
     }
+
+    @Test fun actionTracksApplicationId() {
+        val ctx = ApplicationProvider.getApplicationContext<Application>()
+        assertEquals(ctx.packageName + ".RELOAD", ReloadReceiver.action(ctx.packageName))
+        assertEquals("com.anigeek.reflowlauncher", ctx.packageName)
+    }
 }

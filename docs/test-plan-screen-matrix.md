@@ -75,7 +75,7 @@ and seeds the fixture with `run-as` (debug APK). Prefs and `launcher.json` are c
 
 | ID | Flow | Pass | Spec |
 |---|---|---|---|
-| F1 | Cold start: `am start -W`, then RELOAD | No `FATAL EXCEPTION` or `ANR in dev.nasawa.configlauncher` in logcat, and no "Config Launcher isn't responding" dialog. System UI ANR dialogs (common on software-only emulators) are recorded and dismissed, not failed | test-plan §15.2, A§11 |
+| F1 | Cold start: `am start -W`, then RELOAD | No `FATAL EXCEPTION` or `ANR in com.anigeek.reflowlauncher` in logcat, and no "Reflow Launcher isn't responding" dialog. System UI ANR dialogs (common on software-only emulators) are recorded and dismissed, not failed | test-plan §15.2, A§11 |
 | F2 | Seeded layout + RELOAD broadcast | Home shows the seeded title bar (`Home, Pages`) and the dock | ux.md §5 (Reload) |
 | F3 | Long-press a home item (800 ms) | Item sheet with `App info` and the real package, and the launcher still on top (nothing launched) | ux.md §1.1 gestures; test-plan §19 LP-2 |
 | F4 | Long-press empty grid space | Home menu with `Edit layout`, `Reload layout`, `Settings`, and not the item sheet | ux.md §1.1; test-plan §19 LP-6 |

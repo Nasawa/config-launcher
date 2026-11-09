@@ -261,11 +261,11 @@ class D1ShortPaneFloor(unittest.TestCase):
             xml = """<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
 <hierarchy rotation="0">
   <node index="0" text="" resource-id="" class="android.widget.FrameLayout"
-        package="com.nasawa.configlauncher" content-desc="" checkable="false" checked="false"
+        package="com.anigeek.reflowlauncher" content-desc="" checkable="false" checked="false"
         clickable="false" enabled="true" focusable="false" focused="false" scrollable="false"
         long-clickable="false" password="false" selected="false" bounds="[0,0][400,800]">
     <node index="0" text="Search apps" resource-id="" class="android.widget.EditText"
-          package="com.nasawa.configlauncher" content-desc="Search apps" checkable="false"
+          package="com.anigeek.reflowlauncher" content-desc="Search apps" checkable="false"
           checked="false" clickable="true" enabled="true" focusable="true" focused="false"
           scrollable="false" long-clickable="false" password="false" selected="false"
           bounds="[16,440][384,488]" />
@@ -311,13 +311,13 @@ class G3ShortPaneOptionB(unittest.TestCase):
         # Minimal §15 title bar so title_bar() excludes chrome from tiles (clock + Pages).
         title = (
             f'  <node text="" content-desc="12:00" class="android.view.View" '
-            f'package="dev.nasawa.configlauncher" clickable="false" bounds="[400,34][480,62]" />\n'
+            f'package="com.anigeek.reflowlauncher" clickable="false" bounds="[400,34][480,62]" />\n'
             f'  <node text="12:00" content-desc="" class="android.widget.TextView" '
-            f'package="dev.nasawa.configlauncher" clickable="false" bounds="[400,34][480,62]" />\n'
+            f'package="com.anigeek.reflowlauncher" clickable="false" bounds="[400,34][480,62]" />\n'
             f'  <node text="" content-desc="Home, Pages" class="android.view.View" '
-            f'package="dev.nasawa.configlauncher" clickable="true" bounds="[320,24][396,72]" />\n'
+            f'package="com.anigeek.reflowlauncher" clickable="true" bounds="[320,24][396,72]" />\n'
             f'  <node text="Home" content-desc="" class="android.widget.TextView" '
-            f'package="dev.nasawa.configlauncher" clickable="false" bounds="[323,34][388,62]" />\n'
+            f'package="com.anigeek.reflowlauncher" clickable="false" bounds="[323,34][388,62]" />\n'
         )
         tiles_xml = []
         # Row 0 at y=grid_top, Row 1 at y=grid_top+pitch
@@ -331,21 +331,21 @@ class G3ShortPaneOptionB(unittest.TestCase):
                 label = "QA Settings" if (r == 0 and col == 0) else f"App {r}-{col}"
                 tiles_xml.append(
                     f'  <node text="" content-desc="{label}" class="android.view.View" '
-                    f'package="dev.nasawa.configlauncher" clickable="true" '
+                    f'package="com.anigeek.reflowlauncher" clickable="true" '
                     f'bounds="[{x0},{y0}][{x0+49},{y1}]" />\n'
                     f'  <node text="{label}" content-desc="" class="android.widget.TextView" '
-                    f'package="dev.nasawa.configlauncher" clickable="false" '
+                    f'package="com.anigeek.reflowlauncher" clickable="false" '
                     f'bounds="[{x0},{y1-12}][{x0+49},{y1}]" />\n'
                 )
         dock = (
             f'  <node text="" content-desc="Phone, dock" class="android.view.View" '
-            f'package="dev.nasawa.configlauncher" clickable="true" '
+            f'package="com.anigeek.reflowlauncher" clickable="true" '
             f'bounds="[40,{H-48}][88,{H}]" />\n'
         )
         xml = (
             "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>\n"
             f'<hierarchy rotation="0">\n'
-            f' <node class="android.widget.FrameLayout" package="dev.nasawa.configlauncher" '
+            f' <node class="android.widget.FrameLayout" package="com.anigeek.reflowlauncher" '
             f'bounds="[0,0][{W},{H}]">\n'
             + title + "".join(tiles_xml) + dock +
             " </node>\n</hierarchy>\n"
@@ -363,7 +363,7 @@ class G3ShortPaneOptionB(unittest.TestCase):
             f"Override size: {W}x{H}\nOverride density: {dens}\n")
         open(os.path.join(td, "retries.txt"), "w").write("")
         open(os.path.join(td, "crash.txt"), "w").write("")
-        open(os.path.join(td, "focus.txt"), "w").write("mCurrentFocus=dev.nasawa")
+        open(os.path.join(td, "focus.txt"), "w").write("mCurrentFocus=com.anigeek.reflowlauncher")
         if tr is not None:
             open(os.path.join(td, "tap-routing.json"), "w").write(json.dumps(tr))
         return td

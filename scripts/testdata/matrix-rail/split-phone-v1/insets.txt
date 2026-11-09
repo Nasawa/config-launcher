@@ -77,7 +77,7 @@ WINDOW MANAGER ANIMATOR STATE (dumpsys window animator)
       Window #0: WindowStateAnimator{32d0ec9 com.android.systemui.wallpapers.ImageWallpaper}
       Window #1: WindowStateAnimator{cdb3675 com.google.android.apps.nexuslauncher/com.android.quickstep.RecentsActivity}
       Window #2: WindowStateAnimator{96e10ef com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}
-      Window #3: WindowStateAnimator{76c060a dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
+      Window #3: WindowStateAnimator{76c060a com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
       Window #4: WindowStateAnimator{beb1484 InputMethod}
       Window #5: WindowStateAnimator{d6ece85 ShellDropTarget}
       Window #6: WindowStateAnimator{af8a4da StatusBar}
@@ -94,7 +94,7 @@ WINDOW MANAGER SESSIONS (dumpsys window sessions)
     mPackageName=com.google.android.apps.nexuslauncher
   Session Session{908ca59 14795:u0a10209}:
     numWindow=1 mCanAddInternalSystemWindow=false mAlertWindowSurfaces={} mClientDead=false mSurfaceSession=android.view.SurfaceSession@891ce7b
-    mPackageName=dev.nasawa.configlauncher
+    mPackageName=com.anigeek.reflowlauncher
   Session Session{b294358 1341:u0a10154}:
     numWindow=1 mCanAddInternalSystemWindow=false mAlertWindowSurfaces={} mClientDead=false mSurfaceSession=android.view.SurfaceSession@629fbab
     mPackageName=com.google.android.inputmethod.latin
@@ -107,11 +107,11 @@ WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)
     init=1344x2992 160dpi mMinSizeOfResizeableTaskDp=220 base=800x312 160dpi cur=800x312 app=800x312 rng=312x312-800x800
     deferred=false mLayoutNeeded=false
   mLastOrientationSource=WindowedMagnification:0:31@5316626
-  deepestLastOrientationSource=ActivityRecord{ed3b47d u0 dev.nasawa.configlauncher/.MainActivity t186}
+  deepestLastOrientationSource=ActivityRecord{ed3b47d u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity t186}
   overrideConfig={1.0 310mcc260mnc [en_US] ldltr sw312dp w800dp h312dp 160dpi nrml long land finger qwerty/v/v -nav/h winConfig={ mBounds=Rect(0, 0 - 800, 312) mAppBounds=Rect(0, 0 - 800, 312) mMaxBounds=Rect(0, 0 - 800, 312) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.5 s.1335 fontWeightAdjustment=0}
   mLayoutSeq=1701
-  mCurrentFocus=Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
-  mFocusedApp=ActivityRecord{ed3b47d u0 dev.nasawa.configlauncher/.MainActivity t186}
+  mCurrentFocus=Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
+  mFocusedApp=ActivityRecord{ed3b47d u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity t186}
 
   mHoldScreenWindow=null
   mObscuringWindow=Window{f06925c u0 com.android.systemui.wallpapers.ImageWallpaper}
@@ -119,7 +119,7 @@ WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)
   mLastWakeLockObscuringWindow=null
 
   displayId=0
-  mWallpaperTarget=Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
+  mWallpaperTarget=Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
   mLastWallpaperZoomOut=0.0
   token WallpaperWindowToken{726ad1 token=android.os.Binder@b2a5f8}:
     canShowWhenLocked=true
@@ -182,9 +182,9 @@ WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)
       Application tokens in top down Z order:
       * Task{1d111e0 #1 type=home U=0 visible=true visibleRequested=true mode=fullscreen translucent=false sz=2}
         bounds=[0,0][800,312]
-        * Task{6d01f72 #186 type=home A=10209:dev.nasawa.configlauncher U=0 rootTaskId=1 visible=true visibleRequested=true mode=fullscreen translucent=false sz=1}
+        * Task{6d01f72 #186 type=home A=10209:com.anigeek.reflowlauncher U=0 rootTaskId=1 visible=true visibleRequested=true mode=fullscreen translucent=false sz=1}
           bounds=[0,0][800,312]
-          * ActivityRecord{ed3b47d u0 dev.nasawa.configlauncher/.MainActivity t186}
+          * ActivityRecord{ed3b47d u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity t186}
         * Task{4f6b632 #7 type=home I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 rootTaskId=1 visible=false visibleRequested=false mode=fullscreen translucent=true sz=2}
           bounds=[0,0][800,312]
           * ActivityRecord{64b8be7 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}
@@ -233,16 +233,16 @@ WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)
     mTopGestureHost=Window{6b2f9f8 u0 StatusBar}
     mRightGestureHost=Window{86cd56b u0 Taskbar}
     mBottomGestureHost=Window{86cd56b u0 Taskbar}
-    mFocusedWindow=Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
-    mTopFullscreenOpaqueWindowState=Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
-    mSystemBarColorApps={ActivityRecord{ed3b47d u0 dev.nasawa.configlauncher/.MainActivity t186}}
-    mNavBarColorWindowCandidate=Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
-    mNavBarBackgroundWindowCandidate=Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
+    mFocusedWindow=Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
+    mTopFullscreenOpaqueWindowState=Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
+    mSystemBarColorApps={ActivityRecord{ed3b47d u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity t186}}
+    mNavBarColorWindowCandidate=Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
+    mNavBarBackgroundWindowCandidate=Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
     mLastStatusBarAppearanceRegions=
       AppearanceRegion{LIGHT_STATUS_BARS bounds=[0,0][800,312]}
     mLastLetterboxDetails=
     mStatusBarBackgroundWindows=
-      Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
+      Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
     mTopIsFullscreen=false
     mImeInsetsConsumed=false
     mForceShowNavigationBarEnabled=false mAllowLockscreenWhenOn=false
@@ -329,7 +329,7 @@ WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)
         InsetsSource id=23900006 type=tappableElement frame=[0,0][0,0] visible=true flags= sideHint=NONE boundingRects=null
         InsetsSource id=23900024 type=systemGestures frame=[770,0][800,312] visible=true flags= sideHint=RIGHT boundingRects=null
     Control map:
-      Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}:
+      Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}:
         InsetsSourceControl: {3 mType=ime mSurfacePosition=Point(0, 72) mInsetsHint=Insets{left=0, top=0, right=0, bottom=0}}
         InsetsSourceControl: {a6540000 mType=statusBars initiallyVisible mSurfacePosition=Point(0, 0) mInsetsHint=Insets{left=0, top=24, right=0, bottom=0}}
         InsetsSourceControl: {23900001 mType=navigationBars initiallyVisible mSurfacePosition=Point(0, 288) mInsetsHint=Insets{left=0, top=0, right=0, bottom=24}}
@@ -365,7 +365,7 @@ WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)
         mIsLeashReadyForDispatching=true mHasPendingPosition=false
         mWindowContainer=Window{86cd56b u0 Taskbar}
         mAdapter=ControlAdapter mCapturedLeash=Surface(name=Surface(name=86cd56b Taskbar)/@0x82931b3 - animation-leash of insets_animation)/@0x6b60168
-        mControlTarget=Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
+        mControlTarget=Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
       ImeInsetsSourceProvider
         mSource=InsetsSource id=3 type=ime frame=[0,0][0,0] visible=false flags= sideHint=NONE boundingRects=null
         mSourceFrame=Rect(0, 1920 - 1080, 1920)
@@ -374,7 +374,7 @@ WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)
         mIsLeashReadyForDispatching=true mHasPendingPosition=false
         mWindowContainer=Window{a112570 u0 InputMethod}
         mAdapter=ControlAdapter mCapturedLeash=Surface(name=Surface(name=a112570 InputMethod)/@0x649d16e - animation-leash of insets_animation)/@0xe5c7981
-        mControlTarget=Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
+        mControlTarget=Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
         mImeShowing=false        showImePostLayout not scheduled, mImeRequester=null
 
       InsetsSourceProvider
@@ -395,7 +395,7 @@ WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)
         mIsLeashReadyForDispatching=true mHasPendingPosition=false
         mWindowContainer=Window{6b2f9f8 u0 StatusBar}
         mAdapter=ControlAdapter mCapturedLeash=Surface(name=Surface(name=6b2f9f8 StatusBar)/@0x7d1763a - animation-leash of insets_animation)/@0x52b3a26
-        mControlTarget=Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
+        mControlTarget=Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
   InsetsPolicy
     status: WINDOW_STATE_SHOWING
     nav: WINDOW_STATE_SHOWING
@@ -414,7 +414,7 @@ WINDOW MANAGER TOKENS (dumpsys window tokens)
   WallpaperWindowToken{726ad1 token=android.os.Binder@b2a5f8}
   WindowToken{9e20443 type=2038 android.os.BinderProxy@c3c8966}
   WindowToken{5245b49 type=2024 android.os.BinderProxy@95cad50}
-  ActivityRecord{ed3b47d u0 dev.nasawa.configlauncher/.MainActivity t186}
+  ActivityRecord{ed3b47d u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity t186}
   ActivityRecord{a4dec6 u0 com.google.android.apps.nexuslauncher/com.android.quickstep.RecentsActivity t116}
 
 WINDOW MANAGER WINDOWS (dumpsys window windows)
@@ -657,9 +657,9 @@ WINDOW MANAGER WINDOWS (dumpsys window windows)
     isVisible=false
     keepClearAreas: restricted=[], unrestricted=[]
     mPrepareSyncSeqId=0
-  Window #7 Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}:
+  Window #7 Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}:
     mDisplayId=0 rootTaskId=1 mSession=Session{908ca59 14795:u0a10209} mClient=android.os.BinderProxy@c4994cc
-    mOwnerUid=10209 showForAllUsers=false package=dev.nasawa.configlauncher appop=NONE
+    mOwnerUid=10209 showForAllUsers=false package=com.anigeek.reflowlauncher appop=NONE
     mAttrs={(0,0)(fillxfill) sim={adjust=pan} layoutInDisplayCutoutMode=always ty=BASE_APPLICATION fmt=TRANSPARENT wanim=0x1030309
       fl=LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR SHOW_WALLPAPER SPLIT_TOUCH DRAWS_SYSTEM_BAR_BACKGROUNDS
       pfl=NO_MOVE_ANIMATION EDGE_TO_EDGE_ENFORCED FORCE_DRAW_STATUS_BAR_BACKGROUND FIT_INSETS_CONTROLLED
@@ -670,7 +670,7 @@ WINDOW MANAGER WINDOWS (dumpsys window windows)
       dvrrWindowFrameRateHint=true}
     Requested w=800 h=312 mLayoutSeq=1701
     mHasSurface=true isReadyForDisplay()=true mWindowRemovalAllowed=false
-    WindowStateAnimator{76c060a dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}:
+    WindowStateAnimator{76c060a com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}:
       Surface: shown=true    mForceSeamlesslyRotate=false seamlesslyRotate: pending=null
     isOnScreen=true
     isVisible=true
@@ -745,9 +745,9 @@ WINDOW MANAGER WINDOWS (dumpsys window windows)
   mGlobalConfiguration={1.0 310mcc260mnc [en_US] ldltr sw312dp w800dp h312dp 160dpi nrml long land finger qwerty/v/v -nav/h winConfig={ mBounds=Rect(0, 0 - 800, 312) mAppBounds=Rect(0, 0 - 800, 312) mMaxBounds=Rect(0, 0 - 800, 312) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} as.5 s.1335 fontWeightAdjustment=0}
   mHasPermanentDpad=false
   mTopFocusedDisplayId=0
-  imeLayeringTarget in display# 0 Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
-  imeInputTarget in display# 0 Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
-  imeControlTarget in display# 0 Window{872b315 u0 dev.nasawa.configlauncher/dev.nasawa.configlauncher.MainActivity}
+  imeLayeringTarget in display# 0 Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
+  imeInputTarget in display# 0 Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
+  imeControlTarget in display# 0 Window{872b315 u0 com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity}
   Minimum task size of display#0 220  mBlurEnabled=true
   mLastDisplayFreezeDuration=0 due to new-config
   mDisableSecureWindows=false
@@ -771,7 +771,7 @@ High Refresh Rate Denylist
 INSTALLED PACKAGES HAVING APP-SPECIFIC CONFIGURATIONS
 Current user ID : 0
 
-    PackageName : dev.nasawa.configlauncher
+    PackageName : com.anigeek.reflowlauncher
         NightMode : null
         Locales : [en_US]
 WINDOW MANAGER CONSTANTS (dumpsys window constants):

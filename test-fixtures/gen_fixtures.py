@@ -50,7 +50,7 @@ add(I,'duplicate-key.json',dump(B).replace(b'"schemaVersion": 1,',b'"schemaVersi
 add(I,'deep-nesting.json',b'{"schemaVersion":1,"pages":'+b'['*100000+b']'*100000+b'}\n','parse error, depth > 16, no StackOverflowError','parser','§15 OQ-9','100k nested arrays')
 add(I,'depth-17.json',m(lambda c:c.__setitem__('x-deep',json.loads('['*16+'1'+']'*16))),'parse error, depth 17 > 16 (#137: cards need 13 levels)','parser','§15 OQ-9','x- keys still count toward depth')
 add(I,'missing-schemaVersion.json',m(lambda c:c.pop('schemaVersion')),'invalid, B2','both','§15 OQ-3','')
-add(I,'newer-schemaVersion.json',m(lambda c:c.__setitem__('schemaVersion',2)),'refused, "needs a newer Config Launcher" banner, never downgrade-written','both','§3 rule 4, §15 OQ-3','')
+add(I,'newer-schemaVersion.json',m(lambda c:c.__setitem__('schemaVersion',2)),'refused, "needs a newer Reflow Launcher" banner, never downgrade-written','both','§3 rule 4, §15 OQ-3','')
 add(I,'schemaVersion-string.json',m(lambda c:c.__setitem__('schemaVersion','1')),'invalid, B2','both','§15 OQ-3','')
 add(I,'missing-pages.json',m(lambda c:c.pop('pages')),'invalid, B2','both','§3','')
 add(I,'zero-pages.json',m(lambda c:c.__setitem__('pages',[])),'invalid, B2','both','schema minItems','')

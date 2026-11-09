@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Install the debug APK, cold-start the launcher 3 times, and fail on a crash or ANR.
 set -euo pipefail
-PKG=dev.nasawa.configlauncher
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/pkg.env"
 mkdir -p smoke
 # Older adb/devices (API < 24) do not propagate exit codes, so check the output text.
 adb install -r app/build/outputs/apk/debug/*.apk | tee smoke/install.txt
@@ -10,7 +11,7 @@ adb logcat -c || true   # API 26 images: "failed to clear the main log"
 : > smoke/am-start.txt   # fresh per run; the loop appends
 for i in 1 2 3; do
   adb shell am force-stop "$PKG"
-  adb shell am start -W -n "$PKG/.MainActivity" | tee -a smoke/am-start.txt
+  adb shell am start -W -n "$PKG/$NS.MainActivity" | tee -a smoke/am-start.txt
   sleep 5
 done
 adb logcat -d > smoke/logcat.txt

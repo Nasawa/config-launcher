@@ -204,7 +204,7 @@
   },
   {
     "file": "invalid/newer-schemaVersion.json",
-    "expect": "refused, \"needs a newer Config Launcher\" banner, never downgrade-written",
+    "expect": "refused, \"needs a newer Reflow Launcher\" banner, never downgrade-written",
     "layer": "both",
     "ref": "§3 rule 4, §15 OQ-3",
     "note": ""
