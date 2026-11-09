@@ -22,6 +22,7 @@ object SchemaCopy {
         "40a72b35f54f47c11e7ff6ae57466257ab2093b28f229e72578249581f3969eb",   // #79 elements container
         "f5f2eb264a2d77fed49f2102482272674df7733ce31874d6d83c5656a274fc79",   // #79 title bar (level 2)
         "c6fbbaad19f2527d1f40069432e8b26c9e5d3850a564e6ee0358f40cb3fe0e7f",   // #137 card (level 4)
+        "669d1197b6a860ebc7ed07c3b3f199804ceac68fc23a709452bf5dedb8bbe725",   // #242 Reflow Launcher $id / title
     )
 
     enum class Outcome { WROTE, UPDATED, UP_TO_DATE, USER_CHANGED, FAILED }

@@ -18,7 +18,7 @@ import json, os, re, sys
 import xml.etree.ElementTree as ET
 import math
 
-PKG = 'dev.nasawa.configlauncher'
+from pkg import PKG, PKG_TAIL  # noqa: E402  # single source (#242)
 CLOCK_RE = re.compile(r'^\d{1,2}:\d{2}( ?[AaPp]\.?[Mm]\.?)?$')
 HEADER_TEXTS = {'App storage', 'Apps', 'Done', '⋮', 'Config folder'}
 
@@ -818,7 +818,7 @@ def run_checks(d):
             # Some images expose the clock without package; prefer y≈status-bar band.
             clocks = [n for n in h1 if n.b[3] <= max(80, int((H or 0) * 0.06) or 80)
                       and CLOCK_RE.match((n.text or '').strip())
-                      and 'configlauncher' not in (n.pkg or '')]
+                      and PKG_TAIL not in (n.pkg or '')]
         if clocks and (W or 0) > 0:
             c = clocks[0]
             sb_rtl = c.cx > (W / 2)
@@ -864,7 +864,7 @@ def run_checks(d):
     crash = read(os.path.join(d, 'crash.txt'))
     ours = [l for l in crash.splitlines() if 'FATAL EXCEPTION' in l or ('ANR in ' + PKG) in l or (PKG in l and 'Process:' in l)]
     anr = read(os.path.join(d, 'anr.txt'))
-    our_anr = [l for l in anr.splitlines() if 'Config Launcher' in l]
+    our_anr = [l for l in anr.splitlines() if 'Reflow Launcher' in l or 'Config Launcher' in l]
     start = read(os.path.join(d, 'start.txt'))
     start_timeout = 'Status: timeout' in start and (PKG + '/.MainActivity') in start.replace('\r', '')
     started = ('Status: ok' in start or 'TotalTime' in start or not start or start_timeout)

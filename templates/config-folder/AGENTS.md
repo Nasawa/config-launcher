@@ -1,8 +1,8 @@
-# Agent instructions: Config Launcher layout
+# Agent instructions: Reflow Launcher layout
 
-This folder holds `launcher.json`, the home screen of an Android phone running **Config Launcher**. The phone reads this file and writes it back when the user rearranges icons. You can edit it; the phone picks up valid changes within seconds of syncing.
+This folder holds `launcher.json`, the home screen of an Android phone running **Reflow Launcher**. The phone reads this file and writes it back when the user rearranges icons. You can edit it; the phone picks up valid changes within seconds of syncing.
 
-Schema: https://github.com/Nasawa/config-launcher/blob/main/schema/launcher-config.v1.schema.json (a local copy may exist at `.configlauncher/launcher-config.v1.schema.json`). Full guide: https://github.com/Nasawa/config-launcher#editing-launcherjson-for-agents-and-humans
+Schema `$id`: https://reflowlauncher.com/schema/launcher-config.v1.schema.json (a local copy may exist at `.configlauncher/launcher-config.v1.schema.json`; the old GitHub `$schema` URL is still accepted). Full guide: https://github.com/Nasawa/config-launcher#editing-launcherjson-for-agents-and-humans
 
 ## Before you edit
 1. If this folder is a git repo: `git pull --rebase` first. The phone commits its own edits.

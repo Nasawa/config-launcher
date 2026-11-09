@@ -19,6 +19,7 @@ object AgentDocs {
     val SHIPPED_SHA256 = setOf(
         "dc97f433e35682619150d2690ec1ed72262433f0b7af5f0eb20730143ef46929",   // #76 / PR #84
         "10f163955998882c875b7d77823527dfe05f38ea57a60efaca2012f2170582ce",   // #79 status.json warnings (PR #112)
+        "d910994c95c3f3fb0429036095352b1bceaddfc86ad47100db3a38df810ec86d",   // #242 Reflow Launcher rename
     )
 
     enum class Outcome { WROTE, UPDATED, UP_TO_DATE, USER_CHANGED, USER_DELETED, OFF, FAILED }

@@ -1,4 +1,6 @@
-# Config Launcher: architecture
+# Reflow Launcher: architecture
+
+Formerly **config-launcher**. Kotlin packages and the `.configlauncher/` folder name stay as they are; `applicationId` is `com.anigeek.reflowlauncher`.
 
 Status: proposal for review, 2026-10-18. Author: Archimedes (architecture). Builds on [docs/research-spike.md](docs/research-spike.md) and departs from it where noted (**Departs from spike**).
 
@@ -145,12 +147,12 @@ Principle: **the home screen always works**; errors never blank it.
 - **Folder access lost / folder missing:** banner "Can't reach your config folder" → Reconnect (re-pick) / Use built-in copy.
 - **Save failed:** banner "Couldn't save your change" → Retry; the edit is kept in memory and last-good.
 - **Merge notices:** a snackbar for discarded ops, with Undo.
-- **Newer schema:** banner "This file needs a newer Config Launcher".
+- **Newer schema:** banner "This file needs a newer Reflow Launcher".
 - **Missing apps:** greyed icon with a small badge; tap shows "Not installed" with "Remove from layout" (explicit write) or "Open store page" (later).
 - An `errors.json` mirror in the folder (`.configlauncher/status.json` with the last load result: ok/errors list/hash/time) so an agent can read why its edit was rejected without the phone in hand. This is cheap and important for the machine-assisted loop.
 
 ## 10. Module and package layout
-Single Gradle module **`:app`**, `applicationId` and `namespace` **`dev.nasawa.configlauncher`**. Subpackages:
+Single Gradle module **`:app`**, `applicationId` **`com.anigeek.reflowlauncher`**, `namespace` **`dev.nasawa.configlauncher`** (unchanged). Subpackages:
 
 | Package | Contents | Android deps? |
 |---|---|---|
@@ -429,7 +431,7 @@ Christopher clarified that the old devices are for testing only, not targets. mi
 - **Dynamic widgets / AI dashboard (draft):** [docs/design/dynamic-widgets.md](docs/design/dynamic-widgets.md). Reframe: home screen as an AI-assisted dashboard. Kind (a) hosted AppWidgets; kind (b) declarative `card` elements the launcher renders (no scripts), with per-widget capabilities, device-local consent, local `widgets-data` files, and a later opt-in `net.fetch` (FEATURE_LEVEL 6) that would add INTERNET narrowly. Supersedes the research doc's "first-party text/clock only" and revises HA Q-C5 toward agent-written JSON (+ companion AppWidgets). Pragma UX: docs/ux.md §17 (#116). Open questions for Christopher/Claw marked in the design doc.
 
 ## 20. Agent onboarding (#76)
-Docs side done: [`templates/config-folder/AGENTS.md`](templates/config-folder/AGENTS.md) (the guidance that travels with `launcher.json`), [`skills/config-launcher/SKILL.md`](skills/config-launcher/SKILL.md), a contributor [`AGENTS.md`](AGENTS.md), and README "Canonical details" and "Agent kit" sections closing #76's four gaps. No MCP server, by design: the file is the API (#76 point 4, agreed).
+Docs side done: [`templates/config-folder/AGENTS.md`](templates/config-folder/AGENTS.md) (the guidance that travels with `launcher.json`), [`skills/reflow-launcher/SKILL.md`](skills/reflow-launcher/SKILL.md), a contributor [`AGENTS.md`](AGENTS.md), and README "Canonical details" and "Agent kit" sections closing #76's four gaps. No MCP server, by design: the file is the API (#76 point 4, agreed).
 
 **Specified for Sprite (not implemented):**
 1. **Write `AGENTS.md` into the folder** once, when a folder is chosen or connected, if the setting *Add agent instructions to folder* is on (default on; mentioned on the first-run folder step). Content = the template above, bundled as an asset.

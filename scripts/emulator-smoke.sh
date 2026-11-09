@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Install the debug APK, cold-start the launcher 3 times, and fail on a crash or ANR.
 set -euo pipefail
-PKG=dev.nasawa.configlauncher
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/pkg.env"
 mkdir -p smoke
 # Older adb/devices (API < 24) do not propagate exit codes, so check the output text.
 adb install -r app/build/outputs/apk/debug/*.apk | tee smoke/install.txt

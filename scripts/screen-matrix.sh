@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/pkg.env"
 # Pre-release screen matrix (docs/test-plan-screen-matrix.md).
 # Drives one booted emulator through the matrix points in scripts/screen-matrix/points.tsv: for each point it sets
 # the display size/density, font scale, night mode and rotation with adb, seeds the fixture layout (debug APK, run-as),
@@ -16,7 +18,6 @@
 # Exit: 0 when every point PASSes, 1 otherwise. Artifacts: <out>/<point>/ and <out>/summary.md.
 set -uo pipefail
 
-PKG=dev.nasawa.configlauncher
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 FIX=$HERE/screen-matrix

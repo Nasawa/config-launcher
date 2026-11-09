@@ -1,4 +1,4 @@
-# Test plan: config-launcher
+# Test plan: reflow-launcher (formerly config-launcher)
 
 Sources: [`ARCHITECTURE.md`](../ARCHITECTURE.md) (cited as **A§n**; resolved questions as **A§15 OQ-n**, **A§16 AQ-n**, **A§17 Qn** and **A§18.n**), [`schema/launcher-config.v1.schema.json`](../schema/launcher-config.v1.schema.json), [`docs/ux.md`](ux.md) (banners B1-B8, **UX§n**), and [`docs/research-spike.md`](research-spike.md) (**spike §n**). Later sections override earlier ones: A§18 > A§17 > A§15/§16. **v3** (this revision) replaces Q1-Q16 of v2 with the A§17 rulings and adds the A§18 changes: **minSdk 29** (coordinator ruling of 2026-10-18 15:27 MDT, now in A§18.3 via #32; A§18.6 resolves the v3 questions), automatic merge, Skip for now, the keyboard-up drawer, the label backdrop, the device matrix and performance budgets. Each case cites its ruling. The questions still open are listed at the end.
 
@@ -14,7 +14,7 @@ Fixtures are real files in [`test-fixtures/configs/`](../test-fixtures/configs/)
 | SV-2 | Conformance (A§17 Q2), in `KotlinOnlyConformanceTest` and `check_schema.py`. | Both validators accept everything in `valid/`. Kotlin rejects everything the schema rejects (`both`). Each fixture tagged with a Kotlin-only rule in `manifest.json` (`kotlinOnly`: duplicate-ids, overlapping-cells, cell-outside-grid, item-total, duplicate-keys, parser-depth, byte-cap, nul-or-encoding) **must be accepted by the schema**, so the list stays honest, and must be rejected by Kotlin. | U | A§17 Q2 |
 | SV-3 | `widget`, `text`, `intent` item types. | Rejected, B2, last-good kept. No v1 type is ever silently dropped. | U | A§15 OQ-1 |
 | SV-4 | Grid out of 2-12, cell outside the grid, overlapping cells, non-integer x. | Errors that are never clamped: the whole file is rejected with B2 listing each problem. | U | A§15 OQ-2, AQ-3 |
-| SV-5 | `schemaVersion` missing, `"1"`, or `2`. | Missing or a string: invalid. 2: refused with the banner "This file needs a newer Config Launcher" and never downgrade-written. | U, R | A§3 rule 4, A§15 OQ-3 |
+| SV-5 | `schemaVersion` missing, `"1"`, or `2`. | Missing or a string: invalid. 2: refused with the banner "This file needs a newer Reflow Launcher" and never downgrade-written. | U, R | A§3 rule 4, A§15 OQ-3 |
 | SV-6 | Migration (once v2 exists): load a v1 file. | Migrated in memory, with no write until a user edit or "Upgrade file". Then a backup goes to `.configlauncher/backup/launcher.v1.<ts>.json` first, `x-` keys and IDs are unchanged, and there are golden-file tests per step. | U, S | A§3 rules 2-5 |
 | SV-7 | `x-` keys at the root, on a page, and on an item (`valid/x-keys.json`), then make an edit. | Preserved verbatim, written after the known keys. Any other unknown key, typos included, is B2. | U | A§15 OQ-4 |
 | SV-8 | Duplicate `id` anywhere; same app in the dock and on a page; same app twice on one page. | Duplicate id: error. Dock plus page: valid. Twice on one page or in one folder: warning only. | U | A§15 OQ-5 |
@@ -75,7 +75,7 @@ Principle: nothing in the file ever builds an Intent. The launcher only launches
 | `invalid/deep-nesting.json` | parse error, depth > 8, no StackOverflowError | kotlin-only (parser-depth) | §15 OQ-9 |
 | `invalid/depth-9.json` | parse error, depth 9 > 8 | kotlin-only (parser-depth) | §15 OQ-9 |
 | `invalid/missing-schemaVersion.json` | invalid, B2 | both | §15 OQ-3 |
-| `invalid/newer-schemaVersion.json` | refused, "needs a newer Config Launcher" banner, never downgrade-written | both | §3 rule 4, §15 OQ-3 |
+| `invalid/newer-schemaVersion.json` | refused, "needs a newer Reflow Launcher" banner, never downgrade-written | both | §3 rule 4, §15 OQ-3 |
 | `invalid/schemaVersion-string.json` | invalid, B2 | both | §15 OQ-3 |
 | `invalid/missing-pages.json` | invalid, B2 | both | §3 |
 | `invalid/zero-pages.json` | invalid, B2 | both | schema minItems |
@@ -360,7 +360,7 @@ Implemented as `.github/workflows/emulator-smoke.yml` (PR #23): nightly, on dema
 ### 15.3 Performance budgets and how to measure them
 | ID | Budget | Device | Method | Pass |
 |---|---|---|---|---|
-| PF-2 | Cold start to first frame < 500 ms with a 300-item config (A§11) | A53 | `adb shell am force-stop dev.nasawa.configlauncher`, then `adb shell am start -W -n dev.nasawa.configlauncher/.MainActivity` and read `TotalTime`. 10 runs after one warm-up. Cross-check with Macrobenchmark `StartupTimingMetric` (`timeToInitialDisplayMs`), R8-minified release build with a baseline profile. | Median < 500 ms |
+| PF-2 | Cold start to first frame < 500 ms with a 300-item config (A§11) | A53 | `adb shell am force-stop com.anigeek.reflowlauncher`, then `adb shell am start -W -n com.anigeek.reflowlauncher/.MainActivity` and read `TotalTime`. 10 runs after one warm-up. Cross-check with Macrobenchmark `StartupTimingMetric` (`timeToInitialDisplayMs`), R8-minified release build with a baseline profile. | Median < 500 ms |
 | PF-5 | Poll cost and battery | A53 | See LR-7 | ≤ 5 ms per poll, < 1%/h |
 
 ## 16. Manual QA matrix, for later

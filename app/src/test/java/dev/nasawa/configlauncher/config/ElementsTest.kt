@@ -33,7 +33,7 @@ class ElementsTest {
     @Test fun unknownElementIsSkippedWithWarningAndKeptVerbatim() {
         val c = ok(doc())
         assertTrue(Elements.shown(c).isEmpty())
-        assertEquals(listOf("elements[0]: type \"appWidget\" isn't supported by this Config Launcher, so it was skipped. It stays in the file."), Elements.warnings(c))
+        assertEquals(listOf("elements[0]: type \"appWidget\" isn't supported by this Reflow Launcher, so it was skipped. It stays in the file."), Elements.warnings(c))
         val out = ConfigCodec.encode(c)
         // Verbatim: unknown keys, x- keys and nested values survive a phone write.
         val back = Json.parseToJsonElement(out).jsonObject["elements"]!!.jsonArray.single().jsonObject
@@ -43,7 +43,7 @@ class ElementsTest {
 
     @Test fun requiresAboveFeatureLevelIsSkippedBeforeStrictChecks() {
         val c = ok(doc("""[{"id":"t-x","type":"titleBar","requires":5,"anchor":"top","whatever":true}]"""))
-        assertEquals(listOf("elements[0] needs feature level 5, but this Config Launcher supports up to 4, so it was skipped. It stays in the file. Update the app to show it."), Elements.warnings(c))
+        assertEquals(listOf("elements[0] needs feature level 5, but this Reflow Launcher supports up to 4, so it was skipped. It stays in the file. Update the app to show it."), Elements.warnings(c))
     }
 
     @Test fun overrideForMissingElementIsAWarning() {

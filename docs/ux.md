@@ -1,4 +1,4 @@
-# Config Launcher — UX spec (P1, MVP)
+# Reflow Launcher — UX spec (P1, MVP)
 
 Owner: Pragma (UX) · Builds from it: Sprite · Sources: [`ARCHITECTURE.md`](../ARCHITECTURE.md) (wins for behaviour),
 [`schema/launcher-config.v1.schema.json`](../schema/launcher-config.v1.schema.json) and `docs/research-spike.md`.
@@ -636,7 +636,7 @@ apps in the drawer.
 | **B5** | Save failed (§4.3) | `Couldn't save your change.` | `Retry` |
 | **B5** (size) | The serialized layout would be over 2 MiB, so the writer refuses (§17 Q16). The edit stays on screen, in memory | `Couldn't save your change: launcher.json would be over 2 MB.` | `Retry` (after removing items or `x-` data) |
 | **B6** | Conflict (§4.4), only with `Ask before merging` on or when the merged result fails validation | `launcher.json changed while you were editing.` With more than one pending edit: `launcher.json changed while you were editing (2 changes).` | `Use file` · `Keep mine` (only `Use file` if the replayed result fails validation). Edits made while B6 is up join the queue and stay on screen (§17 Q8) |
-| **B7** | `schemaVersion` newer than supported | `This file needs a newer Config Launcher.` | `Details` |
+| **B7** | `schemaVersion` newer than supported | `This file needs a newer Reflow Launcher.` | `Details` |
 | **B8** (notice, lowest priority: shown only when no B1–B6 banner is up, and below them) | `schemaVersion` older: migrated in memory, not yet written | `launcher.json uses an older format (v{N}). It will be upgraded on your next change.` | `Upgrade now` (saves the original to `.configlauncher/backup/launcher.v{N}.{timestamp}.json`, then writes through the normal path with the hash check and B6) · `✕` (dismissed for that file hash; it returns only for a different older-format file. The next edit still upgrades, with a backup) |
 | — (notice) | Sync conflict copies next to the file (§5) | `Sync conflict copies found: <names>. Only launcher.json is used.` | `×` |
 | **B9** (later, §17.4; notice, lowest priority like B8) | A reload raised the number of dashboard widgets waiting for approval | `2 widgets need your OK.` (`1 widget needs your OK.`) | `Review` · `×` (collapses to the count chip) |
@@ -688,7 +688,7 @@ Full-screen page, opened from `Details`.
 | Dock position | `dock[1] must not have x or y.` |
 | Type | `pages[0].items[0].type "widget" isn't supported yet. Use app, shortcut or folder.` |
 | Missing | `pages[0].items[4] needs an "id".` |
-| Schema version (B7) | `This file uses schemaVersion 2, but this Config Launcher understands up to 1. Update the app.` |
+| Schema version (B7) | `This file uses schemaVersion 2, but this Reflow Launcher understands up to 1. Update the app.` |
 | Missing version | `"schemaVersion" is required.` |
 
 ---
@@ -699,11 +699,11 @@ Shown on first launch, before the home screen. Each step is one full screen with
 
 1. **Welcome**
    - Title: `Your home screen, as a file`
-   - Body: `Config Launcher keeps your whole layout in one file, launcher.json. Change it here or in any editor, and both stay in sync.`
+   - Body: `Reflow Launcher keeps your whole layout in one file, launcher.json. Change it here or in any editor, and both stay in sync.`
    - Button: `Get started`
 2. **Pick a folder**
    - Title: `Choose your config folder`
-   - Body: `Pick a folder for launcher.json. A folder that a sync app (like Syncthing) or a git app keeps in sync lets you edit it from your computer, with history. Config Launcher also keeps a small .configlauncher folder there for status and backups.`
+   - Body: `Pick a folder for launcher.json. A folder that a sync app (like Syncthing) or a git app keeps in sync lets you edit it from your computer, with history. Reflow Launcher also keeps a small .configlauncher folder there for status and backups.`
    - Button: `Choose folder` → system picker (`ACTION_OPEN_DOCUMENT_TREE`). Take a persistable read+write grant.
    - Secondary text button under it: `Skip for now` (Q-C1). See **Skip for now** below.
    - Line under the body (folder mode only): `It also adds AGENTS.md, a short guide for AI agents that edit your layout. You can turn this off in Settings.` (§7.1)
@@ -717,7 +717,7 @@ Shown on first launch, before the home screen. Each step is one full screen with
    - Shown under all three: `When you edit on your phone, launcher.json is rewritten in a standard format. Comments aren't supported; use "x-note" keys for notes.`
 4. **Make it your home app**
    - Title: `Set as home app`
-   - Body: `To use Config Launcher when you press Home, set it as your default home app. Shortcuts only work once it's your home app.`
+   - Body: `To use Reflow Launcher when you press Home, set it as your default home app. Shortcuts only work once it's your home app.`
    - Button: `Set as home app` → `RoleManager.createRequestRoleIntent(ROLE_HOME)`. Secondary: `Not now`.
    - If declined: the app still works as a normal app, minus shortcuts, which show dimmed with `Set as Home to use shortcuts`. Settings shows `Not your home app` with a `Set as home app` button.
 5. Land on the home screen. One-time hint chip: `Long-press empty space to edit your layout.` (dismiss ×, never shown again).
@@ -939,7 +939,7 @@ that reads it. There's no phone-side Settings row for it in this release.
 - **Phone:** a non-string value (`"theme": 1`) is a normal validation error (B2, last good layout kept) with the same
   message. An **unknown string** (`"dynamic"`, a typo) does **not** reject the file: home follows the system setting,
   and `status.json` gets the warning `warn_theme_value` (Warnings list too, no banner or snackbar):
-  `theme "dynamic" isn't supported by this Config Launcher, so home follows the system setting. Update the app, or
+  `theme "dynamic" isn't supported by this Reflow Launcher, so home follows the system setting. Update the app, or
   check for a typo.`
 - **Caveat:** builds from before `theme` existed have strict root keys, so they reject a file that has it (B2). That's
   acceptable pre-release.
@@ -1199,8 +1199,8 @@ Showing the last working layout.`). Warnings never raise a banner.
 | Too many tokens | Error | `elements[0].content.slots.center has 9 tokens; the maximum is 8.` |
 | Template too long | Error | `elements[0].content.slots.center is 130 characters; the maximum is 120.` |
 | Second title bar | Error | `elements[1]: only one titleBar is allowed (elements[0] is already one).` |
-| Unknown element type | Warning | `elements[2]: type "appWidget" isn't supported by this Config Launcher, so it was skipped. It stays in the file.` |
-| `requires` too high | Warning | `elements[2] needs feature level 3, but this Config Launcher supports up to 2, so it was skipped. It stays in the file. Update the app to show it.` |
+| Unknown element type | Warning | `elements[2]: type "appWidget" isn't supported by this Reflow Launcher, so it was skipped. It stays in the file.` |
+| `requires` too high | Warning | `elements[2] needs feature level 3, but this Reflow Launcher supports up to 2, so it was skipped. It stays in the file. Update the app to show it.` |
 | Override for a missing element | Warning | `pages[1].overrides: "t-clock" doesn't match any element, so it was ignored.` |
 | Pattern on a token that has none | Error | `elements[0].content.slots.center: {page:x} doesn't take a pattern. Only {time} and {date} do.` |
 | Empty pattern | Error | `elements[0].content.slots.end: {time:} has an empty pattern. Write {time} for the default format.` |
@@ -1243,9 +1243,9 @@ Resources (character positions are 1-based, like line and column):
 <string name="err_pattern_run">%1$s: %2$s is too long. Use at most %3$d, like %4$s.</string>
 <string name="err_pattern_quote">%1$s: A \' quote isn\'t closed. Add a closing \' after the text.</string>
 <!-- code, not strings.xml (status.json) -->
-<string name="warn_element_type">%1$s: type \"%2$s\" isn\'t supported by this Config Launcher, so it was skipped. It stays in the file.</string>
+<string name="warn_element_type">%1$s: type \"%2$s\" isn\'t supported by this Reflow Launcher, so it was skipped. It stays in the file.</string>
 <!-- code, not strings.xml (status.json) -->
-<string name="warn_element_level">%1$s needs feature level %2$d, but this Config Launcher supports up to %3$d, so it was skipped. It stays in the file. Update the app to show it.</string>
+<string name="warn_element_level">%1$s needs feature level %2$d, but this Reflow Launcher supports up to %3$d, so it was skipped. It stays in the file. Update the app to show it.</string>
 <!-- code, not strings.xml (status.json) -->
 <string name="warn_override_missing">%1$s: \"%2$s\" doesn\'t match any element, so it was ignored.</string>
 <!-- code, not strings.xml (status.json) -->
@@ -1292,7 +1292,7 @@ Resources (character positions are 1-based, like line and column):
 <!-- code, not strings.xml (status.json): %4$s of warn_titlebar_fit_size, step 4 when step 3 was skipped (numeric or small size) -->
 <string name="fit_step_cut_only">slot text was cut off with …</string>
 <!-- code, not strings.xml (status.json): phone warning for an unknown theme string; %1$s = the value as written -->
-<string name="warn_theme_value">theme \"%1$s\" isn\'t supported by this Config Launcher, so home follows the system setting. Update the app, or check for a typo.</string>
+<string name="warn_theme_value">theme \"%1$s\" isn\'t supported by this Reflow Launcher, so home follows the system setting. Update the app, or check for a typo.</string>
 <string name="warnings_copied">Warnings copied.</string>
 <string name="warnings_copy_done">Copied</string>
 <string name="titlebar_custom">Custom (set in the file)</string>
@@ -1376,7 +1376,7 @@ with cell reservation → `appWidget` host → first-party `text`/`clock`.
 - **Work profile:** after personal widgets, a section `Work` with the work badge on each row. Shown only when
   **Include work apps in config** is on; otherwise the section is hidden (widgets write a `profile: "work"` entry, same
   gate as placing work apps).
-- **First-party (Stage 4):** a leading group `Config Launcher` with `Text` and `Clock` (no preview image; a simple
+- **First-party (Stage 4):** a leading group `Reflow Launcher` with `Text` and `Clock` (no preview image; a simple
   mock). They add a `text` / `clock` element, not an AppWidget.
 - Tap a provider → place at the first free rectangle that fits the provider's default cells on the current page, else
   the next page, else a new page (max 20). Then enter edit mode with the new widget selected for resize. One write.
@@ -1404,7 +1404,7 @@ when `bindAppWidgetIdIfAllowed` returned false. Skipped when: the launcher alrea
 or the user has dismissed this explanation for that package.
 
 - Title: `Allow this widget?`
-- Body: `Android will ask you to let Config Launcher create a <App> widget. Your layout file only names the widget; the
+- Body: `Android will ask you to let Reflow Launcher create a <App> widget. Your layout file only names the widget; the
   phone still needs your OK, once per app.`
 - Buttons: `Continue` (primary) · `Not now` (stays on the placeholder, `Tap to allow`).
 - After Continue, the system dialog runs. Cancel → placeholder `Tap to allow`, `deleteAppWidgetId`. Allow → if a
@@ -1431,7 +1431,7 @@ Warnings section and `status.json` carry the path message (same style as §15.1)
 `elements[3]: size 1×1 is below the provider's minimum 2×1. Shown at 1×1 anyway.` No auto-resize, no banner.
 
 ### 16.6 Text and clock in the picker (Q-W6)
-- Appear under `Config Launcher` in the picker (§16.1). Defaults: `text` → `{page}` at 2×1; `clock` → `{time}` at 2×1.
+- Appear under `Reflow Launcher` in the picker (§16.1). Defaults: `text` → `{page}` at 2×1; `clock` → `{time}` at 2×1.
   Templates use the title-bar token grammar.
 - **Phone styling (preset-only, like the title bar):** size `small`/`medium`/`large`, colour `light`/`dark`, backdrop
   `auto`/`none`/`scrim`. Anything else (custom hex, weight, padding, raw templates beyond the three shorthands) shows
@@ -1516,7 +1516,7 @@ These rules apply to every **grid-placed** element (`page`, `x`, `y`, `w`, `h`):
 | Element | Long-press sheet | TalkBack custom actions |
 |---|---|---|
 | `card`, live | `Permissions`, `Edit layout`, `Remove from home` | `Permissions`, `Resize…`, `Move to…`, `Remove from home` (§17.7) |
-| `card`, consent tile (any §17.3 state, incl. `Turned off` and `Update Config Launcher to show this`) | `Review`, `Edit layout`, `Remove from home` | `Review`, `Move to…`, `Remove from home` (§17.7) |
+| `card`, consent tile (any §17.3 state, incl. `Turned off` and `Update Reflow Launcher to show this`) | `Review`, `Edit layout`, `Remove from home` | `Review`, `Move to…`, `Remove from home` (§17.7) |
 | `appWidget`, live or any §16.2 placeholder | `Edit layout`, `Reconfigure` (when reconfigurable), `App info` (when installed), `Remove from home` | `Resize…`, `Move to…`, `Remove from home` (§16.4) |
 | `text` / `clock` (Stage 4) | `Edit layout`, `Remove from home` | `Resize…`, `Move to…`, `Remove from home` |
 | `titleBar` | None (anchored, not on the grid) | None |
@@ -1556,7 +1556,7 @@ element, `elements[]`, `requires`/feature level, `style`, skip-and-keep, Stage 1
 **v1 capability kinds (closed list, Q-A1, #117):** `data.file` and `ui.reload` (Show), `ui.openApp` and `ui.openUrl` (Open), `net.fetch`
 (Internet, feature level 6). Phone data and Act tiers have **no kinds in v1**. Their UX below is kept ready for later.
 Never-offered kinds aren't in the schema at all. On the phone, an unknown `kind` **skips only that element** (skip-and-keep,
-cells kept, consent tile `Update Config Launcher to show this`, §17.3). It doesn't B2-reject the whole file. `validate.py`/CI
+cells kept, consent tile `Update Reflow Launcher to show this`, §17.3). It doesn't B2-reject the whole file. `validate.py`/CI
 at the current feature level may still flag it as an error so agents catch typos ([#116 follow-up](https://github.com/Nasawa/config-launcher/pull/116) and [#117](https://github.com/Nasawa/config-launcher/pull/117)).
 
 Assumptions A1–A5, all **✅ resolved** in the [#116 comment](https://github.com/Nasawa/config-launcher/pull/116#issuecomment-6270653131):
@@ -1693,14 +1693,14 @@ the §16.2 placeholder so every non-live widget looks like the same family:
 | Asks for more than a non-empty ceiling (including silent lines recorded while it was live) | `Needs your OK again` | Broadened prompt |
 | User chose `Keep off` on a prompt | Unchanged (`Needs your OK` / `Needs your OK again`) | Prompt again |
 | User revoked it | `Turned off` | Same |
-| Above this launcher's feature level (`requires`, e.g. `net.fetch` at 6 on a level-5 phone) | `Update Config Launcher to show this` | Hint sheet. Same skip-and-keep rule as §15, but it **keeps its cells and shows the tile**, because a dashboard card going missing looks broken |
-| Declares a capability `kind` this launcher doesn't know (a newer kind that's missing its `requires` bump, a typo, or a never-offered kind) | `Update Config Launcher to show this` | Same hint sheet and skip-and-keep: cells kept, the element stays in the file, and nothing is rendered or granted. The `status.json` warning names the kind (below), so a typo is visible to the agent even though the phone's copy suggests an update. No prompt, no B2 |
+| Above this launcher's feature level (`requires`, e.g. `net.fetch` at 6 on a level-5 phone) | `Update Reflow Launcher to show this` | Hint sheet. Same skip-and-keep rule as §15, but it **keeps its cells and shows the tile**, because a dashboard card going missing looks broken |
+| Declares a capability `kind` this launcher doesn't know (a newer kind that's missing its `requires` bump, a typo, or a never-offered kind) | `Update Reflow Launcher to show this` | Same hint sheet and skip-and-keep: cells kept, the element stays in the file, and nothing is rendered or granted. The `status.json` warning names the kind (below), so a typo is visible to the agent even though the phone's copy suggests an update. No prompt, no B2 |
 | Data file missing or unreadable on first load | *(live; values show `—`, `as of` gets ▲, §17.9)* | — |
 
 Warnings for the two skip rows (Warnings section + `status.json`, §15.1 style; the `consent` map shows no `state` for a
 skipped element):
 - `requires` too high: the existing §15.1 `warn_element_level` text.
-- Unknown kind: `elements[4]: capability kind "phone.calendar" isn't supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo.`
+- Unknown kind: `elements[4]: capability kind "phone.calendar" isn't supported by this Reflow Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo.`
 (`warn_capability_kind`, §17.13.)
 
 Long-press: the item sheet with the title, `Widget · from launcher.json`, then `Review`, `Edit layout`,
@@ -2078,8 +2078,8 @@ builds S3-C from it.
 | `tile_needs_ok` | `Needs your OK` | — | R · S3 | Consent tile reason (new widget) |
 | `tile_needs_ok_again` | `Needs your OK again` | — | R · S3 | Consent tile reason (broadened) |
 | `tile_off` | `Turned off` | — | R · S3 | Consent tile reason (user turned it off) |
-| `tile_update` | `Update Config Launcher to show this` | — | R · S3 | Tile reason: `requires` too high or unknown kind |
-| `tile_update_hint` | `This widget needs a newer Config Launcher. It stays in your layout file.` | — | R · S3 | Hint sheet from the tile above |
+| `tile_update` | `Update Reflow Launcher to show this` | — | R · S3 | Tile reason: `requires` too high or unknown kind |
+| `tile_update_hint` | `This widget needs a newer Reflow Launcher. It stays in your layout file.` | — | R · S3 | Hint sheet from the tile above |
 | `tile_a11y` | `%1$s, widget, %2$s. Double-tap to review.` | 1 = name (title, or the element id, §17.2), 2 = reason in lower case (e.g. `needs your OK`) | A · S3 | Consent tile node |
 | `widget_sheet_source_file` | `Widget · from launcher.json` | — | R · S3 | Long-press item sheet subtitle |
 | `widget_action_review` | `Review` | — | R · S3 | Item sheet action and tile custom action (consent tile) |
@@ -2150,7 +2150,7 @@ builds S3-C from it.
 | `cap_net` | `Connect to %1$s` | 1 = origin list; https origins without `https://` and `:443`, http in full | R · S5 | `net.fetch` |
 | `cap_http_note` | `The connection to %1$s isn't private. Others on your network could see or change it. Only allow this if you trust this network. You're choosing a less secure connection.` | 1 = `http://host[:port]` | R · S5 | Under each `http://` origin in `cap_net` (Q-C3/Q-C7) |
 | `cap_private_note` | `%1$s is on your local network. Only allow this if you know what it is and trust it. You're responsible for this choice.` | 1 = origin | R · S5 | Under a private-IP / local origin (Q-C3) |
-| `cap_tofu_note` | `%1$s uses a certificate Android doesn't trust. Config Launcher will remember this certificate and ask again if it ever changes. Only allow this if you trust this server.` | 1 = origin | R · S5 | Under a self-signed origin (Q-C7 TOFU, pin on approve) |
+| `cap_tofu_note` | `%1$s uses a certificate Android doesn't trust. Reflow Launcher will remember this certificate and ask again if it ever changes. Only allow this if you trust this server.` | 1 = origin | R · S5 | Under a self-signed origin (Q-C7 TOFU, pin on approve) |
 | `tofu_changed_title` | `Certificate changed for %1$s` | 1 = origin | R · S5 | Re-pin prompt title (fetch is paused until answered) |
 | `tofu_changed_body` | `This can be normal, like a renewed certificate, or someone could be intercepting the connection. Only trust it if you expected this change.` | — | R · S5 | Re-pin prompt body |
 | `tofu_trust` / `tofu_keep_off` | `Trust new certificate` / `Keep off` | — | R · S5 | Re-pin prompt buttons |
@@ -2227,7 +2227,7 @@ to expand. Each http entry stays in full and gets its own note line under the li
 | `warn_consent_pending` | `%1$s: widget "%2$s" is waiting for approval on this phone. It isn't shown until then.` | 1 = path, 2 = name (title, or the element id) | S3 |
 | `warn_consent_again` | `%1$s: widget "%2$s" asks for more access and is waiting for approval on this phone. It isn't shown until then.` | same | S3 |
 | `warn_consent_off` | `%1$s: widget "%2$s" is turned off on this phone.` | same | S3 |
-| `warn_capability_kind` | `%1$s: capability kind "%2$s" isn't supported by this Config Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo.` | 1 = path, 2 = kind | S3 |
+| `warn_capability_kind` | `%1$s: capability kind "%2$s" isn't supported by this Reflow Launcher, so the widget was skipped. It stays in the file. Update the app, or check the kind for a typo.` | 1 = path, 2 = kind | S3 |
 | `warn_surface_none` | `%1$s: "none" needs room for the header row, so the default card surface was used.` | 1 = path (`….surface`) | S3 |
 | `warn_data_missing` | `%1$s: widgets-data/%2$s.json is missing or unreadable, so the last values are shown.` | 1 = path, 2 = element id | S3 |
 | `warn_cert_changed` | `%1$s: the certificate for %2$s changed. Fetching from it is paused until someone approves the new certificate on this phone; the last good data is shown as stale.` | 1 = path, 2 = origin | S5 |
@@ -2352,7 +2352,7 @@ Dashboard capability model (§17): all eight are answered in the [#116 comment](
   `ui.openUrl`, `hosts` is superseded by Christopher's Q-D5 rule (`source` + tap confirm sheet), confirmed by Archimedes in [#146](https://github.com/Nasawa/config-launcher/pull/146).
 
 ~~Follow-up (Pragma): an unknown `kind` rejecting the whole file~~ ✅ Resolved in the [#116 follow-up](https://github.com/Nasawa/config-launcher/pull/116) and [#117](https://github.com/Nasawa/config-launcher/pull/117): on the phone it skips
-only that element (§17.3 tile `Update Config Launcher to show this`). New kinds bump the feature level and set
+only that element (§17.3 tile `Update Reflow Launcher to show this`). New kinds bump the feature level and set
 `requires`, and `validate.py`/CI may stay strict for typos.
 
 - ~~Q-A10~~ ✅ Resolved by Archimedes (home theme, §12.1): optional top-level `"theme"`, `"system"` (default when

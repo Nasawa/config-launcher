@@ -10,7 +10,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "dev.nasawa.configlauncher"
+        applicationId = "com.anigeek.reflowlauncher"
         minSdk = 29 // ARCHITECTURE.md §18 ruling (Archimedes, 2026-10-18)
         targetSdk = 35
         versionCode = 1

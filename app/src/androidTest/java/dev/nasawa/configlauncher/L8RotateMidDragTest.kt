@@ -25,7 +25,7 @@ class L8RotateMidDragTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             assertTrue(
                 "MainActivity did not come to foreground",
-                device.wait(Until.hasObject(By.pkg("dev.nasawa.configlauncher")), 8_000),
+                device.wait(Until.hasObject(By.pkg(InstrumentationRegistry.getInstrumentation().targetContext.packageName)), 8_000),
             )
             // Best-effort long-press on a labelled tile (seeded matrix builds show "QA Settings").
             val tile = device.findObject(By.text("QA Settings"))

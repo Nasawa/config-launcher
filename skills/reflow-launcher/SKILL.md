@@ -1,12 +1,12 @@
 ---
-name: config-launcher
-description: Edit a Config Launcher home screen (launcher.json) safely - place, move and group Android apps, manage pages, the dock and drawer rules, validate against the schema, and read the phone's status. Use when a folder contains launcher.json and .configlauncher/, or the user asks to organize their Android home screen.
+name: reflow-launcher
+description: Edit a Reflow Launcher home screen (launcher.json) safely - place, move and group Android apps, manage pages, the dock and drawer rules, validate against the schema, and read the phone's status. Use when a folder contains launcher.json and .configlauncher/, or the user asks to organize their Android home screen.
 ---
 
-# Config Launcher layout editing
+# Reflow Launcher layout editing
 
 ## When to use
-The working folder contains `launcher.json` (usually with `.configlauncher/` beside it), or the user asks to organize the home screen of a phone running Config Launcher.
+The working folder contains `launcher.json` (usually with `.configlauncher/` beside it), or the user asks to organize the home screen of a phone running Reflow Launcher.
 
 ## Inputs to read first
 - `launcher.json`: the layout. Schema: https://github.com/Nasawa/config-launcher/blob/main/schema/launcher-config.v1.schema.json
@@ -26,7 +26,7 @@ The working folder contains `launcher.json` (usually with `.configlauncher/` bes
 4. Validate: `python3 validate.py launcher.json`, then `python3 validate.py --format launcher.json` for canonical output (download `scripts/validate.py` from https://raw.githubusercontent.com/Nasawa/config-launcher/main/scripts/validate.py if it isn't present).
 5. Write the whole file at once; commit and push (never force-push; on rejection pull --rebase, re-validate, push).
 6. After sync, read `.configlauncher/status.json`. Errors mean the phone kept its last working layout; fix the listed paths and repeat. A parse error on read means a write in progress: retry after a second.
-7. Optional, with adb: `adb shell am broadcast -a dev.nasawa.configlauncher.RELOAD -n dev.nasawa.configlauncher/.ReloadReceiver` reloads immediately and rewrites `status.json`. Result codes: `0` unchanged, `1` reloaded, `2` rejected (read `status.json` and fix), `3` unavailable (retry later), `4` busy: phone edit, drag, or conflict pending (back off and retry), `5` timeout after 8 s (retry later).
+7. Optional, with adb: `adb shell am broadcast -a com.anigeek.reflowlauncher.RELOAD -n com.anigeek.reflowlauncher/.ReloadReceiver` reloads immediately and rewrites `status.json`. Result codes: `0` unchanged, `1` reloaded, `2` rejected (read `status.json` and fix), `3` unavailable (retry later), `4` busy: phone edit, drag, or conflict pending (back off and retry), `5` timeout after 8 s (retry later).
 
 ## Never
 Private-space apps, user IDs or serials, work-profile items unless `apps.json` lists them, writes inside `.configlauncher/`, comments, unknown non-`x-` keys, `widget`/`text` items, files over 2 MiB.

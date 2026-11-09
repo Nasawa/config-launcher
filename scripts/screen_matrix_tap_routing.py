@@ -22,6 +22,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import screen_matrix_check as c  # noqa: E402
+from pkg import PKG, PKG_TAIL  # noqa: E402
 
 MIN_TOUCH = 48.0
 CHROME_DESCS = {
@@ -440,7 +441,7 @@ def score(point_dir):
                 blob = ' '.join(filter(None, [ident.get('title'), *ident.get('texts', []), *ident.get('descs', [])]))
                 ok = expect.lower() in blob.lower() or (got or '').lower() == expect.lower()
             # Launch path: package in top activity
-            if not ok and top and 'configlauncher' not in top.lower():
+            if not ok and top and PKG_TAIL not in top.lower():
                 out['launched'] = top
             out['expect'] = expect
             out['ok'] = ok
@@ -472,7 +473,7 @@ def score(point_dir):
             tile_names = [t['name'] for t in plan['tiles']]
             # Home dump always lists tile spoken descs — only count a steal when a sheet
             # opened for a grid tile, or another app launched.
-            launched_away = bool(top) and 'configlauncher' not in top.lower()
+            launched_away = bool(top) and PKG_TAIL not in top.lower()
             sheet = bool((ident or {}).get('has_sheet'))
             title = ((ident or {}).get('title') or '')
             stole = None

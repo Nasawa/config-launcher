@@ -3,7 +3,8 @@
 # item sheet (real app name + package, `App info`) and must NOT launch the app.
 # Requires a debug build installed (run-as). Seeds app-only mode with one Settings tile.
 set -euo pipefail
-PKG=dev.nasawa.configlauncher
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/pkg.env"
 mkdir -p smoke
 adb shell am force-stop "$PKG"
 cat > smoke/launcher.json <<'J'

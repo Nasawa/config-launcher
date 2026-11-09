@@ -522,9 +522,9 @@
   "valid/elements-skipped.json": {
     "canonicalSha256": "8d212e8bcced811a474fc37b3336a6c419b9848b9c0fa4c807e2fd5894f2fac3",
     "warnings": [
-      "elements[0]: type \"banner\" isn't supported by this Config Launcher, so it was skipped. It stays in the file.",
-      "elements[1]: type \"appWidget\" isn't supported by this Config Launcher, so it was skipped. It stays in the file.",
-      "elements[2] needs feature level 9, but this Config Launcher supports up to 4, so it was skipped. It stays in the file. Update the app to show it.",
+      "elements[0]: type \"banner\" isn't supported by this Reflow Launcher, so it was skipped. It stays in the file.",
+      "elements[1]: type \"appWidget\" isn't supported by this Reflow Launcher, so it was skipped. It stays in the file.",
+      "elements[2] needs feature level 9, but this Reflow Launcher supports up to 4, so it was skipped. It stays in the file. Update the app to show it.",
       "pages[0].overrides: \"t-gone\" doesn't match any element, so it was ignored."
     ]
   },
@@ -582,7 +582,7 @@
   "valid/titlebar-requires-5.json": {
     "canonicalSha256": "c33de4ea26a4290f0a20cb8c79d32db90d04317a50d4c951885e1bd678aa0310",
     "warnings": [
-      "elements[0] needs feature level 5, but this Config Launcher supports up to 4, so it was skipped. It stays in the file. Update the app to show it."
+      "elements[0] needs feature level 5, but this Reflow Launcher supports up to 4, so it was skipped. It stays in the file. Update the app to show it."
     ]
   },
   "valid/titlebar-shorthands.json": {

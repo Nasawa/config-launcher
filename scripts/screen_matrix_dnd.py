@@ -36,6 +36,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import screen_matrix_check as c  # noqa: E402
+from pkg import PKG, PKG_TAIL  # noqa: E402
 
 FIXTURE_ITEMS = ['QA Settings', 'A very long label that must ellipsize', 'Missing', 'Wide WWWW', 'Row two']
 DRAG = 'Row two'
@@ -206,7 +207,7 @@ def score(d):
             r.update(ok=None, detail=k['why']); res.append(r); continue
         crash = c.read(os.path.join(d, f"dnd-{k['id']}-crash.txt")).strip()
         top = c.read(os.path.join(d, f"dnd-{k['id']}-top.txt"))
-        alive = 'dev.nasawa.configlauncher' in top
+        alive = PKG_TAIL in top
         after = c.load(os.path.join(d, f"dnd-{k['id']}-after.xml"))
         e = k['expect']
         if k['how'] in ('drag',):

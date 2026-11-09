@@ -12,7 +12,7 @@
 
 ## 0. Product reframe
 
-Config Launcher's end vision is: **make your home screen into an AI-assisted dashboard.**
+Reflow Launcher's end vision is: **make your home screen into an AI-assisted dashboard.**
 
 Apps, folders, and direct user control stay. Widgets come in two kinds; **(b) is the core**:
 
@@ -86,7 +86,7 @@ Responsive: up to 3 `layouts` keyed by `"WxH"` with a **lowercase** `x` (e.g. `"
 - Launcher fetches; widget never sees a socket.
 - **No cookies**, no shared `CookieJar`, no HTTP cache keying across element ids.
 - Caps: response bytes, timeout, min refresh interval.
-- **HTTP client:** one isolated client per element id (no shared cache, no cookies, fixed `User-Agent` naming Config Launcher).
+- **HTTP client:** one isolated client per element id (no shared cache, no cookies, fixed `User-Agent` naming Reflow Launcher).
 - **Redirects:** follow only if the next hop stays on the **same pinned origin**; otherwise fail the fetch.
 - **`net.fetch` request URLs are literals** in the element (fixed under a pinned origin). They must **not** be built from `{data:…}`.
 - **`ui.openUrl` tap `url` MAY use `{data:…}`** (Outer Shell needs this for "latest post"). At tap time resolve the template, reject `userinfo` / non-http(s) schemes, normalise scheme + host (IDNA/punycode/lowercase), then (Q-D5): if scheme+host **exactly** matches the card's `source` (no subdomain inference), open **silently**; if it matches a device-local **Always allow** entry for this element, open silently; otherwise show a **per-tap confirm** naming the destination (with **Always allow this site**). There is **no `hosts` allowlist** on the capability. See §4 *card.source and ui.openUrl taps*. `ui.openUrl` only hands the URL to the browser/intent — it is **not** a fetch.
@@ -208,7 +208,7 @@ Consent map shape (per element id). **Never** store the approval secret / ceilin
 
 Normative warning **name keys** (English sentences built in code; Pragma §17.13): `warn_consent_pending`, `warn_consent_again`, `warn_consent_off`, `warn_data_missing` (missing/unreadable `widgets-data/<id>.json` — **not** a consent state). Capability-skip and tap failures reuse the same status channel as elsewhere (`warn_capability_kind`; tap `warn_tap_host` / `warn_tap_scheme` already named above).
 
-Enforcement: runtime can only perform APIs listed in the **approved** manifest for that id. Unknown `capabilities[].kind` on this launcher → **skip that element** with a warning (consent tile / "Update Config Launcher" or "Can't show", cells kept; `warn_capability_kind`) — **not** a whole-file B2 reject. Writers of a new kind MUST bump the feature level and set `requires` on every element that uses it so older phones hit the requires-skip path cleanly. `validate.py` / CI at the current feature level may still treat unknown kinds as errors so agents fail fast on typos. Undeclared use at runtime is impossible by construction.
+Enforcement: runtime can only perform APIs listed in the **approved** manifest for that id. Unknown `capabilities[].kind` on this launcher → **skip that element** with a warning (consent tile / "Update Reflow Launcher" or "Can't show", cells kept; `warn_capability_kind`) — **not** a whole-file B2 reject. Writers of a new kind MUST bump the feature level and set `requires` on every element that uses it so older phones hit the requires-skip path cleanly. `validate.py` / CI at the current feature level may still treat unknown kinds as errors so agents fail fast on typos. Undeclared use at runtime is impossible by construction.
 
 ### Hosted AppWidgets
 
@@ -226,7 +226,7 @@ Today §1: **No INTERNET** — launcher never fetches; security property against
 | Dynamic widget + `data.file` only | No |
 | Dynamic widget + approved `net.fetch` | Yes — launcher GET/HEAD to pinned origins |
 
-Plain language for users/docs: *Config Launcher can use the network only for dashboard cards you explicitly allow, and only to the sites listed on that card. It still does not browse the web or sync your config for you.*
+Plain language for users/docs: *Reflow Launcher can use the network only for dashboard cards you explicitly allow, and only to the sites listed on that card. It still does not browse the web or sync your config for you.*
 
 APK-level `INTERNET` is coarse (see §7). Capability approval is the real control plane; OS permission is the on/off master.
 
