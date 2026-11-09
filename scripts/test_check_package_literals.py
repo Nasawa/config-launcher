@@ -20,11 +20,8 @@ class GrepGateRules(unittest.TestCase):
         """Run the allow rules on a fake file body; return disallowed line descriptions."""
         bad = []
         for i, line in enumerate(body.splitlines(), 1):
-            if g.SHORTHAND in line:
-                bad.append(f"{rel}:{i}: shorthand")
-                continue
-            if g.NEEDLE in line and not g.needle_allowed(line):
-                bad.append(f"{rel}:{i}: needle")
+            for p in g.line_problems(line):
+                bad.append(f"{rel}:{i}: {'shorthand' if 'shorthand' in p or 'slash-dot' in p else 'needle'}")
         return bad
 
     def test_kotlin_string_literal_is_flagged(self):
@@ -68,6 +65,59 @@ class GrepGateRules(unittest.TestCase):
     def test_backtick_namespace_docs_allowed(self):
         body = "Kotlin `namespace` is `dev.nasawa.configlauncher` (unchanged).\n"
         self.assertEqual([], self._scan("ARCHITECTURE.md", body))
+
+
+# Grace #243 review (690b4b0 GO notes): forms the gate still missed. Each must be flagged.
+MUTATIONS = {
+    "pkg_var_shorthand": ('scripts/emulator-smoke.sh', 'adb shell am start -W -n "$PKG/.MainActivity"\n'),
+    "pkg_brace_shorthand": ('scripts/screen-matrix.sh', 'sh_ am broadcast -a "$PKG.RELOAD" -n "${PKG}/.ReloadReceiver"\n'),
+    "py_concat_single_quote": ('scripts/screen_matrix_check.py', "ok = (PKG + '/.MainActivity') in start\n"),
+    "py_concat_double_quote": ('scripts/screen_matrix_check.py', 'ok = (PKG + "/.MainActivity") in start\n'),
+    "py_fstring_shorthand": ('scripts/x.py', 'cmp = f"{PKG}/.MainActivity"\n'),
+    "placeholder_slashdot_component": ('docs/spec.md', 'component `<applicationId>/.ReloadReceiver`\n'),
+    "regex_escaped_ns": ('scripts/x.py', 'NODE = re.compile(r"dev\\.nasawa\\.configlauncher")\n'),
+    "double_escaped_ns": ('app/src/test/X.kt', 'val r = Regex("dev\\\\.nasawa\\\\.configlauncher")\n'),
+    "bracket_escaped_ns": ('scripts/x.py', 'NODE = re.compile(r"dev[.]nasawa[.]configlauncher")\n'),
+    "partial_ns_package_attr": ('scripts/screen_matrix_check.py', "if 'package=\"dev.nasawa' not in t:\n"),
+    "partial_ns_bare": ('README.md', 'Old app id starts with dev.nasawa and is gone.\n'),
+    "partial_ns_truncated": ('scripts/x.py', "PREFIX = 'dev.nasawa.config'\n"),
+    "unquoted_old_action_adb": ('README.md', 'adb shell am broadcast -a dev.nasawa.configlauncher.RELOAD\n'),
+    "unquoted_old_action_xml_comment": ('app/src/main/AndroidManifest.xml', '<!-- action dev.nasawa.configlauncher.RELOAD -->\n'),
+    "quoted_old_action_manifest": ('app/src/main/AndroidManifest.xml', '<action android:name="dev.nasawa.configlauncher.RELOAD" />\n'),
+}
+
+# Correct forms that must stay clean.
+CLEAN = {
+    "pkg_ns_component": 'sh_ am start -W -n "$PKG/$NS.MainActivity"\n',
+    "pkg_ns_receiver": 'sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/$NS.ReloadReceiver"\n',
+    "pkg_p_reload": 'adb shell am broadcast -a "$PKG.RELOAD" -p "$PKG"\n',
+    "start_timeout_prefix": "start_timeout = 'Status: timeout' in start and (PKG + '/') in start\n",
+    "fq_new_receiver": 'adb shell am broadcast -a com.anigeek.reflowlauncher.RELOAD -n com.anigeek.reflowlauncher/dev.nasawa.configlauncher.ReloadReceiver\n',
+    "kotlin_import": 'import dev.nasawa.configlauncher.store.ConfigStore\n',
+    "manifest_relative_name": '            android:name=".ReloadReceiver"\n',
+}
+
+
+class GrepGateMutations(unittest.TestCase):
+    def test_each_mutation_is_flagged(self):
+        for name, (_rel, body) in MUTATIONS.items():
+            with self.subTest(name):
+                self.assertTrue(g.line_problems(body.rstrip("\n")), f"{name} not caught: {body!r}")
+
+    def test_correct_forms_stay_clean(self):
+        for name, body in CLEAN.items():
+            with self.subTest(name):
+                self.assertEqual([], g.line_problems(body.rstrip("\n")), name)
+
+    def test_check_finds_every_mutation_in_a_tree(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for i, (name, (rel, body)) in enumerate(MUTATIONS.items()):
+                f = root / f"m{i:02d}" / rel
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_text(body)
+            bad = g.check(root)
+            self.assertEqual(len(MUTATIONS), len(bad), bad)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,11 @@ NOT allowed:
   - the string literal `"dev.nasawa.configlauncher"` (or any quoted occurrence) outside the
     Gradle namespace line — including inside Kotlin source files
   - `com.anigeek.reflowlauncher/.` (slash-dot after the applicationId) anywhere
+  - the same shorthand built from the variable: `$PKG/.`, `${PKG}/.`, `{PKG}/.`,
+    `PKG + '/.'` / `PKG + "/."`, and any `/.MainActivity` / `/.ReloadReceiver` component
+  - a regex-escaped namespace (`dev\\.nasawa…`, `dev[.]nasawa…`)
+  - a partial namespace (`dev.nasawa` not followed by `.configlauncher`, e.g. `package="dev.nasawa`)
+  - the old RELOAD action `dev.nasawa.configlauncher.RELOAD`, quoted or not (adb lines, XML comments)
 
 Whole Kotlin package directories are not whitelisted.
 """
@@ -29,6 +34,13 @@ _PKG = next(
     if line.startswith("PKG=")
 )
 SHORTHAND = _PKG + "/."
+
+# Grace #243 review gaps.
+VAR_SHORTHAND = re.compile(r"(\$PKG|\$\{PKG\}|\{PKG\})/\.|\bPKG\s*\+\s*[\"']/\.")
+SLASHDOT_COMPONENT = re.compile(r"/\.(MainActivity|ReloadReceiver)\b")
+ESCAPED_NS = re.compile(r"dev(\\+|\[\.\])\.?nasawa")
+PARTIAL_NS = re.compile(r"dev\.nasawa(?!\.configlauncher\b)")
+OLD_ACTION = re.compile(r"dev\.nasawa\.configlauncher\.RELOAD\b")
 
 SKIP_DIRS = {".git", "build", ".gradle", "node_modules", ".idea"}
 ALLOW_FILES = {
@@ -105,13 +117,33 @@ def needle_allowed(line: str) -> bool:
     return NEEDLE not in stripped
 
 
-def check() -> list[str]:
+def line_problems(line: str) -> list[str]:
+    """Every rule a single line breaks (empty list = clean)."""
+    out: list[str] = []
+    if SHORTHAND in line:
+        out.append(f"shorthand {SHORTHAND!r}")
+    if VAR_SHORTHAND.search(line):
+        out.append("shorthand built from PKG (slash-dot after $PKG)")
+    if SLASHDOT_COMPONENT.search(line):
+        out.append("slash-dot component (class is under NS, not PKG)")
+    if ESCAPED_NS.search(line):
+        out.append("regex-escaped namespace")
+    if PARTIAL_NS.search(line):
+        out.append("partial namespace `dev.nasawa`")
+    if OLD_ACTION.search(line):
+        out.append("old RELOAD action")
+    elif NEEDLE in line and not needle_allowed(line):
+        out.append("namespace literal")
+    return out
+
+
+def check(root: Path = ROOT) -> list[str]:
     bad: list[str] = []
-    for path in ROOT.rglob("*"):
+    for path in root.rglob("*"):
         if not path.is_file():
             continue
-        rel = path.relative_to(ROOT).as_posix()
-        if any(part in SKIP_DIRS for part in path.parts):
+        rel = path.relative_to(root).as_posix()
+        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
             continue
         if rel in ALLOW_FILES:
             continue
@@ -120,11 +152,9 @@ def check() -> list[str]:
         except (UnicodeDecodeError, IsADirectoryError):
             continue
         for i, line in enumerate(text.splitlines(), 1):
-            if SHORTHAND in line:
-                bad.append(f"{rel}:{i}: shorthand {SHORTHAND!r}: {line.strip()[:140]}")
-                continue
-            if NEEDLE in line and not needle_allowed(line):
-                bad.append(f"{rel}:{i}: {line.strip()[:160]}")
+            problems = line_problems(line)
+            if problems:
+                bad.append(f"{rel}:{i}: {'; '.join(problems)}: {line.strip()[:140]}")
     return bad
 
 
