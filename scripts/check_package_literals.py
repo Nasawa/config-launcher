@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
-"""#242 F: fail if `dev.nasawa.configlauncher` appears outside the allowlist.
+"""#242 / #243 F: fail on disallowed `dev.nasawa.configlauncher` and `applicationId/.` shorthand.
 
-Allowed:
-  - Kotlin package/namespace directories and directory paths under
-    app/src/{main,test,androidTest}/java/dev/nasawa/configlauncher/
-  - `import dev.nasawa.configlauncher…` / `package dev.nasawa.configlauncher…`
-  - `.configlauncher/` path strings (sidecar folder name, unchanged)
-  - ARCHITECTURE.md / README "formerly" / history notes that explain the rename
-  - This checker and its test
+Allowed uses of the Kotlin namespace string:
+  - `package dev.nasawa.configlauncher…` / `import dev.nasawa.configlauncher…` lines
   - Gradle `namespace = "dev.nasawa.configlauncher"`
+  - unquoted fully-qualified class/type references (Kotlin/Java code, KDoc)
+  - explicit `$PKG/dev.nasawa.configlauncher.Class` component strings
+  - backtick-wrapped bare namespace (optional `.subpackage`) in docs
+  - `NS=…` in pkg.env and `$NS` / `$NS.Class` uses in scripts
+  - this checker and its tests
+
+NOT allowed:
+  - the string literal `"dev.nasawa.configlauncher"` (or any quoted occurrence) outside the
+    Gradle namespace line — including inside Kotlin source files
+  - `com.anigeek.reflowlauncher/.` (slash-dot after the applicationId) anywhere
+
+Whole Kotlin package directories are not whitelisted.
 """
 from __future__ import annotations
 import re, sys
@@ -16,63 +23,107 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NEEDLE = "dev.nasawa.configlauncher"
-SKIP_DIRS = {".git", "build", ".gradle", "node_modules", ".idea"}
-
-# Path prefixes (relative to ROOT) that may contain the needle freely.
-ALLOW_PATH_PREFIXES = (
-    "app/src/main/java/dev/nasawa/configlauncher/",
-    "app/src/test/java/dev/nasawa/configlauncher/",
-    "app/src/androidTest/java/dev/nasawa/configlauncher/",
+_PKG = next(
+    line.split("=", 1)[1].strip()
+    for line in Path(__file__).with_name("pkg.env").read_text().splitlines()
+    if line.startswith("PKG=")
 )
+SHORTHAND = _PKG + "/."
 
-ALLOW_FILE_NAMES = {
+SKIP_DIRS = {".git", "build", ".gradle", "node_modules", ".idea"}
+ALLOW_FILES = {
     "scripts/check_package_literals.py",
     "scripts/test_check_package_literals.py",
 }
 
-# Line-level allows when the path is not under a Kotlin package dir.
-LINE_ALLOW = [
-    re.compile(r"^\s*package\s+dev\.nasawa\.configlauncher"),
-    re.compile(r"^\s*import\s+dev\.nasawa\.configlauncher"),
-    re.compile(r"namespace\s*=\s*\"dev\.nasawa\.configlauncher\""),
-    re.compile(r"\.configlauncher/"),  # sidecar folder
-    re.compile(r"configlauncher/"),  # path segment in java dir mentions outside allow prefixes (rare)
-    re.compile(r"formerly.*config-launcher|formerly.*configlauncher|Kotlin packages.*dev\.nasawa\.configlauncher", re.I),
-    re.compile(r"namespace\s+\*\*`dev\.nasawa\.configlauncher`"),  # ARCHITECTURE table/docs
-    re.compile(r"`dev\.nasawa\.configlauncher(\.[a-z]+)?`"),  # docs: namespace + subpackages table
-    re.compile(r"dev/nasawa/configlauncher"),  # path in docs
-]
+PACKAGE_LINE = re.compile(r"^\s*package\s+dev\.nasawa\.configlauncher(\.|$)")
+IMPORT_LINE = re.compile(r"^\s*import\s+dev\.nasawa\.configlauncher(\.|$)")
+NAMESPACE_GRADLE = re.compile(r'namespace\s*=\s*"dev\.nasawa\.configlauncher"')
+FQ_COMPONENT = re.compile(re.escape(_PKG) + r"/dev\.nasawa\.configlauncher\.[A-Za-z0-9_]+")
+BACKTICK_NS = re.compile(r"`dev\.nasawa\.configlauncher(\.[a-z]+)?`")
+NS_ASSIGN = re.compile(r"^NS=dev\.nasawa\.configlauncher\s*$")
+NS_VAR_USE = re.compile(r"\$NS\.|/\$NS\.|\$\{NS\}")
+# Unquoted FQCN: identifier.path after the needle (code / KDoc), not inside quotes.
+FQCN_CODE = re.compile(r"(?<![\"'`])dev\.nasawa\.configlauncher(\.[A-Za-z_][A-Za-z0-9_]*)+")
 
 
-def allowed_line(line: str) -> bool:
+def _quoted_spans(line: str) -> list[tuple[int, int]]:
+    """Byte ranges of double- or single-quoted string literals on the line (best-effort)."""
+    spans = []
+    i = 0
+    while i < len(line):
+        c = line[i]
+        if c in "\"'":
+            q = c
+            j = i + 1
+            while j < len(line):
+                if line[j] == "\\" and j + 1 < len(line):
+                    j += 2
+                    continue
+                if line[j] == q:
+                    spans.append((i, j + 1))
+                    i = j + 1
+                    break
+                j += 1
+            else:
+                break
+        else:
+            i += 1
+    return spans
+
+
+def _in_span(pos: int, spans: list[tuple[int, int]]) -> bool:
+    return any(a <= pos < b for a, b in spans)
+
+
+def needle_allowed(line: str) -> bool:
     if NEEDLE not in line:
         return True
-    # .configlauncher/ contains "configlauncher" but not the full needle with dots... 
-    # needle is dev.nasawa.configlauncher — .configlauncher/ alone does NOT match NEEDLE.
-    return any(p.search(line) for p in LINE_ALLOW)
+    if PACKAGE_LINE.search(line) or IMPORT_LINE.search(line):
+        return True
+    if NAMESPACE_GRADLE.search(line):
+        return True
+    if NS_ASSIGN.search(line.strip()) or NS_VAR_USE.search(line):
+        return True
+    # Strip allowed forms, then see what's left.
+    stripped = line
+    stripped = FQ_COMPONENT.sub("", stripped)
+    stripped = BACKTICK_NS.sub("", stripped)
+    stripped = FQCN_CODE.sub("", stripped)
+    if NEEDLE not in stripped:
+        return True
+    # Any remaining needle must not be inside a string literal — and even outside, it's disallowed
+    # once FQCN/backtick/component forms are removed (e.g. a bare word in prose or a script).
+    # Exception: if every remaining hit is still somehow only in an already-handled form — no.
+    # Flag if any NEEDLE occurrence is inside quotes, OR if anything remains after stripping.
+    spans = _quoted_spans(line)
+    for m in re.finditer(re.escape(NEEDLE), line):
+        if _in_span(m.start(), spans):
+            # Quoted: only OK on the Gradle namespace line (already returned).
+            return False
+    # Unquoted remainder that isn't FQCN/backtick/component → fail
+    return NEEDLE not in stripped
 
 
 def check() -> list[str]:
-    bad = []
+    bad: list[str] = []
     for path in ROOT.rglob("*"):
         if not path.is_file():
             continue
         rel = path.relative_to(ROOT).as_posix()
         if any(part in SKIP_DIRS for part in path.parts):
             continue
-        if rel in ALLOW_FILE_NAMES:
+        if rel in ALLOW_FILES:
             continue
-        if rel.startswith(ALLOW_PATH_PREFIXES):
-            continue
-        # skip binaries
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, IsADirectoryError):
             continue
-        if NEEDLE not in text:
-            continue
         for i, line in enumerate(text.splitlines(), 1):
-            if NEEDLE in line and not allowed_line(line):
+            if SHORTHAND in line:
+                bad.append(f"{rel}:{i}: shorthand {SHORTHAND!r}: {line.strip()[:140]}")
+                continue
+            if NEEDLE in line and not needle_allowed(line):
                 bad.append(f"{rel}:{i}: {line.strip()[:160]}")
     return bad
 
@@ -80,13 +131,13 @@ def check() -> list[str]:
 def main() -> int:
     bad = check()
     if bad:
-        print(f"grep-gate (#242 F): {len(bad)} disallowed `{NEEDLE}` hit(s):", file=sys.stderr)
-        for b in bad[:50]:
+        print(f"grep-gate (#242 F): {len(bad)} disallowed hit(s):", file=sys.stderr)
+        for b in bad[:60]:
             print(b, file=sys.stderr)
-        if len(bad) > 50:
-            print(f"... and {len(bad) - 50} more", file=sys.stderr)
+        if len(bad) > 60:
+            print(f"... and {len(bad) - 60} more", file=sys.stderr)
         return 1
-    print(f"grep-gate (#242 F): ok (no disallowed `{NEEDLE}`)")
+    print(f"grep-gate (#242 F): ok (no disallowed `{NEEDLE}` or `{SHORTHAND}`)")
     return 0
 
 

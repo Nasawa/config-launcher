@@ -11,7 +11,7 @@ adb logcat -c || true   # API 26 images: "failed to clear the main log"
 : > smoke/am-start.txt   # fresh per run; the loop appends
 for i in 1 2 3; do
   adb shell am force-stop "$PKG"
-  adb shell am start -W -n "$PKG/.MainActivity" | tee -a smoke/am-start.txt
+  adb shell am start -W -n "$PKG/$NS.MainActivity" | tee -a smoke/am-start.txt
   sleep 5
 done
 adb logcat -d > smoke/logcat.txt

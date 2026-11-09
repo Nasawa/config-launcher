@@ -9,7 +9,7 @@ import java.io.IOException
  * (`filesDir/config/source/launcher.json`, ARCHITECTURE.md §18.5) with [sidecars] = false: no
  * `.configlauncher/`, no status.json. Tests also use it with sidecars as a stand-in for a folder.
  * Writes are `launcher.json.tmp` in the same directory + fsync + rename (atomic; no read-back verify).
- * Debug builds: `adb shell run-as dev.nasawa.configlauncher sh -c 'cat > files/config/source/launcher.json' < launcher.json`.
+ * Debug builds: `adb shell run-as com.anigeek.reflowlauncher sh -c 'cat > files/config/source/launcher.json' < launcher.json`.
  */
 class LocalFileSource(val dir: File, val sidecars: Boolean = true) : ConfigSource {
     val file = File(dir, FILE_NAME)

@@ -152,7 +152,7 @@ Principle: **the home screen always works**; errors never blank it.
 - An `errors.json` mirror in the folder (`.configlauncher/status.json` with the last load result: ok/errors list/hash/time) so an agent can read why its edit was rejected without the phone in hand. This is cheap and important for the machine-assisted loop.
 
 ## 10. Module and package layout
-Single Gradle module **`:app`**, `applicationId` **`com.anigeek.reflowlauncher`**, `namespace` **`dev.nasawa.configlauncher`** (unchanged). Subpackages:
+Single Gradle module **`:app`**, `applicationId` **`com.anigeek.reflowlauncher`**, `namespace` **`dev.nasawa.configlauncher`** (unchanged). Component names are `$applicationId/$namespace.Class` (for example `com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity`); a slash-dot after the applicationId resolves against the wrong package and does not exist. Subpackages:
 
 | Package | Contents | Android deps? |
 |---|---|---|

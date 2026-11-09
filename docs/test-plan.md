@@ -360,7 +360,7 @@ Implemented as `.github/workflows/emulator-smoke.yml` (PR #23): nightly, on dema
 ### 15.3 Performance budgets and how to measure them
 | ID | Budget | Device | Method | Pass |
 |---|---|---|---|---|
-| PF-2 | Cold start to first frame < 500 ms with a 300-item config (A§11) | A53 | `adb shell am force-stop com.anigeek.reflowlauncher`, then `adb shell am start -W -n com.anigeek.reflowlauncher/.MainActivity` and read `TotalTime`. 10 runs after one warm-up. Cross-check with Macrobenchmark `StartupTimingMetric` (`timeToInitialDisplayMs`), R8-minified release build with a baseline profile. | Median < 500 ms |
+| PF-2 | Cold start to first frame < 500 ms with a 300-item config (A§11) | A53 | `adb shell am force-stop com.anigeek.reflowlauncher`, then `adb shell am start -W -n com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity` and read `TotalTime`. 10 runs after one warm-up. Cross-check with Macrobenchmark `StartupTimingMetric` (`timeToInitialDisplayMs`), R8-minified release build with a baseline profile. | Median < 500 ms |
 | PF-5 | Poll cost and battery | A53 | See LR-7 | ≤ 5 ms per poll, < 1%/h |
 
 ## 16. Manual QA matrix, for later

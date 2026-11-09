@@ -252,7 +252,10 @@ versioning.
 - Check `.configlauncher/status.json` after a change.
   `revision` is the applied file's `revision` (null when the file was rejected); `hash` stays the authority.
 - To reload immediately from a script (instead of waiting for the 2 s poll or pressing Home):
-  `adb shell am broadcast -a com.anigeek.reflowlauncher.RELOAD -n com.anigeek.reflowlauncher/.ReloadReceiver`.
+  `adb shell am broadcast -a com.anigeek.reflowlauncher.RELOAD -p com.anigeek.reflowlauncher`.
+  (Components live under the Kotlin namespace: use
+  `com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity` /
+  `…ReloadReceiver`. Do not use the slash-dot shorthand after the applicationId.)
   It runs the same load as ⋮ → Reload and rewrites `status.json` before returning Result codes: `0` unchanged,
   `1` reloaded, `2` rejected (details in `status.json`), `3` unavailable, `4` busy (phone edit, drag, or conflict
   pending), `5` timeout (8 s). On `2`, read `status.json` and fix the listed paths; on `4`, back off and retry; on

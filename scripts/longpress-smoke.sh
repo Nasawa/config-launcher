@@ -17,7 +17,7 @@ cat > smoke/settings.xml <<'J'
 J
 for f in launcher.json settings.xml; do adb push smoke/$f /data/local/tmp/$f >/dev/null; done
 adb shell "run-as $PKG sh -c 'mkdir -p files/config/source shared_prefs && cp /data/local/tmp/launcher.json files/config/source/launcher.json && cp /data/local/tmp/settings.xml shared_prefs/settings.xml'"
-adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+adb shell am start -W -n "$PKG/$NS.MainActivity" >/dev/null
 sleep 4
 dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb shell cat /sdcard/ui.xml; }
 dump > smoke/lp-before.xml

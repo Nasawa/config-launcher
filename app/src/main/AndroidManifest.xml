@@ -36,7 +36,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- #55 / #242: `adb shell am broadcast -a ${applicationId}.RELOAD -n ${applicationId}/.ReloadReceiver`.
+        <!-- #55 / #242: `adb shell am broadcast -a ${applicationId}.RELOAD -p ${applicationId}`
+             (or `-n ${applicationId}/dev.nasawa.configlauncher.ReloadReceiver`). Do NOT use a slash-dot
+             after the applicationId: namespace ≠ applicationId, so that shorthand class does not exist.
              ACTION is derived from packageName (= applicationId). Senders need android.permission.DUMP. -->
         <receiver
             android:name=".ReloadReceiver"

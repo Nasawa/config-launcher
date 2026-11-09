@@ -1,6 +1,6 @@
 # Release notes: Reflow Launcher rename (pre-1.0)
 
-This build ships **Reflow Launcher** as a **new app** (`com.anigeek.reflowlauncher`), not an in-place upgrade of Config Launcher (`dev.nasawa.configlauncher`). `allowBackup` is false, so nothing carries over automatically.
+This build ships **Reflow Launcher** as a **new app** (`com.anigeek.reflowlauncher`), not an in-place upgrade of Config Launcher (`dev.nasawa.configlauncher`). `allowBackup` is false, so nothing carries over automatically between the two packages.
 
 ## What to do
 
@@ -12,12 +12,22 @@ This build ships **Reflow Launcher** as a **new app** (`com.anigeek.reflowlaunch
 
 ### App-only users (no folder)
 
-Your layout lives only in the old app's private storage. It does **not** carry over. Export it first (⋮ → share / copy `launcher.json` via the documented `run-as` commands on the old build), install Reflow Launcher, then import or re-pick a folder and paste the file back.
+There is **no** in-app export, share, or import. An app-only layout lives only in that app's private storage and does not move with the rename.
+
+To keep it:
+
+1. In the **old** Config Launcher, open ⋮ → **Choose folder** (or the first-run folder pick) and pick a folder.
+2. If the folder is empty, the app writes your current layout there as `launcher.json`. If the folder already has a file, choose **Replace it with mine** so your layout is written (the previous file is copied to `.configlauncher/backup/` first when that path works).
+3. Install Reflow Launcher, set HOME, and **pick that same folder**. The new app reads the folder's `launcher.json`.
+
+Debug builds can also pull the private file with `adb exec-out run-as <old-package> cat files/config/source/launcher.json` and push it into a folder, but that is a developer path, not an end-user feature.
 
 ## Agent / adb
 
-- Reload: `adb shell am broadcast -a com.anigeek.reflowlauncher.RELOAD -n com.anigeek.reflowlauncher/.ReloadReceiver`
-- Package for `run-as` / smoke: `com.anigeek.reflowlauncher`
+- Reload (preferred): `adb shell am broadcast -a com.anigeek.reflowlauncher.RELOAD -p com.anigeek.reflowlauncher`
+- Reload (explicit component): `adb shell am broadcast -a com.anigeek.reflowlauncher.RELOAD -n com.anigeek.reflowlauncher/dev.nasawa.configlauncher.ReloadReceiver`
+- Start: `adb shell am start -W -n com.anigeek.reflowlauncher/dev.nasawa.configlauncher.MainActivity`
+- Package for `run-as` / smoke: `com.anigeek.reflowlauncher` (Kotlin namespace stays `dev.nasawa.configlauncher`; always pass the fully qualified `$PKG/$NS.Class` form)
 - Schema `$id` for new files: `https://reflowlauncher.com/schema/launcher-config.v1.schema.json` (the old GitHub `$schema` URL is still accepted; existing files are not rewritten on round-trip).
 
 ## Unchanged on purpose
