@@ -277,7 +277,7 @@ run_point() {
     sh_ pm clear "$PKG" > /dev/null
     # Prefs + launcher first, then set-home, then force-stop again (kills any race launch), then re-copy.
     sh_ "run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'"
-    sh_ "cmd package set-home-activity $PKG/.MainActivity > /dev/null 2>&1"
+    sh_ "cmd package set-home-activity $PKG/$NS.MainActivity > /dev/null 2>&1"
     disable_stock_launchers
     sh_ am force-stop "$PKG"
     sh_ "run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'"
@@ -286,9 +286,9 @@ run_point() {
     sh_ logcat -b all -c > /dev/null 2>&1
 
     # F1 cold start (last attempt's start.txt is kept)
-    sh_ am start -W -n "$PKG/.MainActivity" > "$d/start.txt" 2>&1
+    sh_ am start -W -n "$PKG/$NS.MainActivity" > "$d/start.txt" 2>&1
     pause; anr "$d"
-    sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" >> "$d/run.txt" 2>&1
+    sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/$NS.ReloadReceiver" >> "$d/run.txt" 2>&1
     pause; anr "$d"
     dump "$d" home1
 
@@ -328,9 +328,9 @@ run_point() {
     sh_ am force-stop "$PKG"
     # Re-copy prefs after stop (belt-and-suspenders; pm clear is not used here).
     sh_ "run-as $PKG sh -c 'mkdir -p shared_prefs files/config/source && cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml && cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'" >/dev/null 2>&1 || true
-    sh_ "am start -W -n $PKG/.MainActivity" >> "$d/run.txt" 2>&1
+    sh_ "am start -W -n $PKG/$NS.MainActivity" >> "$d/run.txt" 2>&1
     pause 2
-    sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" >> "$d/run.txt" 2>&1
+    sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/$NS.ReloadReceiver" >> "$d/run.txt" 2>&1
     pause 2
     dump "$d" home1
   fi
@@ -524,13 +524,13 @@ pg_seed() {   # pg_seed <dir> <fixture>: cold start on <fixture>
   sh_ am force-stop "$PKG"
   A push "$FIX/$2" /data/local/tmp/sm-pager.json > /dev/null < /dev/null
   sh_ "run-as $PKG sh -c 'cp /data/local/tmp/sm-pager.json files/config/source/launcher.json'"
-  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1; pause; anr "$1"
-  sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" > /dev/null 2>&1; pause 3; anr "$1"
+  sh_ am start -W -n "$PKG/$NS.MainActivity" > /dev/null 2>&1; pause; anr "$1"
+  sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/$NS.ReloadReceiver" > /dev/null 2>&1; pause 3; anr "$1"
 }
 pg_reload() {  # pg_reload <dir> <fixture>: replace the config in place and RELOAD (no restart)
   A push "$FIX/$2" /data/local/tmp/sm-pager.json > /dev/null < /dev/null
   sh_ "run-as $PKG sh -c 'cp /data/local/tmp/sm-pager.json files/config/source/launcher.json'"
-  sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" > /dev/null 2>&1; pause; anr "$1"
+  sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/$NS.ReloadReceiver" > /dev/null 2>&1; pause; anr "$1"
 }
 pg_goto() {    # pg_goto <dir> <Title>: Pages list → that page (swipe fallback is not used: it is a check of its own)
   local d=$1 t=$2
@@ -550,7 +550,7 @@ pg_case_start() { echo "== pager $2" >> "$1/run.txt"; echo "$2" >> "$1/pager-cas
 pg_case_end() {
   { sh_ logcat -d -b crash; sh_ logcat -d -b main -b system | grep -E "ANR in $PKG|FATAL EXCEPTION|AndroidRuntime.*$PKG"; } > "$1/pg-$2-crash.txt" 2>&1
 }
-pg_task() { sh_ "dumpsys activity activities" 2>/dev/null | tr -d '\r' | grep -E "Task\{|mWindowingMode|windowingMode=" | grep -m3 -iE "configlauncher|freeform|multi" ; }
+pg_task() { sh_ "dumpsys activity activities" 2>/dev/null | tr -d '\r' | grep -E "Task\{|mWindowingMode|windowingMode=" | grep -m3 -iE "$PKG|freeform|multi" ; }
 # dragrot + plain drop (#214 r2) as functions so the drop probe (#218) can re-run them; they use the caller's
 # d, dens, rot, flip, W, H (bash dynamic scope).
 pg_dragrot() {
@@ -635,11 +635,11 @@ pager_probe() {
   {
     echo "--- enable freeform"
     sh_ "settings put global enable_freeform_support 1; settings put global force_resizable_activities 1; settings put global enable_non_resizable_multi_window 1" 2>&1
-    tid=$(sh_ "dumpsys activity activities" 2>/dev/null | tr -d '\r' | grep -m1 -oE "Task\{[0-9a-f]+ #[0-9]+[^}]*configlauncher" | grep -oE '#[0-9]+' | tr -d '#')
+    tid=$(sh_ "dumpsys activity activities" 2>/dev/null | tr -d '\r' | grep -m1 -oE "Task\{[0-9a-f]+ #[0-9]+[^}]*$PKG" | grep -oE '#[0-9]+' | tr -d '#')
     echo "task=$tid"
     [ -n "$tid" ] && sh_ "am task set-windowing-mode $tid 5" 2>&1 || true
     [ -n "$tid" ] && sh_ "cmd activity task set-windowing-mode $tid 5" 2>&1 || true
-    pg_task | grep -qi freeform || sh_ "am start -W --windowingMode 5 -n $PKG/.MainActivity" 2>&1
+    pg_task | grep -qi freeform || sh_ "am start -W --windowingMode 5 -n $PKG/$NS.MainActivity" 2>&1
     pg_task
   } >> "$d/pager-mw.txt" 2>&1
   pause; anr "$d"; pg_snap "$d" mw 1-freeform
@@ -842,7 +842,7 @@ sb_cards() {
 SRC_POINTS=${SRC_POINTS:-'^(p411-a51-v1|rtl-phone-port-v1|t7-port-v1|phone-land-v1|t7-land-v1)$'}
 src_h() { echo "$1 $(sh_ "run-as $PKG sh -c 'sha256sum files/config/source/launcher.json 2>/dev/null | cut -c1-64; stat -c %Y.%y files/config/source/launcher.json 2>/dev/null; grep -o showSource[^/]*value=.[a-z]*. shared_prefs/settings.xml'" | tr -d '\r' | tr '\n' ' ')" >> "$d/src-hashes.txt"; }
 src_snap() { dump "$d" "src-$1"; src_h "$1"; }
-src_reload() { sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/.ReloadReceiver" 2>&1 | tr -d '\r' | grep -m1 -o 'result=.*' >> "$d/src-reload.txt"; pause; anr "$d"; }
+src_reload() { sh_ am broadcast -a "$PKG.RELOAD" -n "$PKG/$NS.ReloadReceiver" 2>&1 | tr -d '\r' | grep -m1 -o 'result=.*' >> "$d/src-reload.txt"; pause; anr "$d"; }
 src_menu_toggle() {  # open ⋮, dump menu (<step>-menu), tap the item, dump (<step>-menu2), close
   dump "$d" .src; tap "$d/.src.xml" text '^⋮$' || { echo "src $1: no ⋮" >> "$d/run.txt"; rm -f "$d"/.src.*; return 1; }
   pause 2; src_snap "$1-menu"
@@ -865,13 +865,13 @@ src_probe() {
   sh_ "settings put system user_rotation $rot"; sh_ logcat -b all -c > /dev/null 2>&1
   sh_ am force-stop "$PKG"; src_put good > /dev/null 2>&1
   sh_ "run-as $PKG sh -c 'cp /data/local/tmp/sm-settings.xml shared_prefs/settings.xml'"
-  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1; pause; anr "$d"
+  sh_ am start -W -n "$PKG/$NS.MainActivity" > /dev/null 2>&1; pause; anr "$d"
   sh_ "run-as $PKG cat files/config/source/status.json" > "$d/src-status-0.json" 2>/dev/null || true
   src_snap 0-on
   src_menu_toggle 1 && src_snap 2-off
   sh_ "settings put system user_rotation $flip"; pause; anr "$d"; src_snap 3-rot
   sh_ "settings put system user_rotation $rot"; pause; anr "$d"; src_snap 4-back
-  sh_ am force-stop "$PKG"; sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1; pause; anr "$d"; src_snap 5-cold
+  sh_ am force-stop "$PKG"; sh_ am start -W -n "$PKG/$NS.MainActivity" > /dev/null 2>&1; pause; anr "$d"; src_snap 5-cold
   # problem banners with the note off
   src_put junk; src_snap 6-parse;   src_put good; src_snap 6-parse-clear
   src_put 's/"columns": 4/"columns": "four"/'; src_snap 7-invalid; src_put good; src_snap 7-invalid-clear
@@ -891,7 +891,7 @@ src_probe() {
   else echo "src 10: no edit mode" >> "$d/run.txt"; fi
   sh_ "run-as $PKG sh -c 'chmod 755 files/config/source; chmod 644 files/config/source/launcher.json'"
   sh_ am force-stop "$PKG"; src_put good > /dev/null 2>&1
-  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1; pause; anr "$d"; src_snap 10-saveerr-clear
+  sh_ am start -W -n "$PKG/$NS.MainActivity" > /dev/null 2>&1; pause; anr "$d"; src_snap 10-saveerr-clear
   # one recorded drag with the note off (DragOverlay, #231): QA Settings -> empty cell, committed
   if dnd_edit "$d" "$dens"; then
     dump "$d" src-11-edit
@@ -1053,7 +1053,7 @@ edge_probe() {
 dnd_reset() {
   sh_ am force-stop "$PKG"
   sh_ "run-as $PKG sh -c 'cp /data/local/tmp/sm-launcher.json files/config/source/launcher.json'"
-  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1; pause 3; anr "$1"
+  sh_ am start -W -n "$PKG/$NS.MainActivity" > /dev/null 2>&1; pause 3; anr "$1"
 }
 # Enter edit mode the way a user does without dragging: long-press empty grid → Edit layout.
 dnd_edit() {
@@ -1116,7 +1116,7 @@ tap_routing_probe() {
   [ -s "$d/tap-routing-taps.tsv" ] || return
   # Ensure launcher is foreground before probing
   home
-  sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1 || true
+  sh_ am start -W -n "$PKG/$NS.MainActivity" > /dev/null 2>&1 || true
   pause 2
   while IFS=$'\t' read -r tid kind how x y expect; do
     case $tid in id|'') continue;; esac
@@ -1136,7 +1136,7 @@ tap_routing_probe() {
     home
     # Re-assert launcher (a launch may have left another app on top)
     if ! grep -q "$PKG" "$d/tap-$tid-top.txt" 2>/dev/null; then
-      sh_ am start -W -n "$PKG/.MainActivity" > /dev/null 2>&1 || true
+      sh_ am start -W -n "$PKG/$NS.MainActivity" > /dev/null 2>&1 || true
       pause 2
     fi
   done < "$d/tap-routing-taps.tsv"
@@ -1152,7 +1152,7 @@ wait_boot_idle
 A install -r -g "$APK" < /dev/null | tee "$OUT/install.txt"
 grep -q '^Success' "$OUT/install.txt" || { echo "install failed" >&2; exit 1; }
 # Claim HOME and disable stock Pixel/Nexus Launcher before any point (API 35 tablet ANR storm).
-sh_ "cmd package set-home-activity $PKG/.MainActivity > /dev/null 2>&1" || true
+sh_ "cmd package set-home-activity $PKG/$NS.MainActivity > /dev/null 2>&1" || true
 disable_stock_launchers
 [ "$SHARD" = hinge ] && hinge_env
 echo "stock_launcher_disabled=${MATRIX_DISABLE_STOCK_LAUNCHER:-0} (force-stop only when 0)" >> "$OUT/harness-setup.txt"

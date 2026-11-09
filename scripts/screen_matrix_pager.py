@@ -18,6 +18,9 @@ Usage: screen_matrix_pager.py score <point-dir>   → pager.json / pager.md
 from __future__ import annotations
 
 import json
+import sys as _s, os as _o
+_s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
+from pkg import PKG  # noqa: E402  (#242)
 import os
 import re
 import sys
@@ -129,7 +132,7 @@ def score(d):
     m = c.meta_of(d)
     rtl = 'rtl' in (m.get('shape') or '').lower() or (m.get('locale') or '').startswith('ar')
     mw_txt = c.read(os.path.join(d, 'pager-mw.txt'))
-    freeform = bool(re.search(r'A=\d+:dev\.nasawa\.configlauncher[^\n]*mode=freeform', mw_txt))
+    freeform = bool(re.search(r'A=\d+:' + re.escape(PKG) + r'[^\n]*mode=freeform', mw_txt))
     cases = {}
     for case, steps in EXPECT.items():
         rows = []
@@ -158,7 +161,7 @@ def score(d):
                 if r['anr']:
                     probs.append('ANR dialog')
             top = c.read(os.path.join(d, f'pg-{case}-{step}-top.txt'))
-            if top and 'dev.nasawa.configlauncher' not in top:
+            if top and PKG not in top:
                 probs.append('launcher not resumed')
             scored = not (case == 'mw' and step in FREEFORM_STEPS and not freeform)
             rows.append({'step': step, 'want': [title, n, mm], 'want_dot_rank': want_rank, 'seen': r, 'ok': not probs,

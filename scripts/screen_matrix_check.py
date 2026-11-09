@@ -936,7 +936,7 @@ def run_checks(d):
     anr = read(os.path.join(d, 'anr.txt'))
     our_anr = [l for l in anr.splitlines() if 'Reflow Launcher' in l or 'Config Launcher' in l]
     start = read(os.path.join(d, 'start.txt'))
-    start_timeout = 'Status: timeout' in start and (PKG + '/.MainActivity') in start.replace('\r', '')
+    start_timeout = 'Status: timeout' in start and (PKG + '/') in start.replace('\r', '')
     started = ('Status: ok' in start or 'TotalTime' in start or not start or start_timeout)
     if 'Status: ok' in start:
         start_st = 'ok'

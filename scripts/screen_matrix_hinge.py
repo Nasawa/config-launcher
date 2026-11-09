@@ -15,7 +15,7 @@ import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import screen_matrix_check as c  # noqa: E402
 
-PKG = 'dev.nasawa.configlauncher'
+from pkg import PKG  # noqa: E402  (#242)
 NV = 'NOT-VERIFIABLE'
 
 
