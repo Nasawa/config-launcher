@@ -8,7 +8,7 @@ c469d27, and its two blockers and one should-fix are applied here, so **the UX r
 Archimedes.
 
 Docs only: nothing changes in `schema/` or app code until this is accepted and dev8 has shipped the ux.md §1.5
-defaults. It builds on [#185](https://github.com/Nasawa/config-launcher/pull/185) (ux.md §1.5), which merged into `main`
+defaults. It builds on [#185](https://github.com/Nasawa/reflow-launcher/pull/185) (ux.md §1.5), which merged into `main`
 on 2026-10-26.
 
 **UI naming:** the base layout is called **main** in every string people see. An override layout shows its `label`,

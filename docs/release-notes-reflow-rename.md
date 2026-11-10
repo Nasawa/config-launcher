@@ -6,8 +6,8 @@ This build ships **Reflow Launcher** as a **new app** (`com.anigeek.reflowlaunch
 
 1. **Install** Reflow Launcher (this build).
 2. **Set HOME** to Reflow (the short launcher label).
-3. **Re-pick your config folder** (the same folder you used before). Your `launcher.json` and `.configlauncher/` stay put; the folder name does not change.
-4. **Re-add widgets** you care about (widget hosts are per-app).
+3. **Re-pick your config folder** (the same folder you used before). When Reflow says the folder already has a `launcher.json`, choose **Use the folder's layout**. **Replace it with mine** would write Reflow's empty starter layout over your file. Your `launcher.json` and `.configlauncher/` stay put; the folder name does not change.
+4. **Re-add widgets** you care about (widget hosts are per-app), and **re-approve dashboard cards**. Card approvals and "Always allow" sites are stored per app, so they ask again.
 5. **Uninstall** the old Config Launcher when you are happy with the new one.
 
 Because Reflow has a new app id, it is a fresh install, not an upgrade: you re-pick the folder, set it as Home again, and redo any phone-only settings. Settings that live on the phone rather than in `launcher.json` (for example **Label backdrop**) start at their defaults in Reflow, so set them again in Settings.
@@ -21,8 +21,8 @@ There is **no** in-app export, share, or import. An app-only layout lives only i
 To keep it:
 
 1. In the **old** Config Launcher, open ⋮ → **Choose folder** (or the first-run folder pick) and pick a folder.
-2. If the folder is empty, the app writes your current layout there as `launcher.json`. If the folder already has a file, choose **Replace it with mine** so your layout is written (the previous file is copied to `.configlauncher/backup/` first when that path works).
-3. Install Reflow Launcher, set HOME, and **pick that same folder**. The new app reads the folder's `launcher.json`.
+2. If the folder is empty, the app writes your current layout there as `launcher.json`. If the folder already has a file, choose **Replace it with mine** here, in the old app only, so your layout is written (the previous file is copied to `.configlauncher/backup/` first when that path works).
+3. Install Reflow Launcher, set HOME, and **pick that same folder**. In Reflow, choose **Use the folder's layout** (not Replace it with mine, which would overwrite your file with Reflow's empty starter layout). The new app reads the folder's `launcher.json`.
 
 Debug builds can also pull the private file with `adb exec-out run-as <old-package> cat files/config/source/launcher.json` and push it into a folder, but that is a developer path, not an end-user feature.
 
@@ -42,4 +42,5 @@ Verified on: Android 10 (API 29) emulator, software rendering: fresh install, si
 
 - Kotlin packages / Gradle `namespace`: `dev.nasawa.configlauncher`
 - Sidecar folder: `.configlauncher/`
-- GitHub repository name: `Nasawa/config-launcher` (renamed separately after this lands)
+
+The GitHub repository was renamed separately after this landed, from `Nasawa/config-launcher` to `Nasawa/reflow-launcher`; old URLs redirect.

@@ -1,6 +1,6 @@
 # Reflow Launcher
 
-Formerly **config-launcher**. The GitHub repository name is unchanged for now (`Nasawa/config-launcher`); the Android `applicationId` is `com.anigeek.reflowlauncher`.
+Formerly **config-launcher**. The GitHub repository is now `Nasawa/reflow-launcher` (old `Nasawa/config-launcher` URLs redirect); the Android `applicationId` is `com.anigeek.reflowlauncher`.
 
 <a href="https://ko-fi.com/anigeekapps"><img src="https://img.shields.io/badge/Ko--fi-Support-FF5E5B.svg?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
 

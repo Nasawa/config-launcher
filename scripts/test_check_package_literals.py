@@ -83,6 +83,7 @@ MUTATIONS = {
     "partial_ns_truncated": ('scripts/x.py', "PREFIX = 'dev.nasawa.config'\n"),
     "unquoted_old_action_adb": ('README.md', 'adb shell am broadcast -a dev.nasawa.configlauncher.RELOAD\n'),
     "unquoted_old_action_xml_comment": ('app/src/main/AndroidManifest.xml', '<!-- action dev.nasawa.configlauncher.RELOAD -->\n'),
+    "literal_pkg_receiver_shorthand": ('README.md', 'adb shell am broadcast -n com.anigeek.reflowlauncher/.ReloadReceiver\n'),
     "quoted_old_action_manifest": ('app/src/main/AndroidManifest.xml', '<action android:name="dev.nasawa.configlauncher.RELOAD" />\n'),
 }
 
@@ -95,6 +96,9 @@ CLEAN = {
     "fq_new_receiver": 'adb shell am broadcast -a com.anigeek.reflowlauncher.RELOAD -n com.anigeek.reflowlauncher/dev.nasawa.configlauncher.ReloadReceiver\n',
     "kotlin_import": 'import dev.nasawa.configlauncher.store.ConfigStore\n',
     "manifest_relative_name": '            android:name=".ReloadReceiver"\n',
+    # Another app's component shorthand is not ours (Grok Bot #245 follow-up): only our package / PKG / <applicationId>.
+    "unrelated_pkg_main": 'adb shell am start -n com.example/.MainActivity\n',
+    "unrelated_pkg_receiver": 'adb shell am broadcast -n com.example.other/.ReloadReceiver\n',
 }
 
 

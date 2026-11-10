@@ -2,7 +2,7 @@
 
 This folder holds `launcher.json`, the home screen of an Android phone running **Reflow Launcher**. The phone reads this file and writes it back when the user rearranges icons. You can edit it; the phone picks up valid changes within seconds of syncing.
 
-Schema `$id`: https://reflowlauncher.com/schema/launcher-config.v1.schema.json (a local copy may exist at `.configlauncher/launcher-config.v1.schema.json`; the old GitHub `$schema` URL is still accepted). Full guide: https://github.com/Nasawa/config-launcher#editing-launcherjson-for-agents-and-humans
+Schema `$id`: https://reflowlauncher.com/schema/launcher-config.v1.schema.json (a local copy may exist at `.configlauncher/launcher-config.v1.schema.json`; the old GitHub `$schema` URL is still accepted). Full guide: https://github.com/Nasawa/reflow-launcher#editing-launcherjson-for-agents-and-humans
 
 ## Before you edit
 1. If this folder is a git repo: `git pull --rebase` first. The phone commits its own edits.
@@ -23,7 +23,7 @@ Schema `$id`: https://reflowlauncher.com/schema/launcher-config.v1.schema.json (
 2 MiB file, 20 pages, 144 items per page, 2000 items total, 48 per folder, 7 in the dock, grid 2–12 × 2–12, labels 60 characters, IDs 64, other strings 256, 16 tags per item.
 
 ## After you edit
-1. Validate: `python3 validate.py launcher.json` (get it from https://raw.githubusercontent.com/Nasawa/config-launcher/main/scripts/validate.py; stdlib only, optional `pip install jsonschema`). `--format` rewrites the file exactly as the phone would.
+1. Validate: `python3 validate.py launcher.json` (get it from https://raw.githubusercontent.com/Nasawa/reflow-launcher/main/scripts/validate.py; stdlib only, optional `pip install jsonschema`). `--format` rewrites the file exactly as the phone would.
 2. Write the whole file in one go. Commit and push (git). Never force-push; on a rejected push, `git pull --rebase`, re-validate, push again. Never commit conflict markers.
 3. After the phone syncs, read `.configlauncher/status.json`. If it lists errors, the phone kept its last working layout: fix those errors (paths and messages are given) and write again. `warnings` (for example an element this version skipped) don't block loading; the element stays in the file.
 4. If reading `launcher.json` fails to parse, the phone may be mid-write: wait a second and retry.

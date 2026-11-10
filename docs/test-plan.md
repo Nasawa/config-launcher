@@ -435,7 +435,7 @@ Automation: R = Robolectric Compose UI test (`performTouchInput { longClick() }`
 
 ## 20. Tablets, landscape and foldables (ux.md §1.5, Archimedes' large-screen notes)
 
-Evidence so far: QA run 2 ([CI run 40377723279](https://github.com/Nasawa/config-launcher/actions/runs/40377723279) on bee4fe3; the #177 matrix), points t7-port, t7-land,
+Evidence so far: QA run 2 ([CI run 40377723279](https://github.com/Nasawa/reflow-launcher/actions/runs/40377723279) on bee4fe3; the #177 matrix), points t7-port, t7-land,
 t10-port, t10-land and fold-open at font 1.0 / 1.3 / 2.0. Until these checks exist, #177's Q2 interim stands: tablet,
 landscape and fold G1–G3 are advisory through dev7 and blocking at dev8.
 
