@@ -387,5 +387,121 @@ class SafWritesTest {
         assertNull(again.sha256("A", "msd:1")); assertEquals("abc", again.sha256("A", "msd:2"))
     }
 
+    // ---- #262 (Grace, #251 GO at 5e2d541): stale journal entries on msd:12 ----
+
+    /** A MediaStore-like provider: [rowOnly] ids still return a row (and a name) after the file is gone, then throw on use. */
+    private fun Setup.ghostRows(vararg rowOnly: String, on: String = "read") = object : DocTree by r {
+        override fun info(docId: String) = if (docId in rowOnly) DocInfo(bin, 0) else r.info(docId)
+        override fun displayName(docId: String) =
+            if (docId in rowOnly) { if (on == "name") throw java.io.FileNotFoundException(docId) else ".launcher.json.ea7c7721.tmp" } else r.displayName(docId)
+        override fun read(docId: String) = if (docId in rowOnly && on == "read") throw java.io.FileNotFoundException("No item at content://media/$docId") else r.read(docId)
+    }
+
+    @Test fun aRowForADeletedTempThatThrowsOnReadIsDropped() {
+        // Grace's ea7c7721 / 3d4068d8: a row comes back, and FileNotFoundException on read. Gone, not transient.
+        val s = setup(hidden = true, hideDots = true)
+        s.journal.add(s.key, "ea7c7721-id"); s.journal.add(s.key, "3d4068d8-id")
+        val p = s.ghostRows("ea7c7721-id", "3d4068d8-id")
+        assertEquals(emptyList<String>(), SafWrites(p, SafDirs(p, s.key), s.key, s.journal).sweepRootTemps("root"))
+        assertTrue(s.journal.list(s.key).toString(), s.journal.list(s.key).isEmpty())
+        val n = s.ghostRows("ghost", on = "name"); s.journal.add(s.key, "ghost")
+        SafWrites(n, SafDirs(n, s.key), s.key, s.journal).sweepRootTemps("root")
+        assertTrue("not-found on the name lookup: gone too", s.journal.list(s.key).isEmpty())
+    }
+
+    @Test fun anEmptyRowIsDropped() {
+        val s = setup(hidden = true, hideDots = true)
+        s.journal.add(s.key, "empty-row")
+        val p = object : DocTree by s.r {
+            override fun info(docId: String) = if (docId == "empty-row") DocInfo("", 0) else s.r.info(docId)
+            override fun displayName(docId: String) = if (docId == "empty-row") null else s.r.displayName(docId)
+        }
+        SafWrites(p, SafDirs(p, s.key), s.key, s.journal).sweepRootTemps("root")
+        assertTrue(s.journal.list(s.key).isEmpty())
+    }
+
+    @Test fun aTempThatVanishesBeforeItsDeleteIsDropped() {
+        val s = setup(hidden = true, hideDots = true)
+        val tmp = s.t.add("root", ".launcher.json.0123abcd.tmp", bin); s.t.write(tmp, "x".toByteArray()); s.journal.add(s.key, tmp)
+        val p = object : DocTree by s.r {
+            override fun delete(docId: String): Boolean { s.t.docs.remove(docId); throw java.io.FileNotFoundException(docId) }
+        }
+        SafWrites(p, SafDirs(p, s.key), s.key, s.journal).sweepRootTemps("root")
+        assertTrue(s.journal.list(s.key).isEmpty())
+    }
+
+    /** A provider whose reads of [busy] keep failing with a real transient error. */
+    private fun Setup.busy(vararg busy: String) = object : DocTree by r {
+        override fun read(docId: String) = if (docId in busy) throw IOException("provider busy") else r.read(docId)
+    }
+
+    @Test fun transientErrorsKeepTheEntryUntilMaxStrikesThenDropItButNeverTheFile() {
+        val s = setup(hidden = true, hideDots = true)
+        val tmp = s.t.add("root", ".launcher.json.0123abcd.tmp", bin); s.t.write(tmp, validNew.toByteArray())
+        val f = java.io.File(this.tmp.root, "config/saf-temps.txt"); val j = FileTempJournal(f)
+        j.add(s.key, tmp)
+        val p = s.busy(tmp)
+        repeat(SafWrites.MAX_STRIKES - 1) { start ->
+            SafWrites(p, SafDirs(p, s.key), s.key, FileTempJournal(f)).sweepRootTemps("root") // a new process each start
+            assertEquals("kept after ${start + 1} failed starts", listOf(tmp), FileTempJournal(f).list(s.key))
+        }
+        SafWrites(p, SafDirs(p, s.key), s.key, FileTempJournal(f)).sweepRootTemps("root")
+        assertTrue("dropped after ${SafWrites.MAX_STRIKES} failed starts in a row", FileTempJournal(f).list(s.key).isEmpty())
+        assertEquals("the file is never deleted for it", validNew, s.t.text(".launcher.json.0123abcd.tmp"))
+        assertFalse(tmp in s.t.deleted)
+    }
+
+    @Test fun aRefusedDeleteCountsAsAStrike() {
+        val s = setup(hidden = true, hideDots = true)
+        val tmp = s.t.add("root", ".launcher.json.0123abcd.tmp", bin); s.t.write(tmp, "x".toByteArray())
+        val f = java.io.File(this.tmp.root, "config/saf-temps.txt"); FileTempJournal(f).add(s.key, tmp)
+        val p = object : DocTree by s.r { override fun delete(docId: String) = false }
+        repeat(SafWrites.MAX_STRIKES) { SafWrites(p, SafDirs(p, s.key), s.key, FileTempJournal(f)).sweepRootTemps("root") }
+        assertTrue(FileTempJournal(f).list(s.key).isEmpty())
+    }
+
+    @Test fun strikesAreConsecutiveAndAccessLossCostsNone() {
+        val s = setup(hidden = true, hideDots = true)
+        val tmp = s.t.add("root", ".launcher.json.0123abcd.tmp", bin); s.t.write(tmp, validNew.toByteArray())
+        val f = java.io.File(this.tmp.root, "config/saf-temps.txt"); FileTempJournal(f).add(s.key, tmp)
+        val target = s.t.add("root", "launcher.json", json); s.t.write(target, "{ someone's half edit".toByteArray())
+        val p = s.busy(tmp)
+        val revoked = object : DocTree by s.r { override fun info(docId: String): DocInfo? = throw AccessLostException("revoked") }
+        fun start(t: DocTree) = SafWrites(t, SafDirs(t, s.key), s.key, FileTempJournal(f)).sweepRootTemps("root")
+        repeat(SafWrites.MAX_STRIKES - 1) { start(p) }
+        repeat(10) { start(revoked) } // no access: no strike
+        assertEquals(listOf(tmp), FileTempJournal(f).list(s.key))
+        assertEquals("kept on purpose (the only copy): settled, strikes restart", 1, start(s.r).size)
+        repeat(SafWrites.MAX_STRIKES - 1) { start(p) }
+        assertEquals(listOf(tmp), FileTempJournal(f).list(s.key))
+        start(p)
+        assertTrue(FileTempJournal(f).list(s.key).isEmpty())
+        assertEquals(validNew, s.t.text(".launcher.json.0123abcd.tmp"))
+    }
+
+    @Test fun aUserDotTmpIsNeverDeletedWhateverTheProviderSays() {
+        // Reusable ids: a journaled id that now names a user's file. Dropped from the journal, never deleted.
+        val s = setup(hidden = false)
+        val mine = listOf(".notes.tmp", ".launcher.json.tmp.tmp", ".launcher.json.ABCDEF12.tmp")
+            .map { n -> s.t.add("root", n, bin).also { s.t.write(it, "mine".toByteArray()); s.journal.add(s.key, it) } }
+        val p = object : DocTree by s.r { override fun read(docId: String) = throw IOException("busy") }
+        repeat(SafWrites.MAX_STRIKES + 1) { SafWrites(p, SafDirs(p, s.key), s.key, s.journal).sweepRootTemps("root") }
+        mine.forEach { assertTrue(s.t.docs.containsKey(it)); assertFalse(it in s.t.deleted) }
+        assertTrue(s.journal.list(s.key).isEmpty())
+    }
+
+    @Test fun fileJournalKeepsStrikesAndReadsOlderLines() {
+        val f = java.io.File(tmp.root, "config/saf-temps.txt")
+        f.parentFile!!.mkdirs(); f.writeText("A\tmsd:1\nA\tmsd:2\tabc\n") // 3fc9b0e and 5e2d541 lines
+        val j = FileTempJournal(f)
+        assertEquals(1, j.strike("A", "msd:1")); assertEquals(2, j.strike("A", "msd:1")); assertEquals(1, j.strike("A", "msd:2"))
+        assertEquals(0, j.strike("A", "not-journaled")); assertEquals(listOf("msd:1", "msd:2"), j.list("A"))
+        val again = FileTempJournal(f)
+        assertNull(again.sha256("A", "msd:1")); assertEquals("abc", again.sha256("A", "msd:2"))
+        assertEquals(3, again.strike("A", "msd:1"))
+        again.clearStrikes("A", "msd:1"); assertEquals(1, again.strike("A", "msd:1"))
+        assertEquals("abc", FileTempJournal(f).sha256("A", "msd:2"))
+    }
+
     private fun ConfigCodecOk(text: String) = dev.nasawa.configlauncher.config.ConfigCodec.decode(text) is dev.nasawa.configlauncher.config.ParseResult.Ok
 }

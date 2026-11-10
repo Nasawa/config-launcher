@@ -13,3 +13,13 @@ object BannerActions {
         else -> emptyList()
     }
 }
+
+/** #262: lines a problem banner always shows in full, whatever it's folded to. */
+object BannerNotes {
+    /**
+     * The start sweep's kept-temp lines ([dev.nasawa.configlauncher.store.ConfigEngine.keptTemps]): in the banner
+     * whenever one is up, because the Warnings list is hidden then (and status.json may not be writable). With no
+     * banner they're in the Warnings list instead, so each shows in exactly one place, and only while a temp is kept.
+     */
+    fun keptTemps(issue: Issue?, kept: List<String>): List<String> = if (issue == null) emptyList() else kept
+}

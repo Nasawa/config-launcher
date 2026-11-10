@@ -77,6 +77,8 @@ fun HomeScreen(vm: HomeViewModel) {
     // (count, order, text; phone-only and consent warnings included). None while a problem banner is up: that's the last-good layout.
     val statusWarnings by vm.store.engine.warnings.collectAsStateWithLifecycle()
     val warnings = if (ui.load.issue != null) emptyList() else statusWarnings
+    // #262: a save temp kept as the only copy of an edit is named in the problem banner while one hides the list.
+    val keptTemps by vm.store.engine.keptTemps.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }
@@ -415,7 +417,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     if (ui.load.conflict) ConflictBanner(ui.load.pendingEdits, onUseFile = vm.store::useFile, onKeepMine = vm.store::keepMine)
                     // B9 is the lowest-priority notice: only when no other banner is up. `×` collapses it to the chip.
                     if (b9) B9Banner(reviewCount, onReview = { b9DismissedAt = reviewCount; reviewOpen = true }, onDismiss = { b9DismissedAt = reviewCount })
-                    ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
+                    ui.load.issue?.let { IssueBanner(it, ui.load.reconnectable, kept = BannerNotes.keptTemps(it, keptTemps), locate = vm.store.engine::locateErrors, onReconnect = { moving = false; pickFolder.launch(null) }, onCreate = vm.store::createFromCurrentLayout, onUseAppStorage = { vm.store.useAppStorage() }, onRetry = vm.store::retrySave) }
                 }
                 pages.getOrNull(pager.currentPage).let { p ->
                     drag.currentPageId = p?.id
@@ -857,7 +859,7 @@ private fun ConflictBanner(count: Int, onUseFile: () -> Unit, onKeepMine: () -> 
 }
 
 @Composable
-private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnectable: Boolean, locate: (List<String>) -> List<dev.nasawa.configlauncher.config.TextPos?>, onReconnect: () -> Unit, onCreate: () -> Unit, onUseAppStorage: () -> Unit, onRetry: () -> Unit) {
+internal fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnectable: Boolean, kept: List<String> = emptyList(), locate: (List<String>) -> List<dev.nasawa.configlauncher.config.TextPos?>, onReconnect: () -> Unit, onCreate: () -> Unit, onUseAppStorage: () -> Unit, onRetry: () -> Unit) {
     val errors = issue.details
     var expanded by remember(issue) { mutableStateOf(false) }
     val title = when (issue) {
@@ -875,6 +877,8 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
             .clickable { expanded = !expanded }.padding(10.dp),
     ) {
         Text(title, color = c.title)
+        // #262: never folded, so the kept copy is seen without opening the details.
+        kept.forEach { Text("▲ $it", style = MaterialTheme.typography.bodySmall, color = c.title) }
         Row {
             BannerActions.forIssue(issue, reconnectable).forEach { a ->
                 when (a) {
