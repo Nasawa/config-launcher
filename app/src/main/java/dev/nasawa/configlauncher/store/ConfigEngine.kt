@@ -144,7 +144,8 @@ class ConfigEngine(
 
     private fun initial(): LoadState {
         val bytes = runCatching { lastGood.load() }.getOrNull()
-        val parsed = bytes?.let { ConfigCodec.decode(it) as? ParseResult.Ok }
+        // #120: lenient about bare tokens only here, so a last-good saved by an older build still loads.
+        val parsed = bytes?.let { ConfigCodec.decodeLastGood(it) as? ParseResult.Ok }
         return if (parsed != null) LoadState(parsed.config, Origin.LAST_GOOD, source.displayName, ConfigCodec.sha256(bytes))
         else LoadState(DefaultLayout.config, Origin.DEFAULT, source.displayName)
     }

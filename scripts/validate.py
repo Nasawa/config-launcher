@@ -72,8 +72,21 @@ def git_marker_line(text):
     return None
 
 
+NUMBER = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?")   # RFC 8259 §6, ASCII digits
+TOKEN_END = ' \t\n\r",:{}[]'
+
+
+def bad_token(t, line):
+    """JsonPreScan.badToken (#120): a bare token must be an RFC 8259 number or true/false/null."""
+    if t in ("true", "false", "null") or NUMBER.fullmatch(t):
+        return None
+    kind = "number" if t[0] in "+-.0123456789" else "value"
+    shown = t[:40] + "…" if len(t) > 40 else t
+    return f'invalid {kind} "{shown}" (line {line})'
+
+
 def prescan(text):
-    """Line-for-line port of JsonPreScan.scan: depth, duplicate keys, NUL, lone surrogates, same messages."""
+    """Line-for-line port of JsonPreScan.check: depth, duplicate keys, NUL, lone surrogates, bare tokens, same messages."""
     stack, expect_key, line, i, n = [], False, 1, 0, len(text)
     esc = {"n": 0x0A, "t": 0x09, "r": 0x0D, "b": 0x08, "f": 0x0C}
     while i < n:
@@ -93,6 +106,8 @@ def prescan(text):
             expect_key = bool(stack) and stack[-1] is not None
         elif c == ":":
             expect_key = False
+        elif c in " \t\r":
+            pass
         elif c == '"':
             units = []  # UTF-16 code units, as Kotlin sees the string
             i += 1
@@ -136,6 +151,13 @@ def prescan(text):
                         return f'duplicate key "{name}" (line {line})'
                     keys.add(key)
                 expect_key = False
+        else:
+            start = i
+            while i + 1 < n and text[i + 1] not in TOKEN_END:
+                i += 1
+            b = bad_token(text[start:i + 1], line)
+            if b:
+                return b
         i += 1
     return None
 
