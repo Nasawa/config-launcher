@@ -16,8 +16,9 @@ object Validator {
     fun validate(root: JsonElement): List<String> = Run().apply { root(root); tooLarge(root, "") }.errors
 
     /**
-     * #113: the writer emits a number as Long, then ULong, then Double (kotlinx JsonLiteralSerializer), and throws on
-     * a non-finite Double. A number outside the Double range anywhere (x- keys included) is therefore an error.
+     * #113: a number outside the Double range anywhere (x- keys included) is an error. The rule came from the writer,
+     * which emitted numbers as Long, then ULong, then Double and threw on a non-finite Double; since the #260 review
+     * it writes number text as is (ConfigCodec.exactNumbers), but the rule stays, matching scripts/validate.py.
      */
     private fun Run.tooLarge(e: JsonElement, path: String) {
         when (e) {

@@ -26,7 +26,8 @@ object ConfigCodec {
      * #120: the app's own last-good copy, read at cold start. Builds before #120 accepted bare tokens such as
      * `00` or `-` and saved those files as last-good; after the upgrade the folder file gets the usual load
      * error, but the layout it last showed still comes back. Everything else is as strict as [decode], and
-     * the model's write-back is strict JSON (kotlinx writes `00` as 0 and a non-number token as a string).
+     * the model's write-back is strict JSON (kotlinx writes `00` as 0 and a non-number token as a string; [encode]
+     * keeps only RFC 8259 number text as is).
      */
     fun decodeLastGood(bytes: ByteArray): ParseResult = decode(bytes, strictTokens = false)
 
@@ -55,7 +56,23 @@ object ConfigCodec {
         return ParseResult.Ok(toModel(migrated.tree.jsonObject))
     }
 
-    fun encode(config: LauncherConfig): String = pretty.encodeToString(JsonElement.serializer(), toJson(config)) + "\n"
+    fun encode(config: LauncherConfig): String = pretty.encodeToString(JsonElement.serializer(), exactNumbers(toJson(config))) + "\n"
+
+    /**
+     * #260 review: kotlinx's JsonLiteralSerializer writes a number primitive as Long, then ULong, then Double, so
+     * -12345678901234567890 came back as -1.2345678901234567E19, 1E+05 as 100000.0, 0.10 as 0.1 and -0 as 0. A number
+     * primitive's content is its text from the file (or what the app put there), so every RFC 8259 number is written
+     * as that text, unquoted. Anything else keeps the old path: a pre-#120 bare token read by [decodeLastGood]
+     * (`00`, `-`) still comes out as strict JSON (0, "-"). Typed fields (revision, grid, x, y) are model integers
+     * and are written in normal form; the only text they can lose is `-0` -> `0`.
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun exactNumbers(e: JsonElement): JsonElement = when (e) {
+        is JsonObject -> JsonObject(e.mapValues { exactNumbers(it.value) })
+        is JsonArray -> JsonArray(e.map(::exactNumbers))
+        is JsonNull -> e
+        is JsonPrimitive -> if (!e.isString && JsonPreScan.isNumber(e.content)) JsonUnquotedLiteral(e.content) else e
+    }
 
     fun encodeBytes(config: LauncherConfig): ByteArray = encode(config).toByteArray(Charsets.UTF_8)
 

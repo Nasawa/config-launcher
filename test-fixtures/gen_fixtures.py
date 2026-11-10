@@ -18,13 +18,13 @@ pg=lambda c: c['pages'][0]['items']
 add(V,'minimal.json',B,'valid','both','§3','copy of schema/examples/minimal.json')
 add(V,'bom.json',b'\xef\xbb\xbf'+dump(B),'valid (BOM stripped; next write has no BOM)','parser','§15 OQ-7','')
 add(V,'x-keys.json',m(lambda c:(c.__setitem__('x-note','agent notes'),pg(c)[0].__setitem__('x-color',{'a':[1,2]}))),'valid; x- keys round-trip verbatim','both','§15 OQ-4','')
-# #113: number text as the phone writes it (Long, then ULong, then Java Double.toString), in an x- key.
+# #113, #260 review: number text the phone must write back exactly as is, in an x- key.
 NUMS=['1.50', '-1.250', '1e3', '2.50E2', '1.5e-7', '0.00099', '1e7', '1e21', '123456789.123456789', '5e-324', '-0', '-0.0', '0.0', '1E0', '12345678901234567890', '-12345678901234567890', '9007199254740993']
 def raw_nums(c, key, nums):
     """Writes [nums] under [key] as literal JSON number text (json.dumps would normalize it)."""
     c[key]=['@%d@'%k for k in range(len(nums))]
     return re.sub(rb'"@(\d+)@"', lambda g: nums[int(g.group(1))].encode(), dump(c))
-add(V,'x-numbers.json',raw_nums(copy.deepcopy(B),'x-n',NUMS),'valid; numbers are rewritten as the phone writes them (1.50 -> 1.5, 1e3 -> 1000.0)','both','#113','')
+add(V,'x-numbers.json',raw_nums(copy.deepcopy(B),'x-n',NUMS),'valid; numbers keep their exact text when the phone writes the file (1.50, 1e3, -0, 20-digit integers)','both','#113','')
 add(V,'no-revision.json',m(lambda c:c.pop('revision')),'valid','both','§15 OQ-20','')
 add(V,'same-app-dock-and-page.json',m(lambda c:c['dock'].append({'id':'a-settings2','type':'app','package':'com.android.settings'})),'valid','both','§15 OQ-5','')
 add(V,'same-app-twice-on-page.json',m(lambda c:pg(c).append({'id':'a-settings2','type':'app','package':'com.android.settings','x':3,'y':0})),'valid with warning','kotlin','§3, §15 OQ-5','')

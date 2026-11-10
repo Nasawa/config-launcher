@@ -19,7 +19,7 @@ keys (sorted), LF, trailing newline, UTF-8 without BOM; the deprecated `unsorted
 Item order and unspecified keys like `grid` are kept as written; only a phone edit changes those.
 Stdlib only, plus optional `jsonschema`.
 """
-import argparse, decimal, json, math, pathlib, re, sys
+import argparse, json, math, pathlib, re, sys
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_DEPTH = 16
@@ -1234,7 +1234,7 @@ ULONG_MAX = (1 << 64) - 1
 
 
 def _as_int(text):
-    """kotlinx JsonLiteralSerializer: a number that fits Long (or ULong) is written as that integer."""
+    """A number that fits Long (or ULong), as kotlinx reads it; any other number must fit a double (_too_large)."""
     if re.fullmatch(r"-?\d+", text):
         n = int(text)
         if LONG[0] <= n <= LONG[1] or 0 <= n <= ULONG_MAX:
@@ -1242,41 +1242,14 @@ def _as_int(text):
     return None
 
 
-def _java_double(d):
-    """Double.toString (JDK 19+): shortest digits that round-trip, at least two when one would do."""
-    if d == 0:
-        return "-0.0" if math.copysign(1, d) < 0 else "0.0"
-    sign = "-" if d < 0 else ""
-    d = abs(d)
-    digits, exp = _shortest(d)
-    if len(digits) == 1:
-        # Two digits closest to the exact value (JDK picks the closest 2-digit decimal, e.g. 4.9E-324).
-        m, e = f"{decimal.Decimal(d):.1e}".split("e")
-        digits, exp = m.replace(".", "").rstrip("0") or "0", int(e)
-    if 1e-3 <= d < 1e7:
-        if exp >= 0:
-            ip = digits[:exp + 1].ljust(exp + 1, "0")
-            fp = digits[exp + 1:] or "0"
-        else:
-            ip, fp = "0", "0" * (-exp - 1) + digits
-        return f"{sign}{ip}.{fp}"
-    return f"{sign}{digits[0]}.{digits[1:] or '0'}E{exp}"
-
-
-def _shortest(d):
-    """Shortest round-trip significant digits (no trailing zeros) and the decimal exponent of the first digit."""
-    t = decimal.Decimal(repr(d)).normalize().as_tuple()
-    return "".join(map(str, t.digits)), len(t.digits) - 1 + t.exponent
-
-
 def _num_text(v):
-    """A number as the phone writes it (#113): integers in Long/ULong range as is, everything else as a Java double."""
-    n = _as_int(v)
-    return str(n) if n is not None else _java_double(float(v))
+    """A number as the phone writes it: its text from the file, as is (ConfigCodec.exactNumbers, #260 review).
+    Typed fields (revision, grid, x, y) were already normalized by _num."""
+    return str(v)
 
 
 def _too_large(tree, path, out):
-    """#113: a number outside the double range can't be written back by the phone, so it's an error (any key)."""
+    """#113: a number outside the double range is an error (any key), as on the phone (Validator.tooLarge)."""
     if isinstance(tree, Num):
         if _as_int(tree) is None and not math.isfinite(float(tree)):
             out.append(f"{path}: {tree} is too large for a number" if path else f"{tree} is too large for a number")
