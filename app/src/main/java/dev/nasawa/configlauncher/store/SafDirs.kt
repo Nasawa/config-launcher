@@ -6,6 +6,9 @@ import java.io.IOException
 /** One child row of a SAF listing. */
 internal data class DocChild(val docId: String, val mime: String, val modified: Long, val size: Long)
 
+/** A document's own type and size, queried on its document URI (not through a listing, which may hide it). */
+internal data class DocInfo(val mime: String, val size: Long)
+
 /** The few SAF document operations [SafDirs] needs. [SafSource] backs it with DocumentsContract; tests use a fake. */
 internal interface DocTree {
     /** A fresh listing of [parentDocId], by display name. */
@@ -19,6 +22,10 @@ internal interface DocTree {
     fun read(docId: String): ByteArray?
     /** Truncate-writes [bytes] to the document. */
     fun write(docId: String, bytes: ByteArray)
+    /** #251: the document's own type and size (document URI query), or null when it's gone. */
+    fun info(docId: String): DocInfo?
+    /** #251: how many children the folder [docId] has, from its own children URI. */
+    fun childCount(docId: String): Int
 }
 
 /**
@@ -54,19 +61,32 @@ internal class SafDirs(private val tree: DocTree, private val treeKey: String) {
         val id = tree.create(parentDocId, mime, name) ?: throw IOException("can't create $name")
         val actual = runCatching { tree.displayName(id) }.getOrNull()
         if (actual == null || actual == name) { made[key] = id; return id }
-        discardIfEmpty(parentDocId, id, mime)
+        discardIfEmpty(id)
         tree.list(parentDocId)[name]?.let { made[key] = it.docId; return it.docId }
         if (hidden.add(key)) unannounced += key
         throw hiddenError(name, actual)
     }
 
-    /** Deletes [id] (the document just created) only if it is still empty; anything else is left alone. */
-    private fun discardIfEmpty(parentDocId: String, id: String, mime: String) {
+    /**
+     * Deletes [id] (the document just created) only if it is still empty; anything else is left alone.
+     * #251 (Grace): decided on the document itself (its own size / mime, or its own children for a folder), never
+     * from the parent listing, which hides dot names on MediaStore trees and so used to leave `(N)` copies behind.
+     */
+    private fun discardIfEmpty(id: String) {
         val empty = runCatching {
-            if (mime == Document.MIME_TYPE_DIR) tree.list(id).isEmpty()
-            else tree.list(parentDocId).values.firstOrNull { it.docId == id }?.size == 0L
+            val info = tree.info(id) ?: return@runCatching false
+            if (info.mime == Document.MIME_TYPE_DIR) tree.childCount(id) == 0 else info.size == 0L
         }.getOrDefault(false)
         if (empty) runCatching { tree.delete(id) }
+    }
+
+    /**
+     * #251: a scratch document (a root save temp). Whatever name the provider gives it is accepted, with no rename
+     * check and no suppression: it's ours because we just created it, it's used by the returned id and deleted by
+     * that id ([SafWrites]). Serialized with [ensure].
+     */
+    fun createScratch(parentDocId: String, mime: String, name: String): String = synchronized(lock) {
+        tree.create(parentDocId, mime, name) ?: throw IOException("can't create $name")
     }
 
     private fun hiddenError(name: String, actual: String? = null) = IOException(

@@ -13,7 +13,7 @@ import java.io.IOException
  * (or `.launcher.json.tmp` in the root while `.configlauncher` is unusable, #251), verify, truncate-write
  * launcher.json ("wt"), verify, restore from temp on failure.
  */
-class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : ConfigSource {
+class SafSource(private val resolver: ContentResolver, val treeUri: Uri, private val journal: TempJournal = TempJournal.NONE) : ConfigSource {
     private val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
     override val displayName = "Folder: " + rootDocId.substringAfterLast(':').ifEmpty { rootDocId }
     override val location = FolderPath.launcherJson(treeUri.authority, rootDocId, treeUri.toString())
@@ -65,11 +65,19 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
         override fun delete(docId: String) = DocumentsContract.deleteDocument(resolver, docUri(docId))
         override fun read(docId: String) = readUri(docUri(docId))
         override fun write(docId: String, bytes: ByteArray) = writeUri(docUri(docId), bytes)
+        override fun info(docId: String): DocInfo? = try {
+            resolver.query(docUri(docId), arrayOf(Document.COLUMN_MIME_TYPE, Document.COLUMN_SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst()) DocInfo(c.getString(0) ?: "", if (c.isNull(1)) 0 else c.getLong(1)) else null
+            }
+        } catch (_: java.io.FileNotFoundException) { null } catch (_: IllegalArgumentException) { null }
+        override fun childCount(docId: String): Int =
+            resolver.query(DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId), arrayOf(Document.COLUMN_DOCUMENT_ID), null, null, null)
+                ?.use { it.count } ?: throw IOException("can't list $docId")
     }
     private val dirs = SafDirs(docs, treeUri.toString())
-    private val writes = SafWrites(docs, dirs)
+    private val writes = SafWrites(docs, dirs, treeUri.toString(), journal)
 
-    /** #251: start-up sweep of root temps (`.launcher.json.tmp`, `.AGENTS.md.tmp`) left by a killed save. */
+    /** #251: start-up sweep of root save temps left by a killed save (by journaled document id; [SafWrites]). */
     fun sweepRootTemps() = writes.sweepRootTemps(rootDocId)
 
     /** #244: find-or-create through [SafDirs] (serialized, rename-checked), never a bare createDocument. */

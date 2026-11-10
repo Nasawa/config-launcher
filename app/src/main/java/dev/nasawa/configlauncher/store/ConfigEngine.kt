@@ -633,7 +633,9 @@ class ConfigEngine(
         noteSuppression()
         val name = hiddenNotice ?: return
         hiddenNotice = null
-        _state.update { it.copy(notice = Msg(dev.nasawa.configlauncher.R.string.folder_hidden_notice, name)) }
+        val msg = if (name in SafWrites.ROOT_FILES) Msg(dev.nasawa.configlauncher.R.string.folder_hidden_notice_file, name)
+            else Msg(dev.nasawa.configlauncher.R.string.folder_hidden_notice)
+        _state.update { it.copy(notice = msg) }
     }
 
     /**
@@ -648,7 +650,9 @@ class ConfigEngine(
 
     /** #251 Warnings / status.json line for a suppressed [name] (English like the other status lines; Pragma copy). */
     internal fun suppressedWarning(name: String) =
-        "Can't save $name: the storage app hides the one already in this folder, so no copy was made. Choose the folder again from internal storage."
+        if (name in SafWrites.ROOT_FILES) "Can't save $name: the storage app hides the one already in this folder, so no copy was made. To fix it, choose the folder again from internal storage."
+        // `.configlauncher` (or something in it): launcher.json still saves through a root temp ([SafWrites]).
+        else "Your edits are saved, but backups and status can't be kept here because the storage app hides $name. To fix it, choose the folder again from internal storage."
 
     fun consumeNotice() = _state.update { it.copy(notice = null) }
     fun consumeMerge() = _state.update { it.copy(merge = null) }

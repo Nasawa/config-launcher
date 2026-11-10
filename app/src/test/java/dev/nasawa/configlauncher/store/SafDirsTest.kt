@@ -22,6 +22,8 @@ class SafDirsTest {
         private val next = AtomicInteger()
         /** Names the listing never shows (a MediaStore tree hiding the dot-folder). */
         val unlisted = mutableSetOf<String>()
+        /** #251: the listing hides every dot name, like MediaStore on an `msd:` tree. */
+        var hideDotFiles = false
         /** Created ids stay out of listings for this many further list() calls (a cached listing). */
         var staleFor = 0
         private val staleLeft = ConcurrentHashMap<String, Int>()
@@ -36,7 +38,7 @@ class SafDirsTest {
 
         override fun list(parentDocId: String): Map<String, DocChild> {
             Thread.yield()
-            val out = docs.values.filter { it.parent == parentDocId && it.name !in unlisted && (staleLeft[it.id] ?: 0) == 0 }
+            val out = docs.values.filter { it.parent == parentDocId && it.name !in unlisted && !(hideDotFiles && it.name.startsWith(".")) && (staleLeft[it.id] ?: 0) == 0 }
                 .associate { it.name to DocChild(it.id, it.mime, 0, it.size) }
             staleLeft.replaceAll { _, n -> maxOf(0, n - 1) }
             return out
@@ -46,7 +48,9 @@ class SafDirsTest {
             Thread.yield()
             val taken = docs.values.filter { it.parent == parentDocId }.map { it.name }.toSet()
             var actual = name; var n = 1
-            while (actual in taken) actual = "$name (${n++})"
+            // Like the real providers: the number goes before the extension (`.launcher.json (1).tmp`).
+            val dot = name.lastIndexOf('.')
+            while (actual in taken) actual = if (dot > 0) "${name.substring(0, dot)} (${n++})${name.substring(dot)}" else "$name (${n++})"
             return add(parentDocId, actual, mime).also { staleLeft[it] = staleFor }
         }
         override fun displayName(docId: String) = docs[docId]?.name
@@ -54,6 +58,8 @@ class SafDirsTest {
             require(docs.values.none { it.parent == docId }) { "deleted a non-empty folder" }
             deleted += docId; content.remove(docId); return docs.remove(docId) != null
         }
+        override fun info(docId: String) = docs[docId]?.let { DocInfo(it.mime, it.size) }
+        override fun childCount(docId: String) = docs.values.count { it.parent == docId }
         override fun read(docId: String) = if (docs.containsKey(docId)) content[docId] ?: ByteArray(0) else null
         override fun write(docId: String, bytes: ByteArray) {
             val d = docs[docId] ?: throw java.io.FileNotFoundException(docId)
@@ -217,5 +223,17 @@ class SafDirsTest {
         SafDirs.clearTree(ka) // re-armed: a recurrence is reported again
         assertThrows(IOException::class.java) { SafDirs(a, ka).ensure("root", ".configlauncher", dir) }
         assertEquals(listOf(".configlauncher"), SafDirs(a, ka).takeNew())
+    }
+
+    @Test fun hiddenRenamedCopyIsDeletedByItsOwnSize() {
+        // #251 (Grace): the provider hides dot names, so the renamed `.configlauncher (1)` isn't listed either.
+        // The empty check queries the document itself, so it's still removed.
+        val t = FakeTree().apply { hideDotFiles = true }; val k = key()
+        t.add("root", ".configlauncher", dir)
+        t.write(t.add("root", ".launcher.json.tmp", bin), ByteArray(1888))
+        repeat(3) { assertThrows(IOException::class.java) { SafDirs(t, k).ensure("root", ".configlauncher", dir) }; SafDirs.clearTree(k) }
+        repeat(3) { assertThrows(IOException::class.java) { SafDirs(t, k).ensure("root", ".launcher.json.tmp", bin) }; SafDirs.clearTree(k) }
+        assertEquals(listOf(".configlauncher", ".launcher.json.tmp"), t.namesIn("root"))
+        assertEquals(6, t.deleted.size)
     }
 }

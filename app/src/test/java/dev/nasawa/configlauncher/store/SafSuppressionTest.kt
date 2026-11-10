@@ -18,7 +18,7 @@ class SafSuppressionTest {
     /** A folder source whose sidecars go through [SafDirs] on a fake provider, like SafSource. launcher.json is in memory. */
     private inner class TreeSource(val t: SafDirsTest.FakeTree, val key: String) : ConfigSource {
         private val dirs = SafDirs(t, key)
-        private val writes = SafWrites(t, dirs)
+        private val writes = SafWrites(t, dirs, key)
         init { if (t.list("root")["launcher.json"] == null) t.write(t.add("root", "launcher.json", "application/json"), doc.toByteArray()) }
         /** launcher.json lives in the fake tree, written through the real [SafWrites] path. */
         val file: ByteArray? get() = t.list("root")["launcher.json"]?.let { t.read(it.docId) }
@@ -47,7 +47,7 @@ class SafSuppressionTest {
         val t = SafDirsTest.FakeTree(); val id = t.add("root", ".configlauncher", dir); t.unlisted += ".configlauncher"; return t to id
     }
     private fun engine(src: ConfigSource) = ConfigEngine(src, LastGoodStore(tmp.newFolder()), stabilityMs = 0, clock = { 1_000L })
-    private val line = "Can't save .configlauncher: the storage app hides the one already in this folder, so no copy was made. Choose the folder again from internal storage."
+    private val line = "Your edits are saved, but backups and status can't be kept here because the storage app hides .configlauncher. To fix it, choose the folder again from internal storage."
     private fun ConfigEngine.takeNotice() = state.value.notice.also { consumeNotice() }
 
     /** The user deleted the hidden original from another app (and the provider lists normally again). */
@@ -56,7 +56,7 @@ class SafSuppressionTest {
     @Test fun warningFiresOncePerSuppression() = runBlocking {
         val (t, _) = hiddenTree(); val e = engine(TreeSource(t, key()))
         e.poll(force = true)
-        assertEquals(Msg(R.string.folder_hidden_notice, ".configlauncher"), e.takeNotice())
+        assertEquals(Msg(R.string.folder_hidden_notice), e.takeNotice())
         assertEquals(listOf(line), e.warnings.value)
         repeat(5) { e.poll(force = true); e.poll() }
         assertNull("once, not on every poll", e.takeNotice())
@@ -71,7 +71,7 @@ class SafSuppressionTest {
         val cl = t.list("root")[".configlauncher"]!!.docId
         t.add(cl, "apps.json", "application/octet-stream", 9); t.unlisted += "apps.json"
         e.writeApps(listOf(InstalledApp("a.b", "a.b.Main", "A")))
-        assertEquals(Msg(R.string.folder_hidden_notice, "apps.json"), e.takeNotice())
+        assertEquals(Msg(R.string.folder_hidden_notice), e.takeNotice())
         val want = line.replace(".configlauncher", "apps.json")
         assertTrue(src.sidecars["status.json"]!!, src.sidecars["status.json"]!!.contains(want.replace("\"", "\\\"")))
         assertEquals(listOf(want), e.warnings.value)
@@ -97,7 +97,7 @@ class SafSuppressionTest {
         e.poll(force = true); e.takeNotice()
         e.switchSource(TreeSource(t, k)) // Reconnect: still hidden, so it's tried once more and reported again
         assertEquals(2, t.creates.get())
-        assertEquals(Msg(R.string.folder_hidden_notice, ".configlauncher"), e.takeNotice())
+        assertEquals(Msg(R.string.folder_hidden_notice), e.takeNotice())
         assertEquals(listOf(".configlauncher", "launcher.json"), t.namesIn("root")) // the renamed copy was removed again
     }
 
