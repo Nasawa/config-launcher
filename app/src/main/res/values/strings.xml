@@ -84,6 +84,8 @@
     <string name="menu_ask_before_merging">Ask before merging</string>
     <string name="menu_open_keyboard">Open keyboard with drawer</string>
     <string name="menu_reload">Reload layout</string>
+    <!-- #255 (ux.md §14 R11): version in the ⋮ menu. %1$s is versionName, the same as the GitHub Release tag without the v. -->
+    <string name="menu_version">Version %1$s</string>
     <string name="search_hint">Search apps</string>
     <string name="search_no_match">No apps match \"%1$s\".</string>
     <string name="dock_empty">Dock: long-press an app and drop it here</string>
