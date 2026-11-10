@@ -5,6 +5,18 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// #255: versionName / versionCode from the git tag. See scripts/version.py and AGENTS.md.
+val appVersionParsed = providers.exec {
+    commandLine(
+        "python3",
+        rootProject.layout.projectDirectory.file("scripts/version.py").asFile.absolutePath,
+        "--from-git",
+    )
+    workingDir = rootProject.layout.projectDirectory.asFile
+}.standardOutput.asText.get().trim().lineSequence().toList()
+val appVersionName = appVersionParsed.first { it.startsWith("VERSION_NAME=") }.substringAfter("=")
+val appVersionCode = appVersionParsed.first { it.startsWith("VERSION_CODE=") }.substringAfter("=").toInt()
+
 android {
     namespace = "dev.nasawa.configlauncher"
     compileSdk = 37
@@ -13,8 +25,9 @@ android {
         applicationId = "com.anigeek.reflowlauncher"
         minSdk = 29 // ARCHITECTURE.md §18 ruling (Archimedes, 2026-10-18)
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // #255: versionName and versionCode come from the git tag (scripts/version.py).
+        versionCode = appVersionCode
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     // #73: one stable, committed DEBUG-ONLY key, so every dev build (any machine or CI runner) installs over the last.

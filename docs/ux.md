@@ -781,7 +781,7 @@ MVP vs later and the interim ⋮ menu: see §14.
 | `Label backdrop` | Switch, default **off**. A rounded 60 % black scrim behind home labels for busy wallpapers (§1.1). Stored in app settings (SharedPreferences) |
 | `Home app` | Status + `Set as home app` |
 | `Grid` | Columns/rows pickers (3–6 × 4–7). They write `grid` like any edit. Shrinking that would push items off-grid is refused with `Move apps out of the last column first.` |
-| `About` | Version and licenses. No Kvaesitso code is copied (ARCHITECTURE §13) |
+| `About` | Version and licenses. No Kvaesitso code is copied (ARCHITECTURE §13). **Interim (R11):** a `Version <versionName>` line at the bottom of the ⋮ menu; licenses later |
 
 ---
 

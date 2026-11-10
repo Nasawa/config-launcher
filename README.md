@@ -282,6 +282,12 @@ This key is public and proves nothing about who built an APK. Never use it for r
 release key. Builds signed with the old per-machine keys (up to v0.0.1-dev2) need one uninstall before the first build
 with this key.
 
+## Version numbers
+
+The version in the ⋮ menu (`Version 1.0.0-rc1`) is the same as the GitHub Release tag without the leading `v`. It is
+taken from that tag at build time; `versionCode` rises with every tag so updates install over older builds. Untagged
+local builds show `Version 0.0.0-dev`. The rule is in `AGENTS.md` and `scripts/version.py`.
+
 ## Debug builds: pushing a config in app-only mode
 
 In app-only mode ("Skip for now"), launcher.json lives in app-private storage at

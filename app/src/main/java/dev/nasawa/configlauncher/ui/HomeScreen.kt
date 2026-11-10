@@ -78,6 +78,10 @@ fun HomeScreen(vm: HomeViewModel) {
     val statusWarnings by vm.store.engine.warnings.collectAsStateWithLifecycle()
     val warnings = if (ui.load.issue != null) emptyList() else statusWarnings
     val ctx = LocalContext.current
+    // #255: versionName from the APK, the same string as the GitHub Release tag without the v.
+    val appVersionName = remember {
+        runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull().orEmpty()
+    }
     var openFolder by remember { mutableStateOf<ResolvedItem?>(null) }
     var drawerOpen by remember { mutableStateOf(false) }
     var backdrop by remember { mutableStateOf(vm.store.prefs.labelBackdrop) }
@@ -402,6 +406,8 @@ fun HomeScreen(vm: HomeViewModel) {
                                 { menuOpen = false; reviewOpen = true })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_reload)) }, { menuOpen = false; vm.store.pollNow() })
                             if (!isHome) DropdownMenuItem({ Text(stringResource(R.string.home_role_button)) }, { menuOpen = false; becomeHome() })
+                            // #255 / ux.md §14 R11: version only in the ⋮ menu is fine.
+                            DropdownMenuItem({ Text(stringResource(R.string.menu_version, appVersionName)) }, { menuOpen = false })
                         }
                     }
                 }
@@ -573,6 +579,8 @@ fun HomeScreen(vm: HomeViewModel) {
                                         { menuOpen = false; reviewOpen = true })
                                     DropdownMenuItem({ Text(stringResource(R.string.menu_reload)) }, { menuOpen = false; vm.store.pollNow() })
                                     if (!isHome) DropdownMenuItem({ Text(stringResource(R.string.home_role_button)) }, { menuOpen = false; becomeHome() })
+                                    // #255 / ux.md §14 R11: version only in the ⋮ menu is fine.
+                                    DropdownMenuItem({ Text(stringResource(R.string.menu_version, appVersionName)) }, { menuOpen = false })
                                 }
                             }
                         }
