@@ -26,8 +26,19 @@ internal interface DocTree {
  * - a fresh listing by exact display name comes first, then a document this process already created;
  * - after a create, the returned display name is checked. If the provider renamed it, the new document is deleted
  *   (only that one, only while empty), the original is used if it's now listed, else this fails with an
- *   IOException and won't try creating that name again in this tree until the process restarts.
+ *   IOException and won't try creating that name again in this tree (see "Suppression" below).
  * Pre-existing `(N)` folders are never touched.
+ *
+ * Suppression (#251, Archimedes): in memory only, keyed by tree URI + parent + name, so other trees and names
+ * are unaffected. No poll counter expires it. It ends when:
+ * - the user picks that folder again (first run / Choose folder / Reconnect: [ConfigEngine.moveTo] and
+ *   [ConfigEngine.switchSource] call [clearTree] for the picked tree);
+ * - a RELOAD broadcast arrives ([ConfigEngine.reloadForAgent] calls [clearAll]): the agent's "try again";
+ * - the process restarts.
+ * If the user deletes the hidden original from another app, nothing notices: the folder is created again on the
+ * next re-pick, RELOAD or restart. That delay is acceptable by design (no polling for it).
+ * The first time a key is suppressed it is queued once for [takeNew], which the engine turns into a one-shot
+ * notice plus a Warnings / status.json line ([suppressed]); clearing re-arms it.
  */
 internal class SafDirs(private val tree: DocTree, private val treeKey: String) {
 
@@ -41,7 +52,7 @@ internal class SafDirs(private val tree: DocTree, private val treeKey: String) {
         if (actual == null || actual == name) { made[key] = id; return id }
         discardIfEmpty(parentDocId, id, mime)
         tree.list(parentDocId)[name]?.let { made[key] = it.docId; return it.docId }
-        hidden += key
+        if (hidden.add(key)) unannounced += key
         throw hiddenError(name, actual)
     }
 
@@ -58,11 +69,34 @@ internal class SafDirs(private val tree: DocTree, private val treeKey: String) {
         "this folder has a $name the storage provider doesn't show" + (actual?.let { " (it made \"$it\" instead)" } ?: "") +
             "; pick the folder again from internal storage")
 
+    /** Names suppressed in this tree right now (for the Warnings list and status.json). */
+    fun suppressed(): List<String> = synchronized(lock) { hidden.filter { it.startsWith(prefix) }.map(::nameOf).sorted() }
+
+    /** Names newly suppressed in this tree since the last call: each suppression is returned once. */
+    fun takeNew(): List<String> = synchronized(lock) {
+        unannounced.filter { it.startsWith(prefix) }.also { unannounced.removeAll(it.toSet()) }.map(::nameOf)
+    }
+
+    private val prefix get() = "$treeKey\u0000"
+
     companion object {
+        /** The user picked [treeKey]'s folder again: try creating there again (and warn again if it recurs). */
+        fun clearTree(treeKey: String) {
+            val p = "$treeKey\u0000"
+            synchronized(lock) { hidden.removeAll { it.startsWith(p) }; unannounced.removeAll { it.startsWith(p) } }
+        }
+
+        /** A RELOAD broadcast: try again everywhere. */
+        fun clearAll() = synchronized(lock) { hidden.clear(); unannounced.clear() }
+
+        private fun nameOf(key: String) = key.substringAfterLast('\u0000')
+
         private val lock = Any()
         /** key → document this process created or found, reused when a cached listing misses it. */
         private val made = HashMap<String, String>()
         /** keys whose create the provider renamed while the original stayed unlisted: don't create again. */
         private val hidden = HashSet<String>()
+        /** [hidden] keys not yet reported through [takeNew]. */
+        private val unannounced = LinkedHashSet<String>()
     }
 }

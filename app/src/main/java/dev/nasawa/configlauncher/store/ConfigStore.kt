@@ -97,6 +97,7 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     fun useFolder(uri: Uri) {
         context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         prefs.folderUri = uri; prefs.appOnly = false
+        SafDirs.clearTree(uri.toString()) // #251: before the AGENTS.md/schema syncs below, not only in switchSource
         switch()
         scope.launch(Dispatchers.IO) { syncAgentDocs(uri); syncSchemaCopy(uri) }
     }

@@ -67,6 +67,10 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
     /** #244: find-or-create through [SafDirs] (serialized, rename-checked), never a bare createDocument. */
     private fun ensure(parentDocId: String, name: String, mime: String): String = dirs.ensure(parentDocId, name, mime)
 
+    override fun suppressedNames() = dirs.suppressed()
+    override fun takeNewlySuppressed() = dirs.takeNew()
+    override fun clearSuppression() = SafDirs.clearTree(treeUri.toString())
+
     override fun write(bytes: ByteArray) = writeVerified(FILE, "application/json", bytes, "layout")
 
     override fun readRoot(name: String, maxBytes: Int): ByteArray? {

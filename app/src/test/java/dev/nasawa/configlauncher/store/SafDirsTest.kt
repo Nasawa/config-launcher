@@ -16,7 +16,7 @@ class SafDirsTest {
     private val bin = "application/octet-stream"
 
     /** In-memory SAF provider. Each map op is atomic, but find-then-create isn't, so overlapping callers race. */
-    private class FakeTree : DocTree {
+    internal class FakeTree : DocTree {
         class Doc(val id: String, val parent: String, var name: String, val mime: String, var size: Long = 0)
         val docs = ConcurrentHashMap(mapOf("root" to Doc("root", "", "root", Document.MIME_TYPE_DIR)))
         private val next = AtomicInteger()
@@ -166,5 +166,50 @@ class SafDirsTest {
         val b = SafDirs(t, k).ensure("root", ".configlauncher", dir)
         assertNotEquals(a, b)
         assertEquals(listOf(".configlauncher"), t.namesIn("root"))
+    }
+
+    // #251 (Archimedes): suppression lifecycle.
+
+    private fun hiddenTree() = FakeTree().apply { add("root", ".configlauncher", Document.MIME_TYPE_DIR); unlisted += ".configlauncher" }
+
+    @Test fun suppressionIsPerTree() {
+        val a = hiddenTree(); val b = FakeTree(); val ka = key(); val kb = key()
+        assertThrows(IOException::class.java) { SafDirs(a, ka).ensure("root", ".configlauncher", dir) }
+        assertEquals(listOf(".configlauncher"), SafDirs(a, ka).suppressed())
+        // Same doc ids and name in another tree: not suppressed, created normally.
+        val id = SafDirs(b, kb).ensure("root", ".configlauncher", dir)
+        assertEquals(".configlauncher", b.displayName(id))
+        assertTrue(SafDirs(b, kb).suppressed().isEmpty())
+        assertTrue(SafDirs(b, kb).takeNew().isEmpty())
+    }
+
+    @Test fun clearTreeRetriesOnlyThatTree() {
+        val a = hiddenTree(); val b = hiddenTree(); val ka = key(); val kb = key()
+        assertThrows(IOException::class.java) { SafDirs(a, ka).ensure("root", ".configlauncher", dir) }
+        assertThrows(IOException::class.java) { SafDirs(b, kb).ensure("root", ".configlauncher", dir) }
+        SafDirs.clearTree(ka)
+        assertTrue(SafDirs(a, ka).suppressed().isEmpty())
+        assertEquals(listOf(".configlauncher"), SafDirs(b, kb).suppressed())
+        assertThrows(IOException::class.java) { SafDirs(a, ka).ensure("root", ".configlauncher", dir) }
+        assertEquals(2, a.creates.get()) // tried again after the re-pick
+        assertThrows(IOException::class.java) { SafDirs(b, kb).ensure("root", ".configlauncher", dir) }
+        assertEquals(1, b.creates.get()) // still suppressed
+    }
+
+    @Test fun clearAllRetriesEveryTree() {
+        val a = hiddenTree(); val ka = key()
+        assertThrows(IOException::class.java) { SafDirs(a, ka).ensure("root", ".configlauncher", dir) }
+        SafDirs.clearAll()
+        assertTrue(SafDirs(a, ka).suppressed().isEmpty())
+    }
+
+    @Test fun takeNewReportsEachSuppressionOnce() {
+        val a = hiddenTree(); val ka = key()
+        repeat(5) { assertThrows(IOException::class.java) { SafDirs(a, ka).ensure("root", ".configlauncher", dir) } }
+        assertEquals(listOf(".configlauncher"), SafDirs(a, ka).takeNew())
+        assertTrue(SafDirs(a, ka).takeNew().isEmpty())
+        SafDirs.clearTree(ka) // re-armed: a recurrence is reported again
+        assertThrows(IOException::class.java) { SafDirs(a, ka).ensure("root", ".configlauncher", dir) }
+        assertEquals(listOf(".configlauncher"), SafDirs(a, ka).takeNew())
     }
 }

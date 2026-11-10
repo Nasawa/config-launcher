@@ -24,6 +24,8 @@ class UserStringsTest {
         assertEquals("Couldn't read that folder: gone", Msg(R.string.folder_read_failed, "gone").resolve(res))
         assertEquals("launcher.json in that folder has problems, so it wasn't used.", Msg(R.string.folder_invalid).resolve(res))
         assertEquals("Couldn't move your layout: x", Msg(R.string.move_failed, "x").resolve(res))
+        assertEquals("Can't save .configlauncher: the storage app hides the one already in this folder. Choose the folder again to retry.",
+            Msg(R.string.folder_hidden_notice, ".configlauncher").resolve(res)) // #251
         assertEquals("Your broken launcher.json was saved to .configlauncher/broken/.", Msg(R.string.broken_saved_folder).resolve(res))
         assertEquals("Turn on \"Include work apps in config\" to use this.", res.getString(R.string.work_disabled))
         assertEquals("No apps match \"cal\".", res.getString(R.string.search_no_match, "cal"))
