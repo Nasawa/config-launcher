@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.nasawa.configlauncher.R
+import dev.nasawa.configlauncher.config.CardPlaceholder
 import dev.nasawa.configlauncher.consent.ConsentUi
 import dev.nasawa.configlauncher.consent.ConsentUi.Line
 
@@ -104,6 +105,44 @@ fun ConsentTile(tile: ConsentUi.Tile, onReview: () -> Unit, modifier: Modifier =
             Shield(Color.White, shadow = true)
             if (title != null && !(p.h == 1 && p.w <= 2)) Text(title, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, style = shadowed)
             if (!(p.w == 1 && p.h == 1)) Text(reason, color = Color(0xB3FFFFFF), fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, style = shadowed)
+        }
+    }
+}
+
+/**
+ * #257: release-build stand-in for a shown card (ux.md §17.3 frame). Plain and non-interactive: no approval
+ * prompt, no long-press sheet. TalkBack reads the title (or id) and the later-version line. Title is hidden
+ * at 1×1 or 2×1, and the later-version line at 1×1, matching [ConsentTile]; TalkBack still speaks both.
+ * White text with the home-label shadow, plus the 60 % scrim when Label backdrop is on, so it meets the grid
+ * label contrast check.
+ */
+@Composable
+fun CardPlaceholderTile(tile: CardPlaceholder.Tile, modifier: Modifier = Modifier) {
+    val title = consentText(tile.title) ?: tile.id
+    val later = stringResource(R.string.tile_later_version)
+    val said = stringResource(R.string.tile_later_version_a11y, title, later)
+    val outline = Color(0x66FFFFFF)
+    val focus = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val focused by focus.collectIsFocusedAsState()
+    Box(
+        modifier.fillMaxSize().padding(2.dp)
+            .background(Color(0x1FFFFFFF), RoundedCornerShape(12.dp))
+            .drawBehind {
+                val r = 12.dp.toPx()
+                drawRoundRect(outline, cornerRadius = CornerRadius(r, r),
+                    style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))))
+            }
+            .then(if (focused) Modifier.focusRing() else Modifier)
+            .focusable(interactionSource = focus)
+            .clearAndSetSemantics { contentDescription = said }
+            .padding(6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        val p = tile.placement
+        val shadowed = androidx.compose.ui.text.TextStyle(shadow = LabelShadow.shadow)
+        Column(LabelBackdrop.modifier(LocalLabelBackdrop.current), horizontalAlignment = Alignment.CenterHorizontally) {
+            if (title.isNotEmpty() && CardPlaceholder.showTitle(p.w, p.h)) Text(title, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, style = shadowed)
+            if (CardPlaceholder.showMessage(p.w, p.h)) Text(later, color = Color.White, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, style = shadowed)
         }
     }
 }

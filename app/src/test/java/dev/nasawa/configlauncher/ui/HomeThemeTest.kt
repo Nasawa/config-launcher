@@ -120,5 +120,8 @@ class HomeThemeTest {
         val scrimOnWhite = LabelBackdrop.scrim.compositeOver(Color.White)
         text(OnWallpaperButton.content, scrimOnWhite, "top-row button on the scrim over white")
         assertTrue(ratio(Color(0xFFD0BCFF), Color.White) < 2.0)
+        // #257: placeholder title and later-version line use the same white-on-scrim treatment as grid labels.
+        text(Color.White, scrimOnWhite, "card placeholder title on the scrim over white")
+        text(Color.White, scrimOnWhite, "card placeholder later-version text on the scrim over white")
     }
 }

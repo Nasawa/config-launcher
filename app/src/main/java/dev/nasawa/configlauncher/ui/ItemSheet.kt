@@ -94,18 +94,18 @@ object HomeMenu {
      */
     const val WIDGETS_ONLY_WHEN_REVIEWING = true
 
-    fun actions(pageCount: Int, reviewCount: Int = 0) = listOfNotNull(HomeAction.EDIT_LAYOUT, HomeAction.PAGES.takeIf { pageCount >= 2 },
-        HomeAction.WIDGETS_REVIEW.takeIf { reviewCount > 0 || !WIDGETS_ONLY_WHEN_REVIEWING },
+    fun actions(pageCount: Int, reviewCount: Int = 0, cardsLive: Boolean = true) = listOfNotNull(HomeAction.EDIT_LAYOUT, HomeAction.PAGES.takeIf { pageCount >= 2 },
+        HomeAction.WIDGETS_REVIEW.takeIf { cardsLive && (reviewCount > 0 || !WIDGETS_ONLY_WHEN_REVIEWING) },
         HomeAction.RELOAD, HomeAction.SETTINGS, HomeAction.WALLPAPER)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeMenuSheet(pageCount: Int, reviewCount: Int, onAction: (HomeAction) -> Unit, onDismiss: () -> Unit) {
+fun HomeMenuSheet(pageCount: Int, reviewCount: Int, onAction: (HomeAction) -> Unit, onDismiss: () -> Unit, cardsLive: Boolean = true) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismiss, sheetState = sheet) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
-            HomeMenu.actions(pageCount, reviewCount).forEach { a ->
+            HomeMenu.actions(pageCount, reviewCount, cardsLive).forEach { a ->
                 TextButton({ onAction(a) }, Modifier.fillMaxWidth()) {
                     if (a == HomeAction.WIDGETS_REVIEW) Text(
                         if (reviewCount > 0) androidx.compose.ui.res.pluralStringResource(R.plurals.menu_widgets_review, reviewCount, reviewCount) else stringResource(R.string.review_title),
