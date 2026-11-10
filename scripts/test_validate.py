@@ -197,10 +197,6 @@ class Format(unittest.TestCase):
             self.assertEqual('{"schemaVersion":1,"pages":[]}', f.read_text())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class SchemaId(unittest.TestCase):
     """#242: old GitHub and new reflowlauncher.com $schema both validate; round-trip preserves them."""
     OLD = "https://github.com/Nasawa/config-launcher/schema/launcher-config.v1.schema.json"
@@ -237,3 +233,7 @@ class SchemaId(unittest.TestCase):
         tree2, errs2 = V.validate(out.encode(), use_schema=False)
         self.assertEqual([], errs2)
         self.assertEqual(self.NEW, tree2["$schema"])
+
+
+if __name__ == "__main__":
+    unittest.main()
