@@ -20,7 +20,7 @@ object CardPlaceholder {
 
     /** status.json / Warnings list, same family as the "can't show" lines in [Elements.warnings]. */
     fun warning(path: String, id: String) =
-        "$path: widget \"$id\" isn't drawn in this version of Reflow Launcher. It stays in the file."
+        "$path: card \"$id\" isn't shown in this version of Reflow Launcher. It stays in the file."
 
     private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.takeIf { it.isString }?.content
 

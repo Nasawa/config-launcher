@@ -50,8 +50,8 @@ class CardPlaceholderTest {
         ))
         assertEquals(
             listOf(
-                """elements[0]: widget "w-1" isn't drawn in this version of Reflow Launcher. It stays in the file.""",
-                """elements[1]: widget "w-live" isn't drawn in this version of Reflow Launcher. It stays in the file.""",
+                """elements[0]: card "w-1" isn't shown in this version of Reflow Launcher. It stays in the file.""",
+                """elements[1]: card "w-live" isn't shown in this version of Reflow Launcher. It stays in the file.""",
             ),
             CardPlaceholder.warnings(c),
         )

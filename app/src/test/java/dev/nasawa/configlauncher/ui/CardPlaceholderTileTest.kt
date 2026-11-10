@@ -45,7 +45,7 @@ class CardPlaceholderTileTest {
         assertFalse("non-interactive: no click", SemanticsActions.OnClick in c)
         assertFalse("non-interactive: no long click", SemanticsActions.OnLongClick in c)
         // One TalkBack node, so on-screen Text isn't a separate semantics node (same as ConsentTile).
-        assertEquals("Weather, widget, $later", said())
+        assertEquals("Weather, card, $later", said())
         rule.onNodeWithContentDescription(said()).performClick()
         rule.onNodeWithContentDescription(said()).assertExists()
     }

@@ -616,7 +616,7 @@ class ConfigEngine(
             source.suppressedNames().map(::suppressedWarning) + source.tempWarnings()
         _warnings.value = warnings
         // Release builds still record each card's stored state, but drop the "waiting for approval" sentence
-        // so it doesn't contradict the "isn't drawn in this version" warning.
+        // so it doesn't contradict the "isn't shown in this version" warning.
         val consentMap = if (consent == null) null else report.associate { it.id to (it.state.key to if (cardsLive) it.warning else null) }
         val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${warnings.hashCode()}|$backupError|$conflictFiles|$consentMap"
         if (key == lastStatusKey) return

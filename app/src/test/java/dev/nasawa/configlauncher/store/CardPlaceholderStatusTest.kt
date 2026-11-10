@@ -38,7 +38,7 @@ class CardPlaceholderStatusTest {
         release.poll(force = true)
         val loaded = warningsOf(dir)
         assertEquals(release.warnings.value, loaded)
-        val expected = """elements[0]: widget "w-anigeek" isn't drawn in this version of Reflow Launcher. It stays in the file."""
+        val expected = """elements[0]: card "w-anigeek" isn't shown in this version of Reflow Launcher. It stays in the file."""
         assertTrue("placeholder warning listed: $loaded", expected in loaded)
         assertTrue(loaded.none { "waiting for approval" in it })
         assertEquals(Consent.State.Allowed, consent.entry("w-anigeek")!!.let { Consent.state(consent.report(release.state.value.config).single().lines, it).first })
@@ -56,6 +56,6 @@ class CardPlaceholderStatusTest {
         val loaded = warningsOf(dir)
         assertEquals(e.warnings.value, loaded)
         assertTrue(loaded.any { it.startsWith("elements[0]") && "waiting for approval" in it })
-        assertTrue(loaded.none { "isn't drawn in this version" in it })
+        assertTrue(loaded.none { "isn't shown in this version" in it })
     }
 }
