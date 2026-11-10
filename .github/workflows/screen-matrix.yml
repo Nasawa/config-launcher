@@ -83,7 +83,7 @@ jobs:
   shard:
     needs: [plan, build]
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.shard == 'tablets' && 90 || 60 }}  # tablets + dnd probe outran 60 min on dev9
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}

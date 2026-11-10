@@ -282,11 +282,11 @@ side nav/cutout is not a layout bias (#197).
   - Build 6 and plan/summary 2.
   - **≈ 110 runner-minutes (range 90–150) and ≈ 35 min wall clock** for the full matrix.
   - A single-shard dispatch is ~25–30 runner-minutes.
-- **Measured, run 1** ([40373955590](https://github.com/Nasawa/config-launcher/actions/runs/40373955590), label
+- **Measured, run 1** ([40373955590](https://github.com/Nasawa/reflow-launcher/actions/runs/40373955590), label
   trigger on #177): **≈ 56 runner-minutes (≈ 61 billed with per-job rounding) and 16 min wall clock**. That is low:
   most large points ran clamped to smaller screens and F5b was skipped on 17 points, so expect more after the fixes.
   Minutes are free while the repo is public; a private repo would bill each run.
-- **Measured, run 2** ([40377723279](https://github.com/Nasawa/config-launcher/actions/runs/40377723279), dispatch on
+- **Measured, run 2** ([40377723279](https://github.com/Nasawa/reflow-launcher/actions/runs/40377723279), dispatch on
   bee4fe3, all points at their real size): **≈ 59 runner-minutes (≈ 63 billed) and ≈ 18 min wall clock**
   (build 1.5 min, shards 9–15.5 min, tablets the longest). So ≈ 2 min per point, boot included;
   the estimate above is about 2× too high on minutes. Use ≈ 60 runner-minutes and ≈ 20 min wall for the full matrix.
@@ -359,7 +359,7 @@ The script changes the display size, density, font scale, night mode and rotatio
   1.05:1 for all 8 labels, and passes on main's dark drawer (17.1:1, white on `#1D1B20`) at every run-2 point. G5b
   passes on pr178's title-bar and no-title-bar chip dumps and fails on a copy with the page label moved out of the
   chip's row.
-- **Run 4** ([40399082476](https://github.com/Nasawa/config-launcher/actions/runs/40399082476), 02782e2, full matrix,
+- **Run 4** ([40399082476](https://github.com/Nasawa/reflow-launcher/actions/runs/40399082476), 02782e2, full matrix,
   with main through #178/#181/#183 merged): **30 PASS, 1 FAIL, 0 INCOMPLETE**. ≈ 62 runner-minutes (≈ 67 billed), ≈ 18 min
   wall clock. Triage in the #177 comment and `evidence/matrix/run4/`:
   - D1 passes everywhere (#181), D4 passes everywhere (main's drawer is dark in both themes, labels 15–17:1), G5a/G5b/G5c

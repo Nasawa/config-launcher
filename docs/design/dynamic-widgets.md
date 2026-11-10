@@ -1,13 +1,13 @@
 # Dynamic widgets: AI-assisted dashboard cards
 
-**Status:** on main via [#117](https://github.com/Nasawa/config-launcher/pull/117) (`971c2eb`); Archimedes follow-ups below.  
+**Status:** on main via [#117](https://github.com/Nasawa/reflow-launcher/pull/117) (`971c2eb`); Archimedes follow-ups below.  
 **Christopher settled Q-C1–C5, Q-C7** (2026-10-19); **Q-C6 already decided**.  
 **Q-A9 (Pragma #116 / Claw):** http allowed when approved by name; approval ceiling = cumulative union. **Claw review folded in** (PR #117): structural `data.file`, tap example, Q-C7/Q-C3, `ui.reload` + relative time, narrowing ceiling model. *(The exact-host `ui.openUrl.hosts` allowlist from #117 is superseded by Q-D5 below.)*  
 **Q-D5 settled (Christopher via Pragma, 2026-10-19):** optional card-level **`source`**; capability `ui.openUrl` is **bare** (no `hosts`); taps to `source` open **silently**; taps anywhere else **confirm every time** with **Always allow this site** (device-local, per element id). `source` is part of the capability fingerprint. Supersedes the hosts-based `ui.openUrl` design.  
 **Archimedes (this revision):** **Turn off** keeps the approval ceiling; **Forget approval** (widget detail) clears it; stage-5 TOFU **certificate changed** pauses `net.fetch` and shows last-good data stale.  
-**Pragma S3-C:** consent strings settled at [#116](https://github.com/Nasawa/config-launcher/pull/116) tip / §17.13 — Sprite may build from that branch. C3 http disclosure + C4 hide-author applied.
+**Pragma S3-C:** consent strings settled at [#116](https://github.com/Nasawa/reflow-launcher/pull/116) tip / §17.13 — Sprite may build from that branch. C3 http disclosure + C4 hide-author applied.
 
-**Opened with:** product reframe from Christopher (via Grok Bot), screenshots in `/workspace/cl-input/` (not committed), Pragma UX [#116](https://github.com/Nasawa/config-launcher/pull/116) (`docs/ux.md` §17), schema answers Q-A1–Q-A8 on that PR.  
+**Opened with:** product reframe from Christopher (via Grok Bot), screenshots in `/workspace/cl-input/` (not committed), Pragma UX [#116](https://github.com/Nasawa/reflow-launcher/pull/116) (`docs/ux.md` §17), schema answers Q-A1–Q-A8 on that PR.  
 **Related:** [docs/research/widgets.md](../research/widgets.md) (updated by this PR where superseded), [docs/design/title-bar.md](title-bar.md), elements container (#112, merged), Stage 1 cell reservation.
 
 ## 0. Product reframe
@@ -300,7 +300,7 @@ Honest holes in "local files + opt-in URL fetch + per-widget manifest":
 
 ### For Pragma
 
-See answers on [#116](https://github.com/Nasawa/config-launcher/pull/116#issuecomment-6270653131) (Q-A1–Q-A8). Please align §17.11 sample kinds to `data.file` / `ui.openApp` / `ui.openUrl` / `net.fetch` and `author` instead of `x-by`.
+See answers on [#116](https://github.com/Nasawa/reflow-launcher/pull/116#issuecomment-6270653131) (Q-A1–Q-A8). Please align §17.11 sample kinds to `data.file` / `ui.openApp` / `ui.openUrl` / `net.fetch` and `author` instead of `x-by`.
 
 ### For Sprite
 
