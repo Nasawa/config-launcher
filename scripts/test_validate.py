@@ -16,6 +16,35 @@ PARSER_TEXT = re.compile(r"not valid JSON: (Unexpected JSON token|Cannot read Js
 GOLDEN = json.loads((ROOT / "test-fixtures" / "phone-output.json").read_text())
 
 
+class JsonNumbers(unittest.TestCase):
+    """#120: same accept/reject list as the phone's JsonNumbersConformanceTest (test-fixtures/json-numbers.json)."""
+    cases = json.loads((ROOT / "test-fixtures" / "json-numbers.json").read_text())
+
+    def doc(self, token):
+        return self.cases["template"].replace("@", token).encode("utf-8")
+
+    def test_accepts_every_rfc_number_and_literal(self):
+        bad = {t: V.validate(self.doc(t), use_schema=False)[1] for t in self.cases["accept"]}
+        self.assertEqual({}, {t: e for t, e in bad.items() if e})
+
+    def test_accepted_numbers_round_trip(self):
+        for t in self.cases["accept"]:
+            tree, _ = V.validate(self.doc(t), use_schema=False)
+            self.assertEqual([], V.validate(V.canonical(tree).encode("utf-8"), use_schema=False)[1], t)
+
+    def test_rejects_every_non_rfc_token_with_the_phone_message(self):
+        for t in self.cases["reject"]:
+            kind = "number" if t[0] in "+-.0123456789" else "value"
+            _, errs = V.validate(self.doc(t), use_schema=False)
+            self.assertEqual([f'not valid JSON: invalid {kind} "{t}" (line 4)'], errs, t)
+
+    def test_long_token_is_cut_like_the_phone(self):
+        t = "0" + "1" * 60
+        self.assertEqual(f'invalid number "{t[:40]}…" (line 1)', V.prescan(t))
+        e = "\U0001F600" * 50   # cut by code points, as Kotlin's offsetByCodePoints does
+        self.assertEqual(f'invalid value "{e[:40]}…" (line 2)', V.prescan("\n" + e))
+
+
 class RuleOrder(unittest.TestCase):
     def test_drawer_rule_keys_canonical(self):
         tree, errs = V.validate((FIX / "valid" / "drawer-rules-key-order.json").read_bytes(), use_schema=False)

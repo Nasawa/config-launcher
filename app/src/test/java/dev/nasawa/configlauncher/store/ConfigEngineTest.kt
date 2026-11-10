@@ -117,6 +117,23 @@ class ConfigEngineTest {
         assertEquals(7L, again.state.value.config.revision)
     }
 
+    // #120: a file an older build accepted (`00` is not RFC 8259) and saved as last-good. After the upgrade
+    // the cold start still shows that layout; the folder file itself gets the load error and isn't applied.
+    @Test fun coldStartAfterUpgradeKeepsLegacyLastGood() = runBlocking {
+        val (_, src, lg) = setup()
+        val legacy = cfg(7).dropLast(1) + ""","x-n":[00,1.]}"""
+        lg.save(legacy.toByteArray()); src.file.put(legacy, 1000)
+        val e = ConfigEngine(LocalFileSource(src.dir), lg, 0)
+        assertEquals(Origin.LAST_GOOD, e.state.value.origin)
+        assertEquals(7L, e.state.value.config.revision)
+        assertFalse(e.poll())
+        assertTrue(e.state.value.issue is Issue.ParseError)
+        assertEquals(Origin.LAST_GOOD, e.state.value.origin)
+        assertEquals(7L, e.state.value.config.revision)
+        // Anything the launcher writes from it is strict JSON again.
+        assertTrue(ConfigCodec.decode(ConfigCodec.encodeBytes(e.state.value.config)) is dev.nasawa.configlauncher.config.ParseResult.Ok)
+    }
+
     @Test fun lastGoodHistoryKeepsTen() {
         var t = 1_000_000_000_000L
         val lg = LastGoodStore(tmp.newFolder("lg"), keep = 10) { t++ }

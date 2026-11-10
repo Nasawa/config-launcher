@@ -56,7 +56,7 @@
   },
   "invalid/comments.json": {
     "errors": [
-      "not valid JSON: Unexpected JSON token at offset 4: Expected EOF after parsing, but had n instead at path: $"
+      "not valid JSON: invalid value \"//\" (line 1)"
     ]
   },
   "invalid/deep-nesting.json": {
@@ -265,6 +265,16 @@
   "invalid/nul-raw.json": {
     "errors": [
       "not valid JSON: NUL character in a string (line 11)"
+    ]
+  },
+  "invalid/number-bare-minus.json": {
+    "errors": [
+      "not valid JSON: invalid number \"-\" (line 78)"
+    ]
+  },
+  "invalid/number-leading-zero.json": {
+    "errors": [
+      "not valid JSON: invalid number \"00\" (line 78)"
     ]
   },
   "invalid/number-too-large.json": {
