@@ -17,6 +17,9 @@ object JsonPreScan {
     private val NUMBER = Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?")
     private const val SHOW = 40
 
+    /** True if [t] is an RFC 8259 number, the same rule the token check uses (ConfigCodec.encode keeps such text as is). */
+    internal fun isNumber(t: String): Boolean = NUMBER.matches(t)
+
     /** Null if [t] is a JSON number or literal, else the error (same text as validate.py's `bad_token`). */
     private fun badToken(t: String, line: Int): String? {
         if (t == "true" || t == "false" || t == "null" || NUMBER.matches(t)) return null

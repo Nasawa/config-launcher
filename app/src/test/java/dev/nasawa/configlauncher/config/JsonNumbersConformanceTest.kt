@@ -26,8 +26,14 @@ class JsonNumbersConformanceTest {
             when (val r = ConfigCodec.decode(doc(t))) {
                 is ParseResult.Ok -> {
                     // The canonical write-back must itself load (no token is passed through unparsed).
-                    val again = ConfigCodec.decode(ConfigCodec.encode(r.config))
-                    if (again is ParseResult.Ok) null else "$t: write-back does not reload: ${(again as ParseResult.Invalid).errors}"
+                    val out = ConfigCodec.encode(r.config)
+                    val again = ConfigCodec.decode(out)
+                    // #260 review: and keeps the token's exact text, in an array and as a value.
+                    val o = Json.parseToJsonElement(out).jsonObject
+                    val kept = listOf(o["x-a"]!!.jsonArray[1], o["x-v"]!!).map { it.jsonPrimitive.content }
+                    if (again !is ParseResult.Ok) "$t: write-back does not reload: ${(again as ParseResult.Invalid).errors}"
+                    else if (kept != listOf(t, t)) "$t: written as $kept"
+                    else null
                 }
                 is ParseResult.Invalid -> "$t: rejected ${r.errors}"
             }

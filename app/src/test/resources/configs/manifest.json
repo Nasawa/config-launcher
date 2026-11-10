@@ -22,7 +22,7 @@
   },
   {
     "file": "valid/x-numbers.json",
-    "expect": "valid; numbers are rewritten as the phone writes them (1.50 -> 1.5, 1e3 -> 1000.0)",
+    "expect": "valid; numbers keep their exact text when the phone writes the file (1.50, 1e3, -0, 20-digit integers)",
     "layer": "both",
     "ref": "#113",
     "note": ""

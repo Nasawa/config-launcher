@@ -30,7 +30,11 @@ class JsonNumbers(unittest.TestCase):
     def test_accepted_numbers_round_trip(self):
         for t in self.cases["accept"]:
             tree, _ = V.validate(self.doc(t), use_schema=False)
-            self.assertEqual([], V.validate(V.canonical(tree).encode("utf-8"), use_schema=False)[1], t)
+            out = V.canonical(tree)
+            self.assertEqual([], V.validate(out.encode("utf-8"), use_schema=False)[1], t)
+            # #260 review: the token keeps its exact text, as on the phone.
+            self.assertIn(f'"x-v": {t}\n', out, t)
+            self.assertIn(f'\n    {t},\n', out, t)
 
     def test_rejects_every_non_rfc_token_with_the_phone_message(self):
         for t in self.cases["reject"]:
@@ -199,7 +203,7 @@ class Format(unittest.TestCase):
       ]
     }
   ],
-  "x-z": 1.5
+  "x-z": 1.50
 }
 """)
 
