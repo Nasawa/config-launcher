@@ -45,6 +45,8 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         pollJob = scope.launch(Dispatchers.IO) {
             // §20.1/§20.2, #196: after an app update the bundled AGENTS.md and schema may be newer. Both are
             // hash-guarded, so an up-to-date or user-edited file is left alone (no write).
+            // #251: root temps (`.launcher.json.tmp`, `.AGENTS.md.tmp`) a killed save left while `.configlauncher` was unusable.
+            (engine.source as? SafSource)?.let { s -> runCatching { s.sweepRootTemps() } }
             syncAgentDocs(); syncSchemaCopy()
             runCatching { engine.poll(force = true) } // resume always hashes (§17 Q5)
             runCatching { engine.pollWidgets(force = true) } // #139: data files too

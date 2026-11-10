@@ -15,6 +15,10 @@ internal interface DocTree {
     /** The document's current display name, or null when the provider can't say (or it's gone). */
     fun displayName(docId: String): String?
     fun delete(docId: String): Boolean
+    /** The document's bytes (verification reads; capped by the caller's source). */
+    fun read(docId: String): ByteArray?
+    /** Truncate-writes [bytes] to the document. */
+    fun write(docId: String, bytes: ByteArray)
 }
 
 /**

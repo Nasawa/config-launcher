@@ -9,8 +9,9 @@ import java.io.IOException
 
 /**
  * launcher.json inside a user-picked SAF tree (persisted READ|WRITE grant, no storage permission).
- * SAF has no atomic replace, so writes follow AQ-4: write `.configlauncher/launcher.json.tmp`,
- * verify, truncate-write launcher.json ("wt"), verify, restore from temp on failure.
+ * SAF has no atomic replace, so writes follow AQ-4 ([SafWrites]): write `.configlauncher/launcher.json.tmp`
+ * (or `.launcher.json.tmp` in the root while `.configlauncher` is unusable, #251), verify, truncate-write
+ * launcher.json ("wt"), verify, restore from temp on failure.
  */
 class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : ConfigSource {
     private val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
@@ -53,7 +54,7 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
         (resolver.openOutputStream(uri, "wt") ?: throw IOException("can't open $uri")).use { it.write(bytes); it.flush() }
     }
 
-    private val dirs = SafDirs(object : DocTree {
+    private val docs = object : DocTree {
         override fun list(parentDocId: String) = children(parentDocId)
         override fun create(parentDocId: String, mime: String, name: String) =
             DocumentsContract.createDocument(resolver, docUri(parentDocId), mime, name)?.let { DocumentsContract.getDocumentId(it) }
@@ -62,7 +63,14 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
                 if (c.moveToFirst()) c.getString(0) else null
             }
         override fun delete(docId: String) = DocumentsContract.deleteDocument(resolver, docUri(docId))
-    }, treeUri.toString())
+        override fun read(docId: String) = readUri(docUri(docId))
+        override fun write(docId: String, bytes: ByteArray) = writeUri(docUri(docId), bytes)
+    }
+    private val dirs = SafDirs(docs, treeUri.toString())
+    private val writes = SafWrites(docs, dirs)
+
+    /** #251: start-up sweep of root temps (`.launcher.json.tmp`, `.AGENTS.md.tmp`) left by a killed save. */
+    fun sweepRootTemps() = writes.sweepRootTemps(rootDocId)
 
     /** #244: find-or-create through [SafDirs] (serialized, rename-checked), never a bare createDocument. */
     private fun ensure(parentDocId: String, name: String, mime: String): String = dirs.ensure(parentDocId, name, mime)
@@ -81,22 +89,9 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
 
     override fun writeRoot(name: String, bytes: ByteArray) = writeVerified(name, "application/octet-stream", bytes, name)
 
-    private fun writeVerified(name: String, mime: String, bytes: ByteArray, what: String) {
-        val want = ConfigCodec.sha256(bytes)
-        val dir = ensure(rootDocId, ".configlauncher", Document.MIME_TYPE_DIR)
-        // Some providers append ".json" for application/json; octet-stream keeps the exact name.
-        val tmp = docUri(ensure(dir, "$name.tmp", "application/octet-stream"))
-        writeUri(tmp, bytes)
-        if (readUri(tmp)?.let { ConfigCodec.sha256(it) } != want) throw IOException("temp copy verification failed")
-        val target = docUri(ensure(rootDocId, name, mime))
-        try {
-            writeUri(target, bytes)
-            if (readUri(target)?.let { ConfigCodec.sha256(it) } != want) throw IOException("write verification failed")
-        } catch (e: Exception) {
-            runCatching { writeUri(target, readUri(tmp)!!) }
-            throw IOException("Couldn't save $what: ${e.message}", e)
-        }
-    }
+    // Some providers append ".json" for application/json; octet-stream keeps the exact temp names.
+    private fun writeVerified(name: String, mime: String, bytes: ByteArray, what: String) =
+        writes.writeVerified(rootDocId, name, mime, bytes, what)
 
     override fun siblingNames(): List<String> = children(rootDocId).keys.toList()
 

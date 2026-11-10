@@ -27,6 +27,7 @@ class SafDirsTest {
         private val staleLeft = ConcurrentHashMap<String, Int>()
         val creates = AtomicInteger()
         val deleted: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+        val content = ConcurrentHashMap<String, ByteArray>()
 
         fun add(parent: String, name: String, mime: String, size: Long = 0): String {
             val id = "d${next.getAndIncrement()}"; docs[id] = Doc(id, parent, name, mime, size); return id
@@ -51,7 +52,12 @@ class SafDirsTest {
         override fun displayName(docId: String) = docs[docId]?.name
         override fun delete(docId: String): Boolean {
             require(docs.values.none { it.parent == docId }) { "deleted a non-empty folder" }
-            deleted += docId; return docs.remove(docId) != null
+            deleted += docId; content.remove(docId); return docs.remove(docId) != null
+        }
+        override fun read(docId: String) = if (docs.containsKey(docId)) content[docId] ?: ByteArray(0) else null
+        override fun write(docId: String, bytes: ByteArray) {
+            val d = docs[docId] ?: throw java.io.FileNotFoundException(docId)
+            content[docId] = bytes; d.size = bytes.size.toLong()
         }
     }
 

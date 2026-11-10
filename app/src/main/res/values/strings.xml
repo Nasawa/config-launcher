@@ -37,7 +37,7 @@
     <string name="folder_invalid">launcher.json in that folder has problems, so it wasn\'t used.</string>
     <string name="folder_backup_failed">Couldn\'t back up the folder\'s launcher.json: %1$s</string>
     <!-- #251: once per suppressed name (SafDirs); Pragma copy review -->
-    <string name="folder_hidden_notice">Can\'t save %1$s: the storage app hides the one already in this folder. Choose the folder again to retry.</string>
+    <string name="folder_hidden_notice">Can\'t save %1$s: the storage app hides the one already in this folder. Choose the folder again from internal storage.</string>
     <string name="move_failed">Couldn\'t move your layout: %1$s</string>
     <string name="broken_saved_folder">Your broken launcher.json was saved to .configlauncher/broken/.</string>
     <string name="broken_saved_history">Your broken launcher.json was saved to history.</string>

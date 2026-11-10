@@ -18,12 +18,17 @@ class SafSuppressionTest {
     /** A folder source whose sidecars go through [SafDirs] on a fake provider, like SafSource. launcher.json is in memory. */
     private inner class TreeSource(val t: SafDirsTest.FakeTree, val key: String) : ConfigSource {
         private val dirs = SafDirs(t, key)
-        var file: ByteArray? = doc.toByteArray()
+        private val writes = SafWrites(t, dirs)
+        init { if (t.list("root")["launcher.json"] == null) t.write(t.add("root", "launcher.json", "application/json"), doc.toByteArray()) }
+        /** launcher.json lives in the fake tree, written through the real [SafWrites] path. */
+        val file: ByteArray? get() = t.list("root")["launcher.json"]?.let { t.read(it.docId) }
         val sidecars = mutableMapOf<String, String>()
         override val displayName = "Folder: test"
-        override fun stamp() = file?.let { Stamp("f", 1, it.size.toLong()) }
+        override fun stamp() = t.list("root")["launcher.json"]?.let { Stamp(it.docId, 1, it.size) }
         override fun read(maxBytes: Int) = file
-        override fun write(bytes: ByteArray) { dirs.ensure("root", ".configlauncher", dir); file = bytes }
+        override fun write(bytes: ByteArray) = writes.writeVerified("root", "launcher.json", "application/json", bytes, "layout")
+        override fun readRoot(name: String, maxBytes: Int) = t.list("root")[name]?.let { t.read(it.docId) }
+        override fun writeRoot(name: String, bytes: ByteArray) = writes.writeVerified("root", name, "application/octet-stream", bytes, name)
         override fun writeSidecar(subdir: String, name: String, bytes: ByteArray) {
             var d = dirs.ensure("root", ".configlauncher", dir)
             if (subdir.isNotEmpty()) d = dirs.ensure(d, subdir, dir)
@@ -42,7 +47,7 @@ class SafSuppressionTest {
         val t = SafDirsTest.FakeTree(); val id = t.add("root", ".configlauncher", dir); t.unlisted += ".configlauncher"; return t to id
     }
     private fun engine(src: ConfigSource) = ConfigEngine(src, LastGoodStore(tmp.newFolder()), stabilityMs = 0, clock = { 1_000L })
-    private val line = "Can't save .configlauncher: the storage app hides the one already in this folder, so no copy was made. Choose the folder again to retry."
+    private val line = "Can't save .configlauncher: the storage app hides the one already in this folder, so no copy was made. Choose the folder again from internal storage."
     private fun ConfigEngine.takeNotice() = state.value.notice.also { consumeNotice() }
 
     /** The user deleted the hidden original from another app (and the provider lists normally again). */
@@ -81,7 +86,7 @@ class SafSuppressionTest {
         e.poll(force = true)
         assertEquals("by design: not noticed until a re-pick, RELOAD or restart", 1, t.creates.get())
         assertTrue(e.moveTo(TreeSource(t, k), useMine = false)) // Choose folder → the same folder
-        assertEquals(listOf(".configlauncher"), t.namesIn("root"))
+        assertEquals(listOf(".configlauncher", "launcher.json"), t.namesIn("root"))
         assertEquals(listOf("status.json"), t.namesIn(t.list("root")[".configlauncher"]!!.docId)) // created again, used
         assertTrue(e.warnings.value.isEmpty())
         assertNull(e.takeNotice())
@@ -93,7 +98,7 @@ class SafSuppressionTest {
         e.switchSource(TreeSource(t, k)) // Reconnect: still hidden, so it's tried once more and reported again
         assertEquals(2, t.creates.get())
         assertEquals(Msg(R.string.folder_hidden_notice, ".configlauncher"), e.takeNotice())
-        assertEquals(listOf(".configlauncher"), t.namesIn("root")) // the renamed copy was removed again
+        assertEquals(listOf(".configlauncher", "launcher.json"), t.namesIn("root")) // the renamed copy was removed again
     }
 
     @Test fun reloadClearsTheSuppression() = runBlocking {
@@ -101,7 +106,7 @@ class SafSuppressionTest {
         e.poll(force = true); e.takeNotice()
         t.userDeletes(original)
         e.reloadForAgent()
-        assertEquals(listOf(".configlauncher"), t.namesIn("root"))
+        assertEquals(listOf(".configlauncher", "launcher.json"), t.namesIn("root"))
         assertEquals(listOf("status.json"), t.namesIn(t.list("root")[".configlauncher"]!!.docId)) // created again, used
         assertTrue(e.warnings.value.isEmpty())
     }
@@ -119,8 +124,29 @@ class SafSuppressionTest {
         engine(TreeSource(hidden, key())).poll(force = true)
         val t = SafDirsTest.FakeTree(); val src = TreeSource(t, key()); val e = engine(src)
         e.poll(force = true)
-        assertEquals(listOf(".configlauncher"), t.namesIn("root"))
+        assertEquals(listOf(".configlauncher", "launcher.json"), t.namesIn("root"))
         assertNotNull(src.sidecars["status.json"])
         assertNull(e.takeNotice()); assertTrue(e.warnings.value.isEmpty())
+    }
+
+    // #251 (Grace): saves still work while `.configlauncher` is suppressed, staged in the root and cleaned up.
+
+    @Test fun suppressedTreeStillSavesLauncherJson() = runBlocking {
+        val (t, _) = hiddenTree(); val src = TreeSource(t, key()); val e = engine(src)
+        e.poll(force = true); e.takeNotice()
+        assertTrue(e.edit(dev.nasawa.configlauncher.model.Edit.MoveToCell("a", "home", 2, 2)))
+        assertTrue("saved, not B5", e.flush())
+        assertNull(e.state.value.issue)
+        assertTrue(String(src.file!!), String(src.file!!).contains("\"x\": 2") || String(src.file!!).contains("\"x\":2"))
+        assertEquals("no (N) folders, root temp gone", listOf(".configlauncher", "launcher.json"), t.namesIn("root"))
+    }
+
+    @Test fun suppressedTreeStillSavesAgentsMd() = runBlocking {
+        val (t, _) = hiddenTree(); val src = TreeSource(t, key()); val e = engine(src)
+        e.poll(force = true)
+        val o = AgentDocs.sync(src, "# agents\n".toByteArray(), writtenBefore = false, enabled = true)
+        assertEquals(AgentDocs.Outcome.WROTE, o)
+        assertEquals("# agents\n", String(src.readRoot("AGENTS.md", 1000)!!))
+        assertEquals(listOf(".configlauncher", "AGENTS.md", "launcher.json"), t.namesIn("root"))
     }
 }

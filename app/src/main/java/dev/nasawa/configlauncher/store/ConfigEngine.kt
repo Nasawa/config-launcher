@@ -647,7 +647,7 @@ class ConfigEngine(
 
     /** #251 Warnings / status.json line for a suppressed [name] (English like the other status lines; Pragma copy). */
     internal fun suppressedWarning(name: String) =
-        "Can't save $name: the storage app hides the one already in this folder, so no copy was made. Choose the folder again to retry."
+        "Can't save $name: the storage app hides the one already in this folder, so no copy was made. Choose the folder again from internal storage."
 
     fun consumeNotice() = _state.update { it.copy(notice = null) }
     fun consumeMerge() = _state.update { it.copy(merge = null) }
