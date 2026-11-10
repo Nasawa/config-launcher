@@ -227,6 +227,10 @@
     <string name="tile_off">Turned off</string>
     <string name="tile_update">Update Reflow Launcher to show this</string>
     <string name="tile_update_hint">This widget needs a newer Reflow Launcher. It stays in your layout file.</string>
+    <!-- #257: release-build placeholder while card rendering is 1.1. Pragma owns the final string. -->
+    <string name="tile_later_version">Cards arrive in a later version.</string>
+    <!-- TalkBack only. %1$s = title or id, %2$s = tile_later_version. -->
+    <string name="tile_later_version_a11y">%1$s, card, %2$s</string>
     <!-- %1$s = title, %2$s = reason in lower case (e.g. "needs your OK"). TalkBack only. -->
     <string name="tile_a11y">%1$s, widget, %2$s. Double-tap to review.</string>
     <!-- %1$s = reason. TalkBack only. -->

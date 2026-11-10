@@ -147,9 +147,12 @@ Shape in brief:
   `{time:HH:mm}` or `{date:EEE d MMM}`, and an optional `style`. `pages[].overrides["<id>"]` can change `enabled`,
   `content` or `style` on one page. Unknown element types and elements whose `requires` is above 4 are skipped with a
   warning and kept in the file. See [docs/design/title-bar.md](docs/design/title-bar.md).
-- **Dashboard cards (schema only).** `type: "card"` (`requires: 4`, grid-placed) is validated but not shown yet: see
-  [docs/design/dynamic-widgets.md](docs/design/dynamic-widgets.md). A card whose capability kind this launcher doesn't
-  know is skipped with a warning (its cells stay reserved); `scripts/validate.py` reports that kind as an error.
+- **Dashboard cards.** `type: "card"` (`requires: 4`, grid-placed) is parsed and validated, and its cells stay reserved.
+  Release builds show a plain "Cards arrive in a later version" tile and a `status.json` warning naming the element id
+  (no approval prompt). Debug builds keep the consent tile and live target so card rendering work can continue. Drawing
+  the card itself is 1.1: see [docs/design/dynamic-widgets.md](docs/design/dynamic-widgets.md). A card whose capability
+  kind this launcher doesn't know is skipped with a warning (its cells stay reserved); `scripts/validate.py` reports
+  that kind as an error.
 - **`revision`.** The launcher sets it to max seen + 1 on every write. Agents should bump it too, but nothing depends on
   it, and a missing `revision` is valid.
 - **Conflicts.** The **content hash** decides what's new, not `revision`. Any file with different content from what the

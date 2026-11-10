@@ -55,6 +55,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import dev.nasawa.configlauncher.store.AgentDocs
+import dev.nasawa.configlauncher.BuildConfig
+import dev.nasawa.configlauncher.config.CardPlaceholder
 import dev.nasawa.configlauncher.consent.ConsentUi
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,8 +114,10 @@ fun HomeScreen(vm: HomeViewModel) {
     var updateHint by remember { mutableStateOf(false) }
     var widgetSheet by remember { mutableStateOf<WidgetSheetFor?>(null) }
     var changedSnack by remember { mutableStateOf<String?>(null) }
+    // #257: release builds hide consent, B9 and Widget permissions; shown cards use the later-version tile.
+    val cardsLive = BuildConfig.CARDS_LIVE
     // #142 S3-C.2 (§17.4, §17.6): the review list, one widget's detail, and B9's "dismissed at" count.
-    val reviewCount = ConsentUi.count(consentReport)
+    val reviewCount = if (cardsLive) ConsentUi.count(consentReport) else 0
     var reviewOpen by remember { mutableStateOf(false) }
     var detailFor by remember { mutableStateOf<String?>(null) }
     // §17.6 Undo snackbars from the detail page. Held and timed here, not on the page, so leaving the page doesn't drop
@@ -402,7 +406,7 @@ fun HomeScreen(vm: HomeViewModel) {
                                     { menuOpen = false; runAgentUpdate(false) })
                             }
                             // §17.4: `Widget permissions`, or `Widgets · N to review` while some wait (R10 interim ⋮ item).
-                            if (consent != null) DropdownMenuItem({ Text(if (reviewCount > 0) pluralStringResource(R.plurals.menu_widgets_review, reviewCount, reviewCount) else stringResource(R.string.review_title)) },
+                            if (cardsLive && consent != null) DropdownMenuItem({ Text(if (reviewCount > 0) pluralStringResource(R.plurals.menu_widgets_review, reviewCount, reviewCount) else stringResource(R.string.review_title)) },
                                 { menuOpen = false; reviewOpen = true })
                             DropdownMenuItem({ Text(stringResource(R.string.menu_reload)) }, { menuOpen = false; vm.store.pollNow() })
                             if (!isHome) DropdownMenuItem({ Text(stringResource(R.string.home_role_button)) }, { menuOpen = false; becomeHome() })
@@ -458,8 +462,10 @@ fun HomeScreen(vm: HomeViewModel) {
                     userScrollEnabled = drag.dragged == null,
                 ) { index ->
                     pages.getOrNull(index)?.let { PageGrid(it, ui.layout.grid, vm.apps, drag, editing, onOpen, onLong, a11y, onEmptyLong = { homeMenu = true },
-                        tiles = consentTiles(it.id), onTile = { t -> if (t.reason == ConsentUi.Reason.Update) updateHint = true else openPrompt(t.id ?: "") },
-                        live = ConsentUi.live(ui.load.config, consentReport, it.id),
+                        tiles = if (cardsLive) consentTiles(it.id) else consentTiles(it.id).filter { t -> t.reason == ConsentUi.Reason.Update },
+                        onTile = { t -> if (t.reason == ConsentUi.Reason.Update) updateHint = true else openPrompt(t.id ?: "") },
+                        live = if (cardsLive) ConsentUi.live(ui.load.config, consentReport, it.id) else emptyList(),
+                        placeholders = if (cardsLive) emptyList() else CardPlaceholder.tiles(ui.load.config, it.id),
                         onWidgetLong = { s -> widgetSheet = s }, onPermissions = { id -> detailFor = id }, windowWidthClass = widthClass) }
                 }
                 } // LocalLabelBackdrop
@@ -575,7 +581,7 @@ fun HomeScreen(vm: HomeViewModel) {
                                         DropdownMenuItem({ Text(stringResource(if (agentAction == AgentDocs.MenuAction.ADD) R.string.agent_docs_add else R.string.agent_docs_update)) },
                                             { menuOpen = false; runAgentUpdate(false) })
                                     }
-                                    if (consent != null) DropdownMenuItem({ Text(if (reviewCount > 0) pluralStringResource(R.plurals.menu_widgets_review, reviewCount, reviewCount) else stringResource(R.string.review_title)) },
+                                    if (cardsLive && consent != null) DropdownMenuItem({ Text(if (reviewCount > 0) pluralStringResource(R.plurals.menu_widgets_review, reviewCount, reviewCount) else stringResource(R.string.review_title)) },
                                         { menuOpen = false; reviewOpen = true })
                                     DropdownMenuItem({ Text(stringResource(R.string.menu_reload)) }, { menuOpen = false; vm.store.pollNow() })
                                     if (!isHome) DropdownMenuItem({ Text(stringResource(R.string.home_role_button)) }, { menuOpen = false; becomeHome() })
@@ -629,7 +635,7 @@ fun HomeScreen(vm: HomeViewModel) {
             }, onDismiss = { drawerSheet = null })
         }
 
-        if (homeMenu) HomeMenuSheet(ui.layout.pages.size, reviewCount, onAction = { a ->
+        if (homeMenu) HomeMenuSheet(ui.layout.pages.size, reviewCount, cardsLive = cardsLive, onAction = { a ->
             homeMenu = false
             when (a) {
                 HomeAction.EDIT_LAYOUT -> editing = true
@@ -907,11 +913,12 @@ private fun IssueBanner(issue: dev.nasawa.configlauncher.store.Issue, reconnecta
 @Composable
 internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag: DragController, editing: Boolean, onOpen: (ResolvedItem) -> Unit, onLong: (ResolvedItem) -> Unit, a11y: (ResolvedItem, TilePlace) -> List<CustomAccessibilityAction>, onEmptyLong: () -> Unit,
                      tiles: List<ConsentUi.Tile> = emptyList(), onTile: (ConsentUi.Tile) -> Unit = {},
-                     live: List<ConsentUi.Live> = emptyList(), onWidgetLong: (WidgetSheetFor) -> Unit = {}, onPermissions: (String) -> Unit = {},
+                     live: List<ConsentUi.Live> = emptyList(), placeholders: List<CardPlaceholder.Tile> = emptyList(),
+                     onWidgetLong: (WidgetSheetFor) -> Unit = {}, onPermissions: (String) -> Unit = {},
                      windowWidthClass: HomeGeometry.WidthClass? = null) {
     val byCell = page.items.associateBy { (it.item.x ?: 0) to (it.item.y ?: 0) }
     val rows = grid.rows
-    val occupied by rememberUpdatedState(byCell.keys + tiles.flatMap { it.placement.cells() } + live.flatMap { it.placement.cells() })
+    val occupied by rememberUpdatedState(byCell.keys + tiles.flatMap { it.placement.cells() } + live.flatMap { it.placement.cells() } + placeholders.flatMap { it.placement.cells() })
     val onEmpty by rememberUpdatedState(onEmptyLong)
     // §1.5: width class from the window; pitch from the pager slot left for the grid.
     // (§1.5 Foldables: the half's class when home is in one half.)
@@ -1056,6 +1063,15 @@ internal fun PageGrid(page: ResolvedPage, grid: Grid, apps: InstalledApps, drag:
                 val (offX, offY) = HomeGeometry.widgetHostOffsetDp(p.w, p.h, cellWDp.value, cellHDp.value)
                 LiveCardTarget(
                     l, onLongPress = { onWidgetLong(WidgetSheetFor(null, l)) }, onPermissions = { onPermissions(l.id) },
+                    modifier = Modifier.offset(baseXDp + cellWDp * p.x + offX.dp, baseYDp + cellHDp * p.y + offY.dp).size(hostW.dp, hostH.dp),
+                )
+            }
+            placeholders.forEach { t ->
+                val p = t.placement
+                val (hostW, hostH) = HomeGeometry.widgetHostSizeDp(p.w, p.h, cellWDp.value, cellHDp.value)
+                val (offX, offY) = HomeGeometry.widgetHostOffsetDp(p.w, p.h, cellWDp.value, cellHDp.value)
+                CardPlaceholderTile(
+                    t,
                     modifier = Modifier.offset(baseXDp + cellWDp * p.x + offX.dp, baseYDp + cellHDp * p.y + offY.dp).size(hostW.dp, hostH.dp),
                 )
             }

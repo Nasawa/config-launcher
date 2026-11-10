@@ -101,6 +101,12 @@ class ConfigEngine(
     private val clock: () -> Long = System::currentTimeMillis,
     /** #138: device-local widget approvals; null in tests that don't need them (no `consent` map then). */
     val consent: dev.nasawa.configlauncher.consent.ConsentStore? = null,
+    /**
+     * #257: debug (default) keeps consent and live-card behaviour. Release builds pass false so cards
+     * get a placeholder tile and a "not drawn in this version" warning. Approvals in [consent] are
+     * still settled and never cleared. 1.1 removes this when #140 and #141 land.
+     */
+    private val cardsLive: Boolean = dev.nasawa.configlauncher.BuildConfig.CARDS_LIVE,
 ) {
     private val pending = mutableListOf<Edit>()
     private var flushJob: Job? = null
@@ -576,6 +582,7 @@ class ConfigEngine(
     suspend fun pollWidgets(force: Boolean = false) = mutex.withLock { if (pollWidgetsLocked(force)) emitStatus() }
 
     private fun pollWidgetsLocked(force: Boolean): Boolean {
+        if (!cardsLive) return false
         val changed = widgetReader.poll(source, dataTargets(), force)
         if (changed) _widgetData.value = widgetReader.snapshots()
         return changed
@@ -599,10 +606,18 @@ class ConfigEngine(
     private fun emitStatus() {
         val (result, errors, hash) = statusResult ?: return
         val report = if (result == "ok") consentReport() else emptyList()
-        val warnings = (if (result == "ok") statusWarnings + phoneWarnings() + report.mapNotNull { it.warning } + widgetReader.warnings(dataTargets()) else statusWarnings) +
+        val cardWarnings = when {
+            result != "ok" -> emptyList()
+            !cardsLive -> statusConfig?.let { dev.nasawa.configlauncher.config.CardPlaceholder.warnings(it) }.orEmpty()
+            else -> report.mapNotNull { it.warning }
+        }
+        val widgetWarnings = if (result == "ok" && cardsLive) widgetReader.warnings(dataTargets()) else emptyList()
+        val warnings = (if (result == "ok") statusWarnings + phoneWarnings() + cardWarnings + widgetWarnings else statusWarnings) +
             source.suppressedNames().map(::suppressedWarning) + source.tempWarnings()
         _warnings.value = warnings
-        val consentMap = if (consent == null) null else report.associate { it.id to (it.state.key to it.warning) }
+        // Release builds still record each card's stored state, but drop the "waiting for approval" sentence
+        // so it doesn't contradict the "isn't shown in this version" warning.
+        val consentMap = if (consent == null) null else report.associate { it.id to (it.state.key to if (cardsLive) it.warning else null) }
         val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${warnings.hashCode()}|$backupError|$conflictFiles|$consentMap"
         if (key == lastStatusKey) return
         try {

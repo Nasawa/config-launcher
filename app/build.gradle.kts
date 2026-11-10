@@ -44,15 +44,21 @@ android {
     // §20.1 templates/config-folder/AGENTS.md → asset "config-folder/AGENTS.md"; §20.2 schema/launcher-config.v1.schema.json → asset (with schema/README.md and examples/, tiny).
     sourceSets { getByName("main") { assets.srcDir("../templates"); assets.srcDir("../schema") } }
     buildTypes {
-        debug { signingConfig = signingConfigs.getByName("debug") }
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+            // #257: debug keeps consent and the live-card target so S3 work can continue. 1.1 removes
+            // this flag when #140 and #141 land.
+            buildConfigField("boolean", "CARDS_LIVE", "true")
+        }
         release {
             // R8 for release builds (shrink + optimize); matters most on the older wall-display devices.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            buildConfigField("boolean", "CARDS_LIVE", "false")
         }
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
