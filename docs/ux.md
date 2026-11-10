@@ -708,12 +708,12 @@ Shown on first launch, before the home screen. Each step is one full screen with
    - Secondary text button under it: `Skip for now` (Q-C1). See **Skip for now** below.
    - Line under the body (folder mode only): `It also adds AGENTS.md, a short guide for AI agents that edit your layout. You can turn this off in Settings.` (§7.1)
    - Picker cancelled → stay on this screen and show a line above the buttons: `No folder chosen. You can skip this and connect one later in Settings.` Both buttons stay.
-   - **Folder can't be read** (#82, approved as built): a dialog, because first run has no banner area. Title `Can't read that folder`, body `Nothing was changed. Choose the folder again, or pick another one.`, the reason underneath in secondary text (e.g. the system error), buttons `Choose folder` (primary, reopens the picker) · `Cancel` (back to step 2, where `Skip for now` is still available). Nothing in the folder is written or overwritten.
+   - **Folder can't be read** (#82, approved as built): a dialog, because first run has no banner area. Title `Can't read that folder`, body `Nothing was changed. Choose the folder again, or pick another one.` with the reason (e.g. the system error) on the next line in parentheses, buttons `Choose folder` (primary, reopens the picker) · `Cancel` (back to step 2, where `Skip for now` is still available). Nothing in the folder is written or overwritten.
    - **Cloud folder** (the picked folder's provider isn't local storage, `com.android.externalstorage.documents`): a soft warning before continuing: `Cloud folders can take a while to sync. A Syncthing or git folder works best.` Buttons: `Use anyway` · `Choose another folder`. Not blocked (§17 Q15). `Choose another folder` (reopens the picker) is approved as written (§18.4).
-3. **Folder result**
-   - **Contains a valid `launcher.json`:** dialog `This folder already has a launcher.json.`, body `It has 3 pages and 24 items. If you replace it, the folder's file is first copied to .configlauncher/backup/.` Buttons: `Use the folder's layout` · `Replace it with mine` (on first run, "mine" is the starter layout, so this overwrites the folder's file after the backup). Same dialog as §18.2.
-   - **Contains an invalid `launcher.json`:** same dialog, body `It has problems:` with up to 3 problems as bullets, then `If you replace it, it is first copied to .configlauncher/backup/.` Buttons: `Replace it with mine` · `Cancel`. An invalid file is never adopted.
-   - **No file:** `There's no launcher.json here yet. Create one from a starter layout?` Button: `Create from current layout`. The starter is the built-in default: one empty page, a dock with phone, messages, browser and camera when they can be found, every other app in the drawer (no `unsorted` key).
+3. **Folder result** (the same `MoveDialog` as **Moving to a folder later** below, string ids `move_*`)
+   - **Contains a valid `launcher.json`:** dialog title `This folder already has a launcher.json.`, body `It has 3 pages and 24 items. If you replace it, the folder's file is first copied to .configlauncher/backup/.` Buttons: `Use the folder's layout` · `Replace it with mine`.
+   - **Contains an invalid `launcher.json`:** the same title, body `It has problems:` with up to three `• <problem>` lines, then `If you replace it, it is first copied to .configlauncher/backup/.` Buttons: `Replace it with mine` · `Cancel` (an invalid folder file is never adopted).
+   - **No file:** no dialog. The starter layout is written there (one write; choosing the folder is the explicit create) and the folder becomes the source. The starter is the built-in default: one empty page, a dock with phone, messages, browser and camera when they can be found, every other app in the drawer (no `unsorted` key).
    - Shown under all three: `When you edit on your phone, launcher.json is rewritten in a standard format. Comments aren't supported; use "x-note" keys for notes.`
 4. **Make it your home app**
    - Title: `Set as home app`
@@ -733,7 +733,7 @@ Shown on first launch, before the home screen. Each step is one full screen with
 - **Moving to a folder later** (Settings → `Choose folder` → picker → cloud-folder warning as in step 2 → result, §18.2):
   - **Folder has no `launcher.json`:** the current layout is written there (one write; choosing the folder is the explicit create), and the folder becomes the source.
   - **Folder has a valid `launcher.json`:** dialog `This folder already has a launcher.json.` Buttons: `Use the folder's layout` (the app-private file is kept as a history entry) · `Replace it with mine` (the folder file is copied to `.configlauncher/backup/` first).
-  - **Folder has an invalid `launcher.json`:** the same dialog and choices, plus `See problems`.
+  - **Folder has an invalid `launcher.json`:** the same dialog, with the problems listed (up to three) and the buttons `Replace it with mine` · `Cancel`. The folder's file is never adopted.
   - After connecting: snackbar `Connected to <folder name>.` and normal folder mode from then on (polling, banners, `status.json`). The app-private copy becomes the usual last-good copy.
 - The app-private file isn't deleted. **Settings → `Use phone storage`** switches back from a folder: it copies the current layout into the app-private file and releases the folder grant.
 

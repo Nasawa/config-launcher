@@ -16,7 +16,8 @@ NOT allowed:
   - `com.anigeek.reflowlauncher/.` (slash-dot after the applicationId) anywhere
   - the same shorthand built from the variable: `$PKG/.`, `${PKG}/.`, `{PKG}/.`,
     `PKG + '/.'` / `PKG + "/."`, and a `/.MainActivity` / `/.ReloadReceiver` component after our
-    package, one of those PKG forms, or `<applicationId>` (another app's `com.example/.MainActivity` is fine)
+    package, one of those PKG forms, `<applicationId>` / `${applicationId}` / `{applicationId}`, or a
+    `$NS` segment (`$PKG/$NS/.MainActivity`); another app's `com.example/.MainActivity` is fine
   - a regex-escaped namespace (`dev\\.nasawa…`, `dev[.]nasawa…`)
   - a partial namespace (`dev.nasawa` not followed by `.configlauncher`, e.g. `package="dev.nasawa`)
   - the old RELOAD action `dev.nasawa.configlauncher.RELOAD`, quoted or not (adb lines, XML comments)
@@ -38,10 +39,13 @@ SHORTHAND = _PKG + "/."
 
 # Grace #243 review gaps.
 VAR_SHORTHAND = re.compile(r"(\$PKG|\$\{PKG\}|\{PKG\})/\.|\bPKG\s*\+\s*[\"']/\.")
-# Only our package (literal, $PKG / ${PKG} / {PKG}, `PKG + '/.'`) or the `<applicationId>` placeholder; an
-# unrelated package such as `com.example/.MainActivity` is not ours and stays clean.
+# Only our package (literal, $PKG / ${PKG} / {PKG}, `PKG + '/.'`), the `<applicationId>` /
+# `${applicationId}` / `{applicationId}` placeholders (#247: the manifest-comment form 9d6474a shipped),
+# or a `$NS` / `${NS}` / `{NS}` segment (`$PKG/$NS/.MainActivity`); an unrelated package such as
+# `com.example/.MainActivity` is not ours and stays clean.
 SLASHDOT_COMPONENT = re.compile(
-    r"(?:" + re.escape(_PKG) + r"|\$PKG|\$\{PKG\}|\{PKG\}|\bPKG\s*\+\s*[\"']|<applicationId>)"
+    r"(?:" + re.escape(_PKG) + r"|\$PKG|\$\{PKG\}|\{PKG\}|\bPKG\s*\+\s*[\"']|<applicationId>"
+    r"|\$\{applicationId\}|\{applicationId\}|\$NS|\$\{NS\}|\{NS\})"
     r"/\.(MainActivity|ReloadReceiver)\b"
 )
 ESCAPED_NS = re.compile(r"dev(\\+|\[\.\])\.?nasawa")

@@ -85,6 +85,14 @@ MUTATIONS = {
     "unquoted_old_action_xml_comment": ('app/src/main/AndroidManifest.xml', '<!-- action dev.nasawa.configlauncher.RELOAD -->\n'),
     "literal_pkg_receiver_shorthand": ('README.md', 'adb shell am broadcast -n com.anigeek.reflowlauncher/.ReloadReceiver\n'),
     "quoted_old_action_manifest": ('app/src/main/AndroidManifest.xml', '<action android:name="dev.nasawa.configlauncher.RELOAD" />\n'),
+    # Grace #247 (#246 review): forms the narrowed prefix list let through.
+    "gradle_placeholder_receiver_comment": ('app/src/main/AndroidManifest.xml', '<!-- -n ${applicationId}/.ReloadReceiver -->\n'),
+    "gradle_placeholder_receiver_adb": ('app/src/main/AndroidManifest.xml', '`adb shell am broadcast -a ${applicationId}.RELOAD -n ${applicationId}/.ReloadReceiver`\n'),
+    "brace_placeholder_main": ('docs/spec.md', '-n {applicationId}/.MainActivity\n'),
+    "brace_placeholder_receiver": ('docs/spec.md', '-n {applicationId}/.ReloadReceiver\n'),
+    "pkg_ns_slashdot_main": ('scripts/emulator-smoke.sh', 'am start -n "$PKG/$NS/.MainActivity"\n'),
+    "pkg_brace_ns_slashdot_receiver": ('scripts/screen-matrix.sh', 'am broadcast -n "${PKG}/${NS}/.ReloadReceiver"\n'),
+    "py_fstring_ns_slashdot": ('scripts/x.py', 'cmp = f"{PKG}/{NS}/.MainActivity"\n'),
 }
 
 # Correct forms that must stay clean.
@@ -99,6 +107,10 @@ CLEAN = {
     # Another app's component shorthand is not ours (Grok Bot #245 follow-up): only our package / PKG / <applicationId>.
     "unrelated_pkg_main": 'adb shell am start -n com.example/.MainActivity\n',
     "unrelated_pkg_receiver": 'adb shell am broadcast -n com.example.other/.ReloadReceiver\n',
+    # #247: the manifest's real RELOAD action (dot, no slash) and the full placeholder component stay clean.
+    "manifest_placeholder_action": '                <action android:name="${applicationId}.RELOAD" />\n',
+    "placeholder_fq_receiver": 'adb shell am broadcast -a ${applicationId}.RELOAD -n ${applicationId}/dev.nasawa.configlauncher.ReloadReceiver\n',
+    "unrelated_applicationid_word": 'adb shell am start -n com.example.applicationId/.MainActivity\n',
 }
 
 
