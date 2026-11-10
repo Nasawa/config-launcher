@@ -17,9 +17,11 @@ class SafWritesTest {
 
     private class MemJournal : TempJournal {
         val ids = mutableMapOf<String, MutableList<String>>()
-        override fun add(treeKey: String, docId: String) { ids.getOrPut(treeKey) { mutableListOf() } += docId }
+        val shas = mutableMapOf<String, String?>()
+        override fun add(treeKey: String, docId: String, sha256: String?) { ids.getOrPut(treeKey) { mutableListOf() } += docId; shas[docId] = sha256 }
         override fun remove(treeKey: String, docId: String) { ids[treeKey]?.remove(docId) }
         override fun list(treeKey: String) = ids[treeKey].orEmpty().toList()
+        override fun sha256(treeKey: String, docId: String) = shas[docId]
     }
 
     /** Records every name asked for; can fail writes to a name, and run a hook when a root temp is written. */
@@ -47,7 +49,7 @@ class SafWritesTest {
         val r = Recording(t); val k = key(); val j = MemJournal()
         return Setup(t, r, SafWrites(r, SafDirs(r, k), k, j, token), j, k)
     }
-    private fun counter(): () -> String { var n = 0; return { "t${n++}" } }
+    private fun counter(): () -> String { var n = 0; return { "%08x".format(n++) } }
     private fun SafDirsTest.FakeTree.text(name: String) = docs.values.firstOrNull { it.parent == "root" && it.name == name }?.let { String(read(it.id)!!) }
     private fun SafDirsTest.FakeTree.numbered() = namesIn("root").filter { "(" in it }
 
@@ -68,7 +70,7 @@ class SafWritesTest {
         assertEquals("{\"v\":2}", s.t.text("launcher.json")); assertEquals("agents 2", s.t.text("AGENTS.md"))
         assertEquals(listOf(".configlauncher", "AGENTS.md", "launcher.json"), s.t.namesIn("root")) // no (N), no temp left
         assertEquals(1, s.r.asked.count { it == ".configlauncher" }) // tried once, then suppressed
-        assertTrue(s.r.asked.toString(), ".launcher.json.t0.tmp" in s.r.asked && ".AGENTS.md.t1.tmp" in s.r.asked) // a new name per save
+        assertTrue(s.r.asked.toString(), ".launcher.json.00000000.tmp" in s.r.asked && ".AGENTS.md.00000001.tmp" in s.r.asked) // a new name per save
         assertTrue(s.journal.list(s.key).isEmpty())
     }
 
@@ -76,11 +78,11 @@ class SafWritesTest {
         // Grace's repro: the provider hides dot files, and a force-stop left a hidden 1888-byte temp (journaled).
         val s = setup(hidden = true, hideDots = true)
         val stale = s.t.add("root", ".launcher.json.tmp", bin); s.t.write(stale, ByteArray(1888))
-        val stale2 = s.t.add("root", ".launcher.json.dead.tmp", bin); s.t.write(stale2, ByteArray(1888)); s.journal.add(s.key, stale2)
+        val stale2 = s.t.add("root", ".launcher.json.deadbeef.tmp", bin); s.t.write(stale2, ByteArray(1888)); s.journal.add(s.key, stale2)
         repeat(5) { i -> s.w.writeVerified("root", "launcher.json", json, "$i".toByteArray(), "layout") }
         assertEquals("4", s.t.text("launcher.json"))
         assertEquals(emptyList<String>(), s.t.numbered())
-        assertEquals(listOf(".configlauncher", ".launcher.json.dead.tmp", ".launcher.json.tmp", "launcher.json"), s.t.namesIn("root"))
+        assertEquals(listOf(".configlauncher", ".launcher.json.deadbeef.tmp", ".launcher.json.tmp", "launcher.json"), s.t.namesIn("root"))
         s.w.sweepRootTemps("root") // next start
         assertFalse("tracked by id: deleted though the listing hides it", s.t.docs.containsKey(stale2))
         assertTrue("untracked and hidden: orphaned, never guessed at by name", s.t.docs.containsKey(stale))
@@ -89,13 +91,13 @@ class SafWritesTest {
 
     @Test fun renamedRootTempIsUsedAndDeletedById() {
         // Even a colliding name (fixed token, hidden leftover) is accepted as returned and deleted by its id.
-        val s = setup(hidden = true, hideDots = true, token = { "x" })
-        val stale = s.t.add("root", ".launcher.json.x.tmp", bin); s.t.write(stale, ByteArray(1888))
+        val s = setup(hidden = true, hideDots = true, token = { "aaaaaaaa" })
+        val stale = s.t.add("root", ".launcher.json.aaaaaaaa.tmp", bin); s.t.write(stale, ByteArray(1888))
         repeat(5) { i -> s.w.writeVerified("root", "launcher.json", json, "$i".toByteArray(), "layout") }
         assertEquals("4", s.t.text("launcher.json"))
-        assertEquals(5, s.r.asked.count { it == ".launcher.json.x.tmp" })
+        assertEquals(5, s.r.asked.count { it == ".launcher.json.aaaaaaaa.tmp" })
         assertEquals(emptyList<String>(), s.t.numbered()) // each renamed `(1)` copy was deleted by id
-        assertEquals(listOf(".configlauncher", ".launcher.json.x.tmp", "launcher.json"), s.t.namesIn("root"))
+        assertEquals(listOf(".configlauncher", ".launcher.json.aaaaaaaa.tmp", "launcher.json"), s.t.namesIn("root"))
     }
 
     @Test fun failedTargetWriteRestoresTheOriginalBytesAndDeletesTheTemp() {
@@ -129,13 +131,13 @@ class SafWritesTest {
                 s.r.write(docId, bytes)
             }
         }
-        val w = SafWrites(failing, SafDirs(failing, s.key), s.key, s.journal, { "keep" })
+        val w = SafWrites(failing, SafDirs(failing, s.key), s.key, s.journal, { "cafef00d" })
         val e = assertThrows(IOException::class.java) { w.writeVerified("root", "launcher.json", json, "new".toByteArray(), "layout") }
-        assertTrue(e.message!!, e.message!!.contains("kept in .launcher.json.keep.tmp"))
-        assertEquals("new", s.t.text(".launcher.json.keep.tmp"))
+        assertTrue(e.message!!, e.message!!.contains("kept in .launcher.json.cafef00d.tmp"))
+        assertEquals("new", s.t.text(".launcher.json.cafef00d.tmp"))
         assertTrue("out of the journal, so no sweep deletes it", s.journal.list(s.key).isEmpty())
         w.sweepRootTemps("root")
-        assertEquals("new", s.t.text(".launcher.json.keep.tmp"))
+        assertEquals("new", s.t.text(".launcher.json.cafef00d.tmp"))
     }
 
     @Test fun nextNormalSaveDeletesALegacyRootTemp() {
@@ -157,9 +159,9 @@ class SafWritesTest {
     @Test fun sweepNeverDeletesAFolder() {
         val s = setup(hidden = false)
         s.t.add("root", ".launcher.json.tmp", dir)                                         // legacy name, but a folder
-        val d = s.t.add("root", ".AGENTS.md.zz.tmp", dir); s.journal.add(s.key, d)          // journaled id, but a folder
+        val d = s.t.add("root", ".AGENTS.md.0000abcd.tmp", dir); s.journal.add(s.key, d)          // journaled id, but a folder
         s.w.sweepRootTemps("root")
-        assertEquals(listOf(".AGENTS.md.zz.tmp", ".launcher.json.tmp"), s.t.namesIn("root"))
+        assertEquals(listOf(".AGENTS.md.0000abcd.tmp", ".launcher.json.tmp"), s.t.namesIn("root"))
         assertTrue(s.t.deleted.isEmpty())
     }
 
@@ -201,4 +203,189 @@ class SafWritesTest {
         assertEquals(listOf(".configlauncher", "launcher.json"), s.t.namesIn("root"))
         assertEquals("old", s.t.text("launcher.json"))
     }
+
+    // ---- #251 NO-GO at 3fc9b0e (Grace): a save killed after the target was truncated ----
+
+    private val valid = """{"schemaVersion":1,"pages":[{"id":"home","items":[]}]}""" + "\n"
+    private val validNew = """{"schemaVersion":1,"pages":[{"id":"home","items":[]},{"id":"two","items":[]}]}""" + "\n"
+
+    /** A force-stop: no catch in the save runs (an Error, not an Exception); `finally` reaches a dead provider. */
+    private class Killed : Error("force-stop")
+
+    /** A save of [name] killed while writing the target: [leave] is what the target holds when the process dies. */
+    private fun Setup.killDuringTargetWrite(name: String, bytes: String, leave: (ByteArray) -> ByteArray = { ByteArray(0) }) {
+        val dying = object : DocTree by r {
+            override fun write(docId: String, b: ByteArray) {
+                if (t.docs[docId]?.name == name) { t.write(docId, leave(b)); r.dead = true; throw Killed() }
+                r.write(docId, b)
+            }
+        }
+        val w = SafWrites(dying, SafDirs(dying, key), key, journal, counter())
+        assertThrows(Killed::class.java) { w.writeVerified("root", name, if (name == "launcher.json") json else bin, bytes.toByteArray(), name) }
+        r.dead = false
+    }
+    private fun Setup.restart() = SafWrites(r, SafDirs(r, key), key, journal)
+    private fun Setup.temps() = t.namesIn("root").filter { it.endsWith(".tmp") }
+
+    @Test fun killedAfterTruncateRestoresLauncherJsonFromTheTempOnNextStart() {
+        // Grace's repro on msd:12: launcher.json at 0 B, the hidden journaled temp holds the full new version.
+        val s = setup(hidden = true, hideDots = true)
+        s.w.writeVerified("root", "launcher.json", json, valid.toByteArray(), "layout")
+        s.killDuringTargetWrite("launcher.json", validNew)
+        assertEquals("", s.t.text("launcher.json"))
+        assertEquals(validNew, s.t.text(s.temps().single()))
+        val warnings = s.restart().sweepRootTemps("root")
+        assertEquals(validNew, s.t.text("launcher.json"))
+        assertTrue(ConfigCodecOk(s.t.text("launcher.json")!!))
+        assertEquals(emptyList<String>(), s.temps())
+        assertTrue(s.journal.list(s.key).isEmpty())
+        assertEquals(emptyList<String>(), warnings)
+    }
+
+    @Test fun killedMidTargetWriteRestoresAPartialLauncherJson() {
+        val s = setup(hidden = true, hideDots = true)
+        s.w.writeVerified("root", "launcher.json", json, valid.toByteArray(), "layout")
+        s.killDuringTargetWrite("launcher.json", validNew) { it.copyOf(20) } // a prefix of the new bytes
+        s.restart().sweepRootTemps("root")
+        assertEquals(validNew, s.t.text("launcher.json"))
+        assertEquals(emptyList<String>(), s.temps())
+    }
+
+    @Test fun killedAfterTruncateRestoresAgentsMdToo() {
+        val s = setup(hidden = true, hideDots = true)
+        s.w.writeVerified("root", "AGENTS.md", bin, "agents v1".toByteArray(), "AGENTS.md")
+        s.killDuringTargetWrite("AGENTS.md", "agents v2")
+        assertEquals("", s.t.text("AGENTS.md"))
+        s.restart().sweepRootTemps("root")
+        assertEquals("agents v2", s.t.text("AGENTS.md"))
+        assertEquals(emptyList<String>(), s.temps())
+    }
+
+    @Test fun journalEntryWithoutAHashRestoresOnlyAParsingLauncherJson() {
+        // A journal from the 3fc9b0e build has no hash: the temp must parse to count as a complete copy.
+        val s = setup(hidden = true, hideDots = true)
+        val target = s.t.add("root", "launcher.json", json) // 0 B
+        val good = s.t.add("root", ".launcher.json.0badc0de.tmp", bin); s.t.write(good, validNew.toByteArray()); s.journal.add(s.key, good)
+        s.restart().sweepRootTemps("root")
+        assertEquals(validNew, String(s.t.read(target)!!))
+        assertFalse(s.t.docs.containsKey(good))
+
+        val s2 = setup(hidden = true, hideDots = true)
+        val t2 = s2.t.add("root", "launcher.json", json)
+        val half = s2.t.add("root", ".launcher.json.0badc0de.tmp", bin); s2.t.write(half, validNew.take(30).toByteArray()); s2.journal.add(s2.key, half)
+        s2.restart().sweepRootTemps("root")
+        assertEquals("a temp that doesn't parse is never restored", "", String(s2.t.read(t2)!!))
+    }
+
+    @Test fun anIncompleteTempNeverReplacesTheTarget() {
+        // Killed while writing the temp: the hash doesn't match, the target was never touched, the temp goes.
+        val s = setup(hidden = true, hideDots = true)
+        val target = s.t.add("root", "launcher.json", json)
+        val tmp = s.t.add("root", ".launcher.json.12345678.tmp", bin); s.t.write(tmp, valid.toByteArray())
+        s.journal.add(s.key, tmp, dev.nasawa.configlauncher.config.ConfigCodec.sha256(validNew.toByteArray()))
+        s.restart().sweepRootTemps("root")
+        assertEquals("", String(s.t.read(target)!!))
+        assertFalse(s.t.docs.containsKey(tmp))
+    }
+
+    @Test fun failedRestoreKeepsTheTempAndWarns() {
+        val s = setup(hidden = true, hideDots = true)
+        s.w.writeVerified("root", "launcher.json", json, valid.toByteArray(), "layout")
+        s.killDuringTargetWrite("launcher.json", validNew)
+        val tmpName = s.temps().single()
+        val readOnly = object : DocTree by s.r {
+            override fun write(docId: String, bytes: ByteArray) { throw IOException("read-only") }
+        }
+        val w = SafWrites(readOnly, SafDirs(readOnly, s.key), s.key, s.journal)
+        val warnings = w.sweepRootTemps("root")
+        assertEquals(listOf("Couldn't finish saving launcher.json after the app was stopped: the new version is kept in $tmpName. Copy it over launcher.json to keep your last edit."), warnings)
+        assertEquals(warnings, w.tempWarnings())
+        assertEquals(validNew, s.t.text(tmpName))
+        assertEquals("still journaled: tried again next start", 1, s.journal.list(s.key).size)
+        val ok = s.restart()
+        assertEquals(emptyList<String>(), ok.sweepRootTemps("root"))
+        assertEquals(validNew, s.t.text("launcher.json"))
+        assertEquals(emptyList<String>(), ok.tempWarnings())
+    }
+
+    @Test fun someoneElsesBrokenLauncherJsonIsNotOverwrittenAndTheEditIsKept() {
+        val s = setup(hidden = true, hideDots = true)
+        s.w.writeVerified("root", "launcher.json", json, valid.toByteArray(), "layout")
+        s.killDuringTargetWrite("launcher.json", validNew)
+        val tmpName = s.temps().single()
+        val target = s.t.docs.values.single { it.name == "launcher.json" }.id
+        s.t.write(target, "{ an agent's half edit".toByteArray()) // written while the app was stopped
+        val warnings = s.restart().sweepRootTemps("root")
+        assertEquals("{ an agent's half edit", s.t.text("launcher.json"))
+        assertEquals(listOf("launcher.json has problems, and the app was stopped while saving it: your last edit on the phone is kept in $tmpName."), warnings)
+        assertEquals(validNew, s.t.text(tmpName))
+        s.t.write(target, valid.toByteArray()) // fixed
+        assertEquals(emptyList<String>(), s.restart().sweepRootTemps("root"))
+        assertEquals(emptyList<String>(), s.temps())
+    }
+
+    @Test fun sweepMatchesOnlyTheExactTempNames() {
+        val s = setup(hidden = false)
+        val user = listOf(".notes.tmp", ".launcher.json.tmp.tmp", ".launcher.json.ABCDEF12.tmp", ".launcher.json.1234567.tmp",
+            ".AGENTS.md.123456789.tmp", ".launcher.json.12345678.tmp.bak", "launcher.json.12345678.tmp")
+            .map { n -> s.t.add("root", n, bin).also { s.t.write(it, "mine".toByteArray()); s.journal.add(s.key, it) } }
+        val ours = listOf(".launcher.json.0123abcd.tmp", ".AGENTS.md.89abcdef.tmp", ".launcher.json.0123abcd (1).tmp")
+            .map { n -> s.t.add("root", n, bin).also { s.t.write(it, "x".toByteArray()); s.journal.add(s.key, it) } }
+        s.restart().sweepRootTemps("root")
+        user.forEach { assertTrue(s.t.docs[it]!!.name, s.t.docs.containsKey(it)) }
+        ours.forEach { assertFalse(s.t.docs.containsKey(it)) }
+        assertTrue("user files dropped from the journal, never deleted", s.journal.list(s.key).isEmpty())
+        assertEquals("launcher.json", SafWrites.tempTarget(".launcher.json.0123abcd.tmp"))
+        assertEquals("AGENTS.md", SafWrites.tempTarget(".AGENTS.md.89abcdef (2).tmp"))
+        assertNull(SafWrites.tempTarget(".launcher.json.0123ABCD.tmp"))
+    }
+
+    @Test fun journalEntriesForMissingDocumentsAreDropped() {
+        // Grace saw ea7c7721 survive: the provider throws "not a descendant" for a document that's gone.
+        val s = setup(hidden = false)
+        s.journal.add(s.key, "gone-null"); s.journal.add(s.key, "gone-throws"); s.journal.add(s.key, "gone-fnf")
+        val provider = object : DocTree by s.r {
+            override fun info(docId: String) = when (docId) {
+                "gone-throws" -> throw SecurityException("Document gone-throws is not a descendant of root")
+                "gone-fnf" -> throw java.io.FileNotFoundException(docId)
+                else -> s.r.info(docId)
+            }
+        }
+        SafWrites(provider, SafDirs(provider, s.key), s.key, s.journal).sweepRootTemps("root")
+        assertTrue(s.journal.list(s.key).toString(), s.journal.list(s.key).isEmpty())
+    }
+
+    @Test fun journalEntriesAreKeptWhenAccessIsLost() {
+        val s = setup(hidden = false)
+        s.journal.add(s.key, "a"); s.journal.add(s.key, "b")
+        val revoked = object : DocTree by s.r {
+            override fun info(docId: String): DocInfo? = throw AccessLostException("folder permission was revoked")
+        }
+        SafWrites(revoked, SafDirs(revoked, s.key), s.key, s.journal).sweepRootTemps("root")
+        assertEquals(listOf("a", "b"), s.journal.list(s.key))
+    }
+
+    @Test fun aJournalThatCantBeWrittenStillGetsTheTempDeleted() {
+        val s = setup(hidden = true)
+        val broken = object : TempJournal {
+            override fun add(treeKey: String, docId: String, sha256: String?) = throw IOException("no space")
+            override fun remove(treeKey: String, docId: String) = throw IOException("no space")
+            override fun list(treeKey: String) = emptyList<String>()
+        }
+        val w = SafWrites(s.r, SafDirs(s.r, s.key), s.key, broken, counter())
+        val e = assertThrows(IOException::class.java) { w.writeVerified("root", "launcher.json", json, "{}".toByteArray(), "layout") }
+        assertTrue(e.message!!, e.message!!.startsWith("Couldn't save layout"))
+        assertEquals("no orphaned temp", listOf(".configlauncher"), s.t.namesIn("root"))
+    }
+
+    @Test fun fileJournalKeepsHashesAndReadsOldLines() {
+        val f = java.io.File(tmp.root, "config/saf-temps.txt")
+        f.parentFile!!.mkdirs(); f.writeText("A\tmsd:1\n") // a 3fc9b0e line
+        FileTempJournal(f).add("A", "msd:2", "abc")
+        val again = FileTempJournal(f)
+        assertEquals(listOf("msd:1", "msd:2"), again.list("A"))
+        assertNull(again.sha256("A", "msd:1")); assertEquals("abc", again.sha256("A", "msd:2"))
+    }
+
+    private fun ConfigCodecOk(text: String) = dev.nasawa.configlauncher.config.ConfigCodec.decode(text) is dev.nasawa.configlauncher.config.ParseResult.Ok
 }

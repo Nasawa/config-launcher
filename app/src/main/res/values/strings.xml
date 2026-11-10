@@ -37,7 +37,7 @@
     <string name="folder_invalid">launcher.json in that folder has problems, so it wasn\'t used.</string>
     <string name="folder_backup_failed">Couldn\'t back up the folder\'s launcher.json: %1$s</string>
     <!-- #251: once per suppressed name (SafDirs); Pragma copy review. Edits still save (root temp); the helper folder can't be kept. -->
-    <string name="folder_hidden_notice">Your edits are saved, but backups can\'t be kept here because the storage app hides .configlauncher. To fix it, choose the folder again from internal storage.</string>
+    <string name="folder_hidden_notice">Backups can\'t be kept here because the storage app hides .configlauncher. To fix it, choose the folder again from internal storage.</string>
     <!-- #251: the rare case where a root file itself (launcher.json, AGENTS.md) is hidden, so it really can't be saved. -->
     <string name="folder_hidden_notice_file">Can\'t save %1$s: the storage app hides the one already in this folder. To fix it, choose the folder again from internal storage.</string>
     <string name="move_failed">Couldn\'t move your layout: %1$s</string>

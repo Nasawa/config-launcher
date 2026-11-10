@@ -47,7 +47,7 @@ class SafSuppressionTest {
         val t = SafDirsTest.FakeTree(); val id = t.add("root", ".configlauncher", dir); t.unlisted += ".configlauncher"; return t to id
     }
     private fun engine(src: ConfigSource) = ConfigEngine(src, LastGoodStore(tmp.newFolder()), stabilityMs = 0, clock = { 1_000L })
-    private val line = "Your edits are saved, but backups and status can't be kept here because the storage app hides .configlauncher. To fix it, choose the folder again from internal storage."
+    private val line = "Backups and status can't be kept here because the storage app hides .configlauncher. To fix it, choose the folder again from internal storage."
     private fun ConfigEngine.takeNotice() = state.value.notice.also { consumeNotice() }
 
     /** The user deleted the hidden original from another app (and the provider lists normally again). */

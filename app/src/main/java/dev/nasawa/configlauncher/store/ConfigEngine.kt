@@ -600,7 +600,7 @@ class ConfigEngine(
         val (result, errors, hash) = statusResult ?: return
         val report = if (result == "ok") consentReport() else emptyList()
         val warnings = (if (result == "ok") statusWarnings + phoneWarnings() + report.mapNotNull { it.warning } + widgetReader.warnings(dataTargets()) else statusWarnings) +
-            source.suppressedNames().map(::suppressedWarning)
+            source.suppressedNames().map(::suppressedWarning) + source.tempWarnings()
         _warnings.value = warnings
         val consentMap = if (consent == null) null else report.associate { it.id to (it.state.key to it.warning) }
         val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${warnings.hashCode()}|$backupError|$conflictFiles|$consentMap"
@@ -652,7 +652,7 @@ class ConfigEngine(
     internal fun suppressedWarning(name: String) =
         if (name in SafWrites.ROOT_FILES) "Can't save $name: the storage app hides the one already in this folder, so no copy was made. To fix it, choose the folder again from internal storage."
         // `.configlauncher` (or something in it): launcher.json still saves through a root temp ([SafWrites]).
-        else "Your edits are saved, but backups and status can't be kept here because the storage app hides $name. To fix it, choose the folder again from internal storage."
+        else "Backups and status can't be kept here because the storage app hides $name. To fix it, choose the folder again from internal storage."
 
     fun consumeNotice() = _state.update { it.copy(notice = null) }
     fun consumeMerge() = _state.update { it.copy(merge = null) }

@@ -42,6 +42,9 @@ interface ConfigSource {
     /** #244/#251: names this folder won't create again because the provider hides the existing one ([SafDirs]). */
     fun suppressedNames(): List<String> = emptyList()
 
+    /** #251: Warnings / status.json lines for save temps the start sweep kept as the only copy ([SafWrites]). */
+    fun tempWarnings(): List<String> = emptyList()
+
     /** #251: names suppressed since the last call, each returned once (for the one-shot notice). */
     fun takeNewlySuppressed(): List<String> = emptyList()
 

@@ -65,11 +65,14 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri, private
         override fun delete(docId: String) = DocumentsContract.deleteDocument(resolver, docUri(docId))
         override fun read(docId: String) = readUri(docUri(docId))
         override fun write(docId: String, bytes: ByteArray) = writeUri(docUri(docId), bytes)
+        // #251 (Grace): a document that's gone can come back as "not a descendant" (SecurityException) while the
+        // tree grant is still held; that's not-found, so the sweep drops its journal entry. No grant: access lost.
         override fun info(docId: String): DocInfo? = try {
+            if (resolver.persistedUriPermissions.none { it.uri == treeUri && it.isReadPermission }) throw AccessLostException("folder permission was revoked")
             resolver.query(docUri(docId), arrayOf(Document.COLUMN_MIME_TYPE, Document.COLUMN_SIZE), null, null, null)?.use { c ->
                 if (c.moveToFirst()) DocInfo(c.getString(0) ?: "", if (c.isNull(1)) 0 else c.getLong(1)) else null
             }
-        } catch (_: java.io.FileNotFoundException) { null } catch (_: IllegalArgumentException) { null }
+        } catch (_: java.io.FileNotFoundException) { null } catch (_: IllegalArgumentException) { null } catch (_: SecurityException) { null }
         override fun childCount(docId: String): Int =
             resolver.query(DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId), arrayOf(Document.COLUMN_DOCUMENT_ID), null, null, null)
                 ?.use { it.count } ?: throw IOException("can't list $docId")
@@ -84,6 +87,7 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri, private
     private fun ensure(parentDocId: String, name: String, mime: String): String = dirs.ensure(parentDocId, name, mime)
 
     override fun suppressedNames() = dirs.suppressed()
+    override fun tempWarnings() = writes.tempWarnings()
     override fun takeNewlySuppressed() = dirs.takeNew()
     override fun clearSuppression() = SafDirs.clearTree(treeUri.toString())
 
