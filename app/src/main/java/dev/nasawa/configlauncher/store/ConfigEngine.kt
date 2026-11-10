@@ -596,7 +596,21 @@ class ConfigEngine(
      */
     val warnings: StateFlow<List<String>> = _warnings.asStateFlow()
 
+    private val _keptTemps = MutableStateFlow<List<String>>(emptyList())
+    /**
+     * #262: the [ConfigSource.tempWarnings] lines (a save temp the start sweep kept as the only copy of an edit). They're
+     * in [warnings] / status.json too, but the Warnings list is hidden while a problem banner is up and status.json
+     * may not be writable (msd:12), so HomeScreen also puts these in the problem banner ([BannerNotes.keptTemps]).
+     */
+    val keptTemps: StateFlow<List<String>> = _keptTemps.asStateFlow()
+
+    private fun refreshKeptTemps() {
+        val now = runCatching { source.tempWarnings() }.getOrDefault(emptyList())
+        if (now != _keptTemps.value) _keptTemps.value = now
+    }
+
     private fun emitStatus() {
+        refreshKeptTemps()
         val (result, errors, hash) = statusResult ?: return
         val report = if (result == "ok") consentReport() else emptyList()
         val warnings = (if (result == "ok") statusWarnings + phoneWarnings() + report.mapNotNull { it.warning } + widgetReader.warnings(dataTargets()) else statusWarnings) +
@@ -630,6 +644,7 @@ class ConfigEngine(
 
     /** End of each public entry point (poll, flush, reload, move, apps.json): drain, then raise the one-shot notice. */
     private fun publishSuppression() {
+        refreshKeptTemps()
         noteSuppression()
         val name = hiddenNotice ?: return
         hiddenNotice = null
