@@ -218,6 +218,9 @@ add(I,'card-tap-undeclared.json',m(els(_card(layouts={'1x1':[{'type':'button','l
     'invalid, B2: a tap needs its capability on the same card','kotlin','dynamic-widgets.md §4','#137')
 
 add(I,'number-too-large.json',raw_nums(copy.deepcopy(B),'x-n',['1e309']),'B2: x-n[0] is outside the double range; the phone could not write it back','kotlin','#113','')
+# #120: not RFC 8259 numbers; the phone's pre-scan rejects them like json.loads (full list: test-fixtures/json-numbers.json).
+add(I,'number-leading-zero.json',raw_nums(copy.deepcopy(B),'x-n',['00']),'parse error, B1: leading zero','parser','#120','')
+add(I,'number-bare-minus.json',raw_nums(copy.deepcopy(B),'x-n',['-']),'parse error, B1: a bare minus is not a number','parser','#120','')
 RULES={'number-too-large.json':'number-range','token-unknown.json':'template-grammar','token-letter.json':'template-grammar','token-run.json':'template-grammar','token-unclosed.json':'template-grammar','token-stray.json':'template-grammar','token-pattern-long.json':'template-grammar','token-pattern-on-page.json':'template-grammar','tokens-many.json':'template-grammar','override-bad-template.json':'template-grammar','titlebar-twice.json':'single-title-bar','duplicate-id.json':'duplicate-ids','overlapping-cells.json':'overlapping-cells','cell-outside-grid.json':'cell-outside-grid','2016-items.json':'item-total','duplicate-key.json':'duplicate-keys','depth-17.json':'parser-depth','deep-nesting.json':'parser-depth','size-just-over-2mib.json':'byte-cap','nul-in-label.json':'nul-or-encoding','invalid-utf8.json':'nul-or-encoding','lone-surrogate.json':'nul-or-encoding','utf16.json':'nul-or-encoding','element-overlaps-item.json':'overlapping-cells','element-overlaps-element.json':'overlapping-cells','element-outside-grid.json':'cell-outside-grid','element-duplicate-id.json':'duplicate-ids','card-tap-undeclared.json':'card-capability-ref'}
 for e in man:
     r=RULES.get(e['file'].split('/')[1])

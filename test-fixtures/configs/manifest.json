@@ -922,5 +922,19 @@
     "ref": "#113",
     "note": "",
     "kotlinOnly": "number-range"
+  },
+  {
+    "file": "invalid/number-leading-zero.json",
+    "expect": "parse error, B1: leading zero",
+    "layer": "parser",
+    "ref": "#120",
+    "note": ""
+  },
+  {
+    "file": "invalid/number-bare-minus.json",
+    "expect": "parse error, B1: a bare minus is not a number",
+    "layer": "parser",
+    "ref": "#120",
+    "note": ""
   }
 ]

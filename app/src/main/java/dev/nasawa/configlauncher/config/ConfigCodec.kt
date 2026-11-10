@@ -20,19 +20,31 @@ object ConfigCodec {
 
     const val MAX_BYTES = Limits.MAX_BYTES
 
-    fun decode(bytes: ByteArray): ParseResult {
+    fun decode(bytes: ByteArray): ParseResult = decode(bytes, strictTokens = true)
+
+    /**
+     * #120: the app's own last-good copy, read at cold start. Builds before #120 accepted bare tokens such as
+     * `00` or `-` and saved those files as last-good; after the upgrade the folder file gets the usual load
+     * error, but the layout it last showed still comes back. Everything else is as strict as [decode], and
+     * the model's write-back is strict JSON (kotlinx writes `00` as 0 and a non-number token as a string).
+     */
+    fun decodeLastGood(bytes: ByteArray): ParseResult = decode(bytes, strictTokens = false)
+
+    private fun decode(bytes: ByteArray, strictTokens: Boolean): ParseResult {
         if (bytes.size > MAX_BYTES) return ParseResult.Invalid(listOf("file is larger than ${MAX_BYTES / 1024 / 1024} MiB"))
         var text = JsonPreScan.decodeUtf8(bytes) ?: return ParseResult.Invalid(listOf("not valid UTF-8"))
         if (text.startsWith("\uFEFF")) text = text.substring(1)
-        return decode(text)
+        return decode(text, strictTokens)
     }
 
-    fun decode(text: String): ParseResult {
+    fun decode(text: String): ParseResult = decode(text, strictTokens = true)
+
+    private fun decode(text: String, strictTokens: Boolean): ParseResult {
         // A git merge left conflict markers in the file: say so instead of a generic syntax error.
         GitMarkers.firstLine(text)?.let {
             return ParseResult.Invalid(listOf("not valid JSON: git merge conflict markers (line $it); finish the merge in git"))
         }
-        JsonPreScan.check(text)?.let { return ParseResult.Invalid(listOf("not valid JSON: $it")) }
+        JsonPreScan.check(text, tokens = strictTokens)?.let { return ParseResult.Invalid(listOf("not valid JSON: $it")) }
         val tree = try { Json.parseToJsonElement(text) } catch (e: Exception) {
             return ParseResult.Invalid(listOf("not valid JSON: ${e.message?.lineSequence()?.firstOrNull()}"))
         }
