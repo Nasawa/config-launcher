@@ -82,7 +82,7 @@ This scope is based on main `d37afdb` (6 commits after the `v0.0.1-dev9` tag at 
 
 ## Known gaps in 1.0
 
-- **Real-hinge drag check (#253).** Waived for 1.0 (Christopher, 2026-11-10). No foldable is available, so fold behaviour (fold-open drag, the hinge split, overlays near the hinge) is emulator-tested best effort. It gets re-checked on a real foldable when one is available. The 1.0 release notes list this gap.
+- **Real-hinge hands-on drag check (#253).** Waived for 1.0 (Christopher, 2026-11-10). No foldable is available, so the fold-open drag pass is emulator-tested only, best effort. It gets re-checked on a real foldable when one is available. The 1.0 release notes list this gap. (Keeping overlays off a separating hinge is #226, which stays after 1.0 in section 4.)
 
 ## 7. Decisions (Christopher, 2026-11-10, relayed by Grok Bot)
 
