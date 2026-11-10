@@ -17,17 +17,15 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
     override val displayName = "Folder: " + rootDocId.substringAfterLast(':').ifEmpty { rootDocId }
     override val location = FolderPath.launcherJson(treeUri.authority, rootDocId, treeUri.toString())
 
-    private data class Child(val docId: String, val mime: String, val modified: Long, val size: Long)
-
-    private fun children(parentDocId: String): Map<String, Child> {
+    private fun children(parentDocId: String): Map<String, DocChild> {
         val uri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
         val cols = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE,
             Document.COLUMN_LAST_MODIFIED, Document.COLUMN_SIZE)
-        val out = mutableMapOf<String, Child>()
+        val out = mutableMapOf<String, DocChild>()
         if (resolver.persistedUriPermissions.none { it.uri == treeUri && it.isReadPermission }) throw AccessLostException("folder permission was revoked")
         try { resolver.query(uri, cols, null, null, null)?.use { c ->
             while (c.moveToNext()) {
-                out[c.getString(1)] = Child(c.getString(0), c.getString(2) ?: "", if (c.isNull(3)) 0 else c.getLong(3), if (c.isNull(4)) 0 else c.getLong(4))
+                out[c.getString(1)] = DocChild(c.getString(0), c.getString(2) ?: "", if (c.isNull(3)) 0 else c.getLong(3), if (c.isNull(4)) 0 else c.getLong(4))
             }
         } ?: throw AccessLostException("folder is not accessible")
         } catch (e: SecurityException) { throw AccessLostException("folder permission was revoked") }
@@ -55,11 +53,19 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
         (resolver.openOutputStream(uri, "wt") ?: throw IOException("can't open $uri")).use { it.write(bytes); it.flush() }
     }
 
-    private fun ensure(parentDocId: String, name: String, mime: String): String =
-        children(parentDocId)[name]?.docId
-            ?: DocumentsContract.createDocument(resolver, docUri(parentDocId), mime, name)
-                ?.let { DocumentsContract.getDocumentId(it) }
-            ?: throw IOException("can't create $name")
+    private val dirs = SafDirs(object : DocTree {
+        override fun list(parentDocId: String) = children(parentDocId)
+        override fun create(parentDocId: String, mime: String, name: String) =
+            DocumentsContract.createDocument(resolver, docUri(parentDocId), mime, name)?.let { DocumentsContract.getDocumentId(it) }
+        override fun displayName(docId: String): String? =
+            resolver.query(docUri(docId), arrayOf(Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            }
+        override fun delete(docId: String) = DocumentsContract.deleteDocument(resolver, docUri(docId))
+    }, treeUri.toString())
+
+    /** #244: find-or-create through [SafDirs] (serialized, rename-checked), never a bare createDocument. */
+    private fun ensure(parentDocId: String, name: String, mime: String): String = dirs.ensure(parentDocId, name, mime)
 
     override fun write(bytes: ByteArray) = writeVerified(FILE, "application/json", bytes, "layout")
 
@@ -78,9 +84,7 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
         val tmp = docUri(ensure(dir, "$name.tmp", "application/octet-stream"))
         writeUri(tmp, bytes)
         if (readUri(tmp)?.let { ConfigCodec.sha256(it) } != want) throw IOException("temp copy verification failed")
-        val target = docUri(children(rootDocId)[name]?.docId
-            ?: DocumentsContract.createDocument(resolver, docUri(rootDocId), mime, name)?.let { DocumentsContract.getDocumentId(it) }
-            ?: throw IOException("can't create $name"))
+        val target = docUri(ensure(rootDocId, name, mime))
         try {
             writeUri(target, bytes)
             if (readUri(target)?.let { ConfigCodec.sha256(it) } != want) throw IOException("write verification failed")
