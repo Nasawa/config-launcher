@@ -20,6 +20,8 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     val prefs = Prefs(context)
     /** §18.5 AF-1 app-only source: app-private, separate from last-good.json and history/. */
     val localDir: File = File(context.filesDir, "config/source")
+    /** #251: root save temps that may still exist on a SAF tree, swept on start ([SafWrites]). */
+    private val tempJournal = FileTempJournal(File(context.filesDir, "config/saf-temps.txt"))
     val engine = ConfigEngine(currentSource(), LastGoodStore(File(context.filesDir, "config")), scope = scope,
         consent = dev.nasawa.configlauncher.consent.ConsentStore(File(context.filesDir, "consent")))
         .also { it.askBeforeMerge = prefs.askBeforeMerging }
@@ -33,7 +35,7 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         val uri = prefs.folderUri
         // A picked folder stays the source even if its grant is gone, so B3 (Reconnect) shows
         // instead of silently switching to app storage.
-        if (uri != null) return SafSource(context.contentResolver, uri)
+        if (uri != null) return SafSource(context.contentResolver, uri, tempJournal)
         return LocalFileSource(localDir, sidecars = false)
     }
 
@@ -45,6 +47,8 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         pollJob = scope.launch(Dispatchers.IO) {
             // §20.1/§20.2, #196: after an app update the bundled AGENTS.md and schema may be newer. Both are
             // hash-guarded, so an up-to-date or user-edited file is left alone (no write).
+            // #251: root temps (`.launcher.json.tmp`, `.AGENTS.md.tmp`) a killed save left while `.configlauncher` was unusable.
+            (engine.source as? SafSource)?.let { s -> runCatching { s.sweepRootTemps() } }
             syncAgentDocs(); syncSchemaCopy()
             runCatching { engine.poll(force = true) } // resume always hashes (§17 Q5)
             runCatching { engine.pollWidgets(force = true) } // #139: data files too
@@ -97,6 +101,7 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     fun useFolder(uri: Uri) {
         context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         prefs.folderUri = uri; prefs.appOnly = false
+        SafDirs.clearTree(uri.toString()) // #251: before the AGENTS.md/schema syncs below, not only in switchSource
         switch()
         scope.launch(Dispatchers.IO) { syncAgentDocs(uri); syncSchemaCopy(uri) }
     }
@@ -105,7 +110,7 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     fun syncSchemaCopy(uri: Uri? = prefs.folderUri): SchemaCopy.Outcome {
         uri ?: return SchemaCopy.Outcome.FAILED
         val bundled = runCatching { context.assets.open(SchemaCopy.ASSET).use { it.readBytes() } }.getOrNull() ?: return SchemaCopy.Outcome.FAILED
-        return SchemaCopy.sync(SafSource(context.contentResolver, uri), bundled)
+        return SchemaCopy.sync(SafSource(context.contentResolver, uri, tempJournal), bundled)
     }
 
     /**
@@ -115,7 +120,7 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     fun syncAgentDocs(uri: Uri? = prefs.folderUri, force: Boolean = false): AgentDocs.Outcome {
         uri ?: return AgentDocs.Outcome.OFF
         val bundled = runCatching { context.assets.open(AgentDocs.ASSET).use { it.readBytes() } }.getOrNull() ?: return AgentDocs.Outcome.FAILED
-        val o = AgentDocs.sync(SafSource(context.contentResolver, uri), bundled, prefs.agentDocsWritten(uri), prefs.agentDocs, force)
+        val o = AgentDocs.sync(SafSource(context.contentResolver, uri, tempJournal), bundled, prefs.agentDocsWritten(uri), prefs.agentDocs, force)
         if (AgentDocs.remember(o)) prefs.markAgentDocsWritten(uri)
         return o
     }
@@ -125,14 +130,14 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
     /** ux.md §7.1: which label the ⋮ action shows; null in app-only mode (hidden). Blocking: call off the main thread. */
     fun agentDocsMenuAction(): AgentDocs.MenuAction? {
         val uri = prefs.folderUri ?: return null
-        return AgentDocs.menuAction(AgentDocs.readExisting(SafSource(context.contentResolver, uri)))
+        return AgentDocs.menuAction(AgentDocs.readExisting(SafSource(context.contentResolver, uri, tempJournal)))
     }
 
     /** ux.md §7.1 `Add/Update agent instructions`. [confirmed] = the user chose Replace for an edited file. Blocking. */
     fun updateAgentDocs(confirmed: Boolean): AgentDocs.Update {
         val uri = prefs.folderUri ?: return AgentDocs.Update.FAILED
         val bundled = bundledAgentDocs() ?: return AgentDocs.Update.FAILED
-        return AgentDocs.update(SafSource(context.contentResolver, uri), bundled, confirmed).also {
+        return AgentDocs.update(SafSource(context.contentResolver, uri, tempJournal), bundled, confirmed).also {
             if (it == AgentDocs.Update.ADDED || it == AgentDocs.Update.UPDATED) prefs.markAgentDocsWritten(uri)
         }
     }
@@ -153,7 +158,7 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
      */
     fun inspectFolder(uri: Uri): ConfigEngine.Inspection {
         val took = runCatching { context.contentResolver.takePersistableUriPermission(uri, rw) }.isSuccess
-        val ins = try { engine.inspect(SafSource(context.contentResolver, uri)) }
+        val ins = try { engine.inspect(SafSource(context.contentResolver, uri, tempJournal)) }
             catch (e: Exception) { ConfigEngine.Inspection.Unreadable(e.message ?: e.javaClass.simpleName, false) }
         if (took && prefs.folderUri != uri && ins is ConfigEngine.Inspection.Unreadable) release(uri)
         return ins
@@ -176,7 +181,7 @@ class ConfigStore(private val context: Context, private val scope: CoroutineScop
         val wasRunning = pollJob != null
         stop()
         scope.launch(Dispatchers.IO) {
-            val ok = engine.moveTo(SafSource(context.contentResolver, uri), useMine)
+            val ok = engine.moveTo(SafSource(context.contentResolver, uri, tempJournal), useMine)
             if (ok) { prefs.folderUri = uri; prefs.appOnly = false; if (old != uri) release(old); syncAgentDocs(uri); syncSchemaCopy(uri) }
             else if (old != uri) release(uri)
             if (wasRunning) withContext(Dispatchers.Main) { start() }

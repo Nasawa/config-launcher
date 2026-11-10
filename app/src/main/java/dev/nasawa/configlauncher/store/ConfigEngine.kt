@@ -175,6 +175,11 @@ class ConfigEngine(
      * and our current layout is kept as a history entry. An empty target always gets our layout.
      */
     suspend fun moveTo(target: ConfigSource, useMine: Boolean): Boolean = mutex.withLock {
+        target.clearSuppression() // #251: picking the folder again retries the hidden-name creates ([SafDirs])
+        try { moveLocked(target, useMine) } finally { publishSuppression() }
+    }
+
+    private fun moveLocked(target: ConfigSource, useMine: Boolean): Boolean {
         val existing = try { target.read(Limits.MAX_BYTES) } catch (e: Exception) {
             _state.update { it.copy(notice = Msg(dev.nasawa.configlauncher.R.string.folder_read_failed, e.reason())) }; return false
         }
@@ -195,7 +200,7 @@ class ConfigEngine(
         if (adopted != null) runCatching { lastGood.snapshot(ConfigCodec.encodeBytes(_state.value.config)) }
         // #171 (Grace #168 L1): the old folder's Warnings list goes with its status; the new one's comes with its own.
         source = target; lastStamp = null; lastStatusKey = null; statusResult = null; conflictFiles = emptyList(); _warnings.value = emptyList()
-        try {
+        return try {
             if (adopted != null) {
                 val hash = ConfigCodec.sha256(existing!!)
                 lastStamp = target.stamp()
@@ -217,6 +222,7 @@ class ConfigEngine(
 
     suspend fun switchSource(newSource: ConfigSource) {
         mutex.withLock {
+            newSource.clearSuppression() // #251: Reconnect is a re-pick too ([SafDirs])
             source = newSource
             lastStamp = null
             lastStatusKey = null; statusResult = null; conflictFiles = emptyList(); _warnings.value = emptyList()
@@ -229,18 +235,24 @@ class ConfigEngine(
      * Check the source once. [force] (resume, ContentObserver, manual reload) always reads and hashes.
      * Returns true when a new model was published.
      */
-    suspend fun poll(force: Boolean = false): Boolean = mutex.withLock { pollLocked(force) }
+    suspend fun poll(force: Boolean = false): Boolean = mutex.withLock { try { pollLocked(force) } finally { publishSuppression() } }
 
     /**
      * #55 adb reload: the same pipeline as ⋮ → Reload, then make sure status.json reflects it
      * (rewritten even if unchanged, so its `time` is a receipt for this request).
      */
     suspend fun reloadForAgent(): ReloadOutcome = mutex.withLock {
+        // #251 (Archimedes): RELOAD is the agent's "try again", so every tree's hidden-name suppression is cleared.
+        SafDirs.clearAll()
+        try { reloadLocked() } finally { publishSuppression() }
+    }
+
+    private suspend fun reloadLocked(): ReloadOutcome {
         // pollLocked skips the read while an edit, drag or conflict is pending: say so instead of "unchanged".
         val busy = dragging || pending.isNotEmpty() || _state.value.conflict
         val changed = pollLocked(force = true)
-        lastStatusKey = null; emitStatus()
-        when {
+        lastStatusKey = null; emitStatus() // also reports a suppression that recurred (noteSuppression)
+        return when {
             busy -> ReloadOutcome.BUSY
             changed -> ReloadOutcome.RELOADED
             else -> when (_state.value.issue) {
@@ -326,7 +338,9 @@ class ConfigEngine(
      * loaded it, enter the conflict state. Only if the file is still the same broken bytes is the
      * broken copy snapshotted before overwriting (OQ-15).
      */
-    suspend fun flush(): Boolean = mutex.withLock {
+    suspend fun flush(): Boolean = mutex.withLock { try { flushLocked() } finally { publishSuppression() } }
+
+    private fun flushLocked(): Boolean {
         if (pending.isEmpty() || _state.value.conflict) return false
         val current = try { source.read(Limits.MAX_BYTES) } catch (e: Exception) { return fail(Issue.SaveFailed.of(e)) }
         val curHash = current?.let { ConfigCodec.sha256(it) }
@@ -354,7 +368,7 @@ class ConfigEngine(
             stillBroken -> Msg(dev.nasawa.configlauncher.R.string.broken_saved_history)
             else -> it.notice
         }) }
-        true
+        return true
     }
 
     /**
@@ -532,6 +546,7 @@ class ConfigEngine(
         if (lastApps?.first === src && lastApps?.second == entries) return false
         return try { src.writeSidecar("", AppsJson.FILE, AppsJson.encode(entries, clock())); lastApps = src to entries; true }
         catch (_: Exception) { false }
+        finally { publishSuppression() }
     }
 
     /** #138: the loaded file's widget consent states (empty when rejected or without a store). */
@@ -584,7 +599,8 @@ class ConfigEngine(
     private fun emitStatus() {
         val (result, errors, hash) = statusResult ?: return
         val report = if (result == "ok") consentReport() else emptyList()
-        val warnings = if (result == "ok") statusWarnings + phoneWarnings() + report.mapNotNull { it.warning } + widgetReader.warnings(dataTargets()) else statusWarnings
+        val warnings = (if (result == "ok") statusWarnings + phoneWarnings() + report.mapNotNull { it.warning } + widgetReader.warnings(dataTargets()) else statusWarnings) +
+            source.suppressedNames().map(::suppressedWarning) + source.tempWarnings()
         _warnings.value = warnings
         val consentMap = if (consent == null) null else report.associate { it.id to (it.state.key to it.warning) }
         val key = "$result|$hash|$statusRevision|${errors.hashCode()}|${warnings.hashCode()}|$backupError|$conflictFiles|$consentMap"
@@ -593,6 +609,33 @@ class ConfigEngine(
             source.writeSidecar("", StatusJson.FILE, StatusJson.encode(result, errors, hash, clock(), backupError, conflictFiles, source.location, revision = statusRevision, warnings = warnings, consent = consentMap))
             lastStatusKey = key
         } catch (_: Exception) { /* folder may be read-only or gone; the banner already says so */ }
+        noteSuppression()
+    }
+
+    /**
+     * #251: a create the provider renamed while hiding the original is suppressed ([SafDirs]). The first time
+     * per suppression: a one-shot notice ([publishSuppression]), and the Warnings list / status.json get [suppressedWarning] (emitStatus).
+     * status.json lives in `.configlauncher/`, which may be the hidden name itself, so the notice is the reliable
+     * channel. Re-entrant via [emitStatus] only while new names keep appearing ([ConfigSource.takeNewlySuppressed] drains).
+     */
+    private fun noteSuppression() {
+        val fresh = source.takeNewlySuppressed()
+        if (fresh.isEmpty()) return
+        if (hiddenNotice == null) hiddenNotice = fresh.first()
+        emitStatus()
+    }
+
+    /** First name newly suppressed during this call, shown once [publishSuppression] runs (a load replaces [state]). */
+    private var hiddenNotice: String? = null
+
+    /** End of each public entry point (poll, flush, reload, move, apps.json): drain, then raise the one-shot notice. */
+    private fun publishSuppression() {
+        noteSuppression()
+        val name = hiddenNotice ?: return
+        hiddenNotice = null
+        val msg = if (name in SafWrites.ROOT_FILES) Msg(dev.nasawa.configlauncher.R.string.folder_hidden_notice_file, name)
+            else Msg(dev.nasawa.configlauncher.R.string.folder_hidden_notice)
+        _state.update { it.copy(notice = msg) }
     }
 
     /**
@@ -604,6 +647,12 @@ class ConfigEngine(
         val text = String(b, Charsets.UTF_8).removePrefix("\uFEFF")
         return dev.nasawa.configlauncher.config.ErrorLocator.locate(text, errors)
     }
+
+    /** #251 Warnings / status.json line for a suppressed [name] (English like the other status lines; Pragma copy). */
+    internal fun suppressedWarning(name: String) =
+        if (name in SafWrites.ROOT_FILES) "Can't save $name: the storage app hides the one already in this folder, so no copy was made. To fix it, choose the folder again from internal storage."
+        // `.configlauncher` (or something in it): launcher.json still saves through a root temp ([SafWrites]).
+        else "Backups and status can't be kept here because the storage app hides $name. To fix it, choose the folder again from internal storage."
 
     fun consumeNotice() = _state.update { it.copy(notice = null) }
     fun consumeMerge() = _state.update { it.copy(merge = null) }

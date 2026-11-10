@@ -9,25 +9,24 @@ import java.io.IOException
 
 /**
  * launcher.json inside a user-picked SAF tree (persisted READ|WRITE grant, no storage permission).
- * SAF has no atomic replace, so writes follow AQ-4: write `.configlauncher/launcher.json.tmp`,
- * verify, truncate-write launcher.json ("wt"), verify, restore from temp on failure.
+ * SAF has no atomic replace, so writes follow AQ-4 ([SafWrites]): write `.configlauncher/launcher.json.tmp`
+ * (or `.launcher.json.tmp` in the root while `.configlauncher` is unusable, #251), verify, truncate-write
+ * launcher.json ("wt"), verify, restore from temp on failure.
  */
-class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : ConfigSource {
+class SafSource(private val resolver: ContentResolver, val treeUri: Uri, private val journal: TempJournal = TempJournal.NONE) : ConfigSource {
     private val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
     override val displayName = "Folder: " + rootDocId.substringAfterLast(':').ifEmpty { rootDocId }
     override val location = FolderPath.launcherJson(treeUri.authority, rootDocId, treeUri.toString())
 
-    private data class Child(val docId: String, val mime: String, val modified: Long, val size: Long)
-
-    private fun children(parentDocId: String): Map<String, Child> {
+    private fun children(parentDocId: String): Map<String, DocChild> {
         val uri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
         val cols = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE,
             Document.COLUMN_LAST_MODIFIED, Document.COLUMN_SIZE)
-        val out = mutableMapOf<String, Child>()
+        val out = mutableMapOf<String, DocChild>()
         if (resolver.persistedUriPermissions.none { it.uri == treeUri && it.isReadPermission }) throw AccessLostException("folder permission was revoked")
         try { resolver.query(uri, cols, null, null, null)?.use { c ->
             while (c.moveToNext()) {
-                out[c.getString(1)] = Child(c.getString(0), c.getString(2) ?: "", if (c.isNull(3)) 0 else c.getLong(3), if (c.isNull(4)) 0 else c.getLong(4))
+                out[c.getString(1)] = DocChild(c.getString(0), c.getString(2) ?: "", if (c.isNull(3)) 0 else c.getLong(3), if (c.isNull(4)) 0 else c.getLong(4))
             }
         } ?: throw AccessLostException("folder is not accessible")
         } catch (e: SecurityException) { throw AccessLostException("folder permission was revoked") }
@@ -55,11 +54,42 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
         (resolver.openOutputStream(uri, "wt") ?: throw IOException("can't open $uri")).use { it.write(bytes); it.flush() }
     }
 
-    private fun ensure(parentDocId: String, name: String, mime: String): String =
-        children(parentDocId)[name]?.docId
-            ?: DocumentsContract.createDocument(resolver, docUri(parentDocId), mime, name)
-                ?.let { DocumentsContract.getDocumentId(it) }
-            ?: throw IOException("can't create $name")
+    private val docs = object : DocTree {
+        override fun list(parentDocId: String) = children(parentDocId)
+        override fun create(parentDocId: String, mime: String, name: String) =
+            DocumentsContract.createDocument(resolver, docUri(parentDocId), mime, name)?.let { DocumentsContract.getDocumentId(it) }
+        override fun displayName(docId: String): String? =
+            resolver.query(docUri(docId), arrayOf(Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            }
+        override fun delete(docId: String) = DocumentsContract.deleteDocument(resolver, docUri(docId))
+        override fun read(docId: String) = readUri(docUri(docId))
+        override fun write(docId: String, bytes: ByteArray) = writeUri(docUri(docId), bytes)
+        // #251 (Grace): a document that's gone can come back as "not a descendant" (SecurityException) while the
+        // tree grant is still held; that's not-found, so the sweep drops its journal entry. No grant: access lost.
+        override fun info(docId: String): DocInfo? = try {
+            if (resolver.persistedUriPermissions.none { it.uri == treeUri && it.isReadPermission }) throw AccessLostException("folder permission was revoked")
+            resolver.query(docUri(docId), arrayOf(Document.COLUMN_MIME_TYPE, Document.COLUMN_SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst()) DocInfo(c.getString(0) ?: "", if (c.isNull(1)) 0 else c.getLong(1)) else null
+            }
+        } catch (_: java.io.FileNotFoundException) { null } catch (_: IllegalArgumentException) { null } catch (_: SecurityException) { null }
+        override fun childCount(docId: String): Int =
+            resolver.query(DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId), arrayOf(Document.COLUMN_DOCUMENT_ID), null, null, null)
+                ?.use { it.count } ?: throw IOException("can't list $docId")
+    }
+    private val dirs = SafDirs(docs, treeUri.toString())
+    private val writes = SafWrites(docs, dirs, treeUri.toString(), journal)
+
+    /** #251: start-up sweep of root save temps left by a killed save (by journaled document id; [SafWrites]). */
+    fun sweepRootTemps() = writes.sweepRootTemps(rootDocId)
+
+    /** #244: find-or-create through [SafDirs] (serialized, rename-checked), never a bare createDocument. */
+    private fun ensure(parentDocId: String, name: String, mime: String): String = dirs.ensure(parentDocId, name, mime)
+
+    override fun suppressedNames() = dirs.suppressed()
+    override fun tempWarnings() = writes.tempWarnings()
+    override fun takeNewlySuppressed() = dirs.takeNew()
+    override fun clearSuppression() = SafDirs.clearTree(treeUri.toString())
 
     override fun write(bytes: ByteArray) = writeVerified(FILE, "application/json", bytes, "layout")
 
@@ -71,24 +101,9 @@ class SafSource(private val resolver: ContentResolver, val treeUri: Uri) : Confi
 
     override fun writeRoot(name: String, bytes: ByteArray) = writeVerified(name, "application/octet-stream", bytes, name)
 
-    private fun writeVerified(name: String, mime: String, bytes: ByteArray, what: String) {
-        val want = ConfigCodec.sha256(bytes)
-        val dir = ensure(rootDocId, ".configlauncher", Document.MIME_TYPE_DIR)
-        // Some providers append ".json" for application/json; octet-stream keeps the exact name.
-        val tmp = docUri(ensure(dir, "$name.tmp", "application/octet-stream"))
-        writeUri(tmp, bytes)
-        if (readUri(tmp)?.let { ConfigCodec.sha256(it) } != want) throw IOException("temp copy verification failed")
-        val target = docUri(children(rootDocId)[name]?.docId
-            ?: DocumentsContract.createDocument(resolver, docUri(rootDocId), mime, name)?.let { DocumentsContract.getDocumentId(it) }
-            ?: throw IOException("can't create $name"))
-        try {
-            writeUri(target, bytes)
-            if (readUri(target)?.let { ConfigCodec.sha256(it) } != want) throw IOException("write verification failed")
-        } catch (e: Exception) {
-            runCatching { writeUri(target, readUri(tmp)!!) }
-            throw IOException("Couldn't save $what: ${e.message}", e)
-        }
-    }
+    // Some providers append ".json" for application/json; octet-stream keeps the exact temp names.
+    private fun writeVerified(name: String, mime: String, bytes: ByteArray, what: String) =
+        writes.writeVerified(rootDocId, name, mime, bytes, what)
 
     override fun siblingNames(): List<String> = children(rootDocId).keys.toList()
 
