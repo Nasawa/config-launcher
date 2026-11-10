@@ -213,7 +213,7 @@ Shape in brief:
 - `launcher-config.v1.schema.json`: an offline copy of the schema, so agents can validate without network. Replaced on
   app updates unless you edited it.
 - `broken/`: copies of invalid files saved before a phone edit replaced them.
-- `backup/`: originals saved before an *Upgrade now* (as `launcher.v{N}.{timestamp}.json`), *Restore last working version* or *Start fresh*,
+- `backup/`: originals saved before an *Upgrade now* (as `launcher.v{N}.{timestamp}.json`), *Restore last working version* or *Replace it with mine*,
   and your edited `AGENTS.md` before *Update agent instructions* replaces it (as `AGENTS.{timestamp}.md`).
 
 Ignore the `.tmp` files, `status.json` and `apps.json` in git (see [the git workflow](#recommended-keep-the-folder-in-git)).
